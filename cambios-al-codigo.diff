@@ -1,0 +1,132 @@
+diff --git a/excalidraw-app/collab/Collab.tsx b/excalidraw-app/collab/Collab.tsx
+index 34d225b..9bf7251 100644
+--- a/excalidraw-app/collab/Collab.tsx
++++ b/excalidraw-app/collab/Collab.tsx
+@@ -531,7 +531,7 @@ class Collab extends PureComponent<CollabProps, CollabState> {
+ 
+     try {
+       this.portal.socket = this.portal.open(
+-        socketIOClient(import.meta.env.VITE_APP_WS_SERVER_URL, {
++        socketIOClient(window.location.origin, {
+           transports: ["websocket", "polling"],
+         }),
+         roomId,
+diff --git a/excalidraw-app/data/firebase.ts b/excalidraw-app/data/firebase.ts
+index 11177d9..d42fd1c 100644
+--- a/excalidraw-app/data/firebase.ts
++++ b/excalidraw-app/data/firebase.ts
+@@ -1,3 +1,6 @@
++// Version local: sin guardado en la nube
++const LOCAL_ONLY = true as boolean;
++
+ import { reconcileElements } from "@excalidraw/excalidraw";
+ import { MIME_TYPES, toBrandedType } from "@excalidraw/common";
+ import { decompressData } from "@excalidraw/excalidraw/data/encode";
+@@ -142,6 +145,11 @@ export const isSavedToFirebase = (
+   return true;
+ };
+ 
++const localFileUrl = (prefix: string, id: string) =>
++  `/archivos/${encodeURIComponent(prefix.replace(/^\//, ""))}/${encodeURIComponent(
++    id,
++  )}`;
++
+ export const saveFilesToFirebase = async ({
+   prefix,
+   files,
+@@ -149,11 +157,29 @@ export const saveFilesToFirebase = async ({
+   prefix: string;
+   files: { id: FileId; buffer: Uint8Array }[];
+ }) => {
+-  const storage = await loadFirebaseStorage();
+-
+   const erroredFiles: FileId[] = [];
+   const savedFiles: FileId[] = [];
+ 
++  // Version local: las imagenes (ya cifradas) se guardan en el servidor local
++  if (LOCAL_ONLY) {
++    await Promise.all(
++      files.map(async ({ id, buffer }) => {
++        try {
++          const res = await fetch(localFileUrl(prefix, id), {
++            method: "PUT",
++            body: new Blob([buffer as unknown as ArrayBuffer]),
++          });
++          (res.ok ? savedFiles : erroredFiles).push(id);
++        } catch (error: any) {
++          erroredFiles.push(id);
++        }
++      }),
++    );
++    return { savedFiles, erroredFiles };
++  }
++
++  const storage = await loadFirebaseStorage();
++
+   await Promise.all(
+     files.map(async ({ id, buffer }) => {
+       try {
+@@ -189,6 +215,10 @@ export const saveToFirebase = async (
+   elements: readonly SyncableExcalidrawElement[],
+   appState: AppState,
+ ) => {
++  // Version local: no se guarda nada en la nube
++  if (LOCAL_ONLY) {
++    return null;
++  }
+   const { roomId, roomKey, socket } = portal;
+   if (
+     // bail if no room exists as there's nothing we can do at this point
+@@ -251,6 +281,10 @@ export const loadFromFirebase = async (
+   roomKey: string,
+   socket: Socket | null,
+ ): Promise<readonly SyncableExcalidrawElement[] | null> => {
++  // Version local: la escena se recibe directamente de la otra ventana
++  if (LOCAL_ONLY) {
++    return null;
++  }
+   const firestore = _getFirestore();
+   const docRef = doc(firestore, "scenes", roomId);
+   const docSnap = await getDoc(docRef);
+@@ -285,7 +319,9 @@ export const loadFilesFromFirebase = async (
+         const url = `https://firebasestorage.googleapis.com/v0/b/${
+           FIREBASE_CONFIG.storageBucket
+         }/o/${encodeURIComponent(prefix.replace(/^\//, ""))}%2F${id}`;
+-        const response = await fetch(`${url}?alt=media`);
++        const response = await fetch(
++          LOCAL_ONLY ? localFileUrl(prefix, id) : `${url}?alt=media`,
++        );
+         if (response.status < 400) {
+           const arrayBuffer = await response.arrayBuffer();
+ 
+diff --git a/excalidraw-app/vite.config.mts b/excalidraw-app/vite.config.mts
+index 21469eb..89232d2 100644
+--- a/excalidraw-app/vite.config.mts
++++ b/excalidraw-app/vite.config.mts
+@@ -156,6 +156,8 @@ export default defineConfig(({ mode }) => {
+       ViteEjsPlugin(),
+       VitePWA({
+         registerType: "autoUpdate",
++        // Version local: el service worker se autodestruye para no cachear versiones viejas
++        selfDestroying: true,
+         devOptions: {
+           /* set this flag to true to enable in Development mode */
+           enabled: envVars.VITE_APP_ENABLE_PWA === "true",
+diff --git a/packages/excalidraw/clients.ts b/packages/excalidraw/clients.ts
+index 3e04eff..9395fbe 100644
+--- a/packages/excalidraw/clients.ts
++++ b/packages/excalidraw/clients.ts
+@@ -66,6 +66,13 @@ export const renderRemoteCursors = ({
+   normalizedWidth: number;
+   normalizedHeight: number;
+ }) => {
++  // Ocultar punteros remotos si la URL incluye ?sinpuntero
++  if (
++    typeof window !== "undefined" &&
++    new URLSearchParams(window.location.search).has("sinpuntero")
++  ) {
++    return;
++  }
+   // Paint remote pointers
+   for (const [socketId, pointer] of renderConfig.remotePointerViewportCoords) {
+     let { x, y } = pointer;

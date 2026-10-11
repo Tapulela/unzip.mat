@@ -1,0 +1,49 @@
+PIZARRA LOCAL (Excalidraw modificado)
+=====================================
+
+Que cambia respecto de excalidraw.com
+- Las dos ventanas se sincronizan dentro de tu PC, sin pasar por internet.
+  Los trazos aparecen en vivo y sin congelarse.
+- Si agregas ?sinpuntero a la direccion, esa ventana no muestra el puntero
+  del colaborador.
+- No se guarda nada en la nube de Excalidraw. Las imagenes pegadas tambien
+  se comparten por el servidor local.
+
+PRIMERA VEZ (una sola vez)
+1. Instala Node.js desde https://nodejs.org (boton "LTS"). Siguiente, siguiente.
+2. Descomprimi esta carpeta donde quieras (por ejemplo en Documentos).
+
+CADA VEZ QUE GRABES
+1. Doble clic en "Iniciar pizarra.bat".
+   Se abre una ventana negra (dejala abierta) y el navegador en
+   http://localhost:3000
+   Si Windows pregunta por el Firewall, podes poner "Cancelar": no hace falta
+   acceso a la red.
+2. En la pizarra: boton de compartir (arriba a la derecha) -> "Start session"
+   -> "Copy link". El link se ve asi:
+       http://localhost:3000/#room=xxxxxxxx,yyyyyyyy
+3. En la ventana que va a grabar OBS, pega ese link agregando ?sinpuntero
+   antes del #:
+       http://localhost:3000/?sinpuntero#room=xxxxxxxx,yyyyyyyy
+   Ahi fija el encuadre y no la toques mas.
+   (Es la ventana del perfil "Grabacion" de Firefox, como armamos antes.)
+4. Escribi en la otra ventana, con el zoom que quieras.
+5. Al terminar, cerra la ventana negra.
+
+SI ACTUALIZAS A UNA VERSION NUEVA
+1. Cerra la ventana negra de la version anterior.
+2. Reemplaza la carpeta y abri "Iniciar pizarra.bat".
+3. En cada navegador que uses, abri http://localhost:3000 y apreta F5 una o
+   dos veces. Asi descarta la version vieja que tenia guardada.
+
+TIPS
+- En la ventana grabada podes ocultar los menus con Alt+Z (modo zen) o
+  Alt+R (modo vista), asi el video muestra solo la pizarra.
+- Para guardar tu trabajo: menu (arriba a la izquierda) -> Guardar en...
+- Las imagenes pegadas se sincronizan tambien. Quedan guardadas mientras la
+  ventana negra este abierta; si la cerras y volves a abrir, usa una sesion
+  nueva (o guarda el archivo antes desde el menu).
+- Si algo no arranca, sacale una foto a la ventana negra y mandamela.
+
+cambios-al-codigo.diff = lista exacta de las modificaciones hechas al codigo
+original de Excalidraw (licencia MIT).

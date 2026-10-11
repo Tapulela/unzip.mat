@@ -1,0 +1,12 @@
+{
+  "name": "pizarra-local",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Excalidraw local con colaboracion en la misma PC",
+  "license": "MIT",
+  "main": "servidor.js",
+  "scripts": {
+    "start": "node servidor.js"
+  },
+  "dependencies": { "socket.io": "^4.8.1" }
+}

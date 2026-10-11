@@ -1,0 +1,7 @@
+* text=auto
+*.bat text eol=crlf
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.ico binary
+app/assets/*.js -diff
