@@ -6,6 +6,12 @@ Que cambia respecto de excalidraw.com
   Los trazos aparecen en vivo y sin congelarse.
 - Si agregas ?sinpuntero a la direccion, esa ventana no muestra el puntero
   del colaborador.
+- En el menu (arriba a la izquierda) -> Preferencias hay una opcion "Ocultar
+  selección de colaboradores"
+  (activada por defecto): evita que veas resaltados los elementos que otro
+  colaborador selecciona. Se recuerda en cada navegador.
+- Y otra, "Ocultar cursores de colaboradores" (activada por
+  defecto). Es equivalente a ?sinpuntero, que sigue funcionando.
 - No se guarda nada en la nube de Excalidraw. Las imagenes pegadas tambien
   se comparten por el servidor local.
 
@@ -37,6 +43,9 @@ SI ACTUALIZAS A UNA VERSION NUEVA
    dos veces. Asi descarta la version vieja que tenia guardada.
 
 TIPS
+- En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
+  salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la
+  pantalla 5 segundos o mas, y se ocultan al subirlo.
 - En la ventana grabada podes ocultar los menus con Alt+Z (modo zen) o
   Alt+R (modo vista), asi el video muestra solo la pizarra.
 - Para guardar tu trabajo: menu (arriba a la izquierda) -> Guardar en...
