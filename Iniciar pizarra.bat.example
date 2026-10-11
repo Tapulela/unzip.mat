@@ -12,6 +12,8 @@ if errorlevel 1 (
   pause
   exit /b
 )
+rem Abre en el navegador por defecto. Para usar un perfil especifico de Firefox, reemplazar por:
+rem start "" cmd /c "timeout /t 2 >NUL & start "" "%ProgramFiles%\Mozilla Firefox\firefox.exe" -no-remote -P "NOMBRE_DEL_PERFIL" http://localhost:3000"
 start "" cmd /c "timeout /t 2 >NUL & start http://localhost:3000"
 node servidor.js
 pause
