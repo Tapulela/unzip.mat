@@ -127,7 +127,7 @@ io.on("connection", (socket) => {
   socket.on("camara-unirse", (roomID) => {
     if (typeof roomID === "string") socket.join(`camara@${roomID}`);
   });
-  for (const evento of ["camara-estado", "camara-mover", "camara-pedir"]) {
+  for (const evento of ["camara-estado", "camara-mover", "camara-pedir", "camara-rol"]) {
     socket.on(evento, (roomID, datos) => {
       if (typeof roomID !== "string") return;
       socket.broadcast.to(`camara@${roomID}`).emit(evento, datos);

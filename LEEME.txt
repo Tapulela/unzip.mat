@@ -21,25 +21,35 @@ PRIMERA VEZ (una sola vez)
 
 CADA VEZ QUE GRABES
 1. Doble clic en "Iniciar pizarra.bat".
-   Se abre una ventana negra (dejala abierta) y el navegador en
-   http://localhost:3000
+   Se abre una ventana negra (dejala abierta) y el navegador ya dentro de una
+   sesion compartida nueva. La pizarra de la sesion arranca vacia (lo que
+   tenias dibujado sin sesion queda guardado en el navegador, aparte).
    Si Windows pregunta por el Firewall, podes poner "Cancelar": no hace falta
    acceso a la red.
-2. En la pizarra: boton de compartir (arriba a la derecha) -> "Start session"
-   -> "Copy link". El link se ve asi:
+2. El link de la sesion ya queda copiado (y se muestra en la ventana negra).
+   Se ve asi:
        http://localhost:3000/#room=xxxxxxxx,yyyyyyyy
+   (Si preferis crear la sesion a mano: boton de compartir, arriba a la
+   derecha -> "Start session" -> "Copy link".)
 3. En la ventana que va a grabar OBS, pega ese link agregando ?sinpuntero
    antes del #:
        http://localhost:3000/?sinpuntero#room=xxxxxxxx,yyyyyyyy
    Ahi fija el encuadre y no la toques mas.
    (Es la ventana del perfil "Grabacion" de Firefox, como armamos antes.)
-   Si ademas agregas ?proyeccion, podes mover su camara desde la otra ventana:
-       http://localhost:3000/?sinpuntero&proyeccion#room=xxxxxxxx,yyyyyyyy
+   Para poder mover su camara desde la otra ventana, en la ventana grabada
+   toca el boton "Proyección" (el de la pantallita, al final de la barra de
+   herramientas de arriba). Queda resaltado. Se recuerda si recargas la
+   pestaña (F5); al cerrarla hay que volver a tocarlo.
+   Solo puede haber una ventana de proyeccion por sesion: si lo activas en
+   otra, se apaga en la anterior.
+   (?proyeccion en la URL sigue funcionando y hace lo mismo.)
 4. Escribi en la otra ventana, con el zoom que quieras.
-   Si la ventana grabada tiene ?proyeccion, en esta ventana aparece un marco
-   rojo punteado ("Cámara") que muestra lo que ven los estudiantes:
+   Con la proyeccion activa, en esta ventana aparece un marco rojo punteado
+   ("Cámara") que muestra lo que ven los estudiantes:
    - Arrastra la etiqueta "Cámara" o cualquier borde para mover la vista.
    - Arrastra una esquina para acercar o alejar (mantiene la proporción).
+   - Arriba a la izquierda del marco se ve el zoom de la camara (por ejemplo
+     "50%"). Un clic ahi la vuelve al 100% sin moverla del lugar.
    - Doble clic en la etiqueta: tu vista va hasta donde esta la camara.
    - Por dentro del marco podes dibujar normalmente.
    - Si no queres el marco en alguna ventana, agrega ?sincamara a su URL.

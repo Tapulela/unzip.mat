@@ -12,8 +12,15 @@ if errorlevel 1 (
   pause
   exit /b
 )
-rem Abre en el navegador por defecto. Para usar un perfil especifico de Firefox, reemplazar por:
-rem start "" cmd /c "timeout /t 2 >NUL & start "" "%ProgramFiles%\Mozilla Firefox\firefox.exe" -no-remote -P "NOMBRE_DEL_PERFIL" http://localhost:3000"
-start "" cmd /c "timeout /t 2 >NUL & start http://localhost:3000"
+rem Crea una sesion compartida nueva y copia el link al portapapeles
+for /f "delims=" %%L in ('node nueva-sesion.js') do set "LINK=%%L"
+<nul set /p "=%LINK%" | clip
+echo.
+echo   Sesion compartida nueva:
+echo   %LINK%
+echo   El link ya esta copiado: pegalo en la otra ventana.
+rem Abre la sesion en el navegador por defecto. Para usar un perfil especifico de Firefox, reemplazar por:
+rem start "" cmd /c "timeout /t 2 >NUL & start "" "%ProgramFiles%\Mozilla Firefox\firefox.exe" -no-remote -P "NOMBRE_DEL_PERFIL" "%LINK%""
+start "" cmd /c "timeout /t 2 >NUL & start "" "%LINK%""
 node servidor.js
 pause

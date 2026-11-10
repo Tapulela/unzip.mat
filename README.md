@@ -11,9 +11,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
 - No se guarda la escena en Firebase; las imágenes pegadas se guardan (cifradas) en memoria del servidor local.
 - El service worker se autodestruye para no cachear versiones viejas.
 - `?sinpuntero` en la URL oculta el puntero del colaborador (útil para grabar con OBS).
-- Cámara remota (`app/camara.js`): la ventana abierta con `?proyeccion` informa su vista
-  por el servidor local, y las demás ventanas de la sala muestran un marco que la
-  representa y permite moverla y hacer zoom. `?sincamara` desactiva el marco.
+- Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
+  final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
+  local, y las demás ventanas de la sala muestran un marco que la representa y permite
+  moverla, hacer zoom y volver al 100%. Solo una proyección por sala. `?sincamara`
+  desactiva todo.
   Requiere que el bundle exponga la API como `window.__pizarraAPI` (una línea agregada
   antes de `editorLifecycleEvents.emit("editor:mount", …)` en `App.tsx`).
 
@@ -37,6 +39,7 @@ Instrucciones completas en [LEEME.txt](LEEME.txt).
 
 - `app/` — build compilado de Excalidraw (con las modificaciones).
 - `servidor.js` — servidor HTTP + Socket.IO.
+- `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).
 - `cambios-al-codigo.diff` — parche sobre el código fuente de Excalidraw.
 
 ## Licencia

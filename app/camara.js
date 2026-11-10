@@ -1,15 +1,20 @@
 // Camara remota: desde la ventana de edicion se ve y se mueve la vista de la
 // ventana que se proyecta a los estudiantes.
-//  - Ventana proyectada: agregar ?proyeccion a la URL. Informa su vista y obedece.
+//  - Ventana proyectada: boton "Proyección" de la barra de herramientas (o
+//    ?proyeccion en la URL). Informa su vista y obedece. Se recuerda en esa
+//    pestaña al recargar. Solo una ventana por sala: activarla en otra la apaga aca.
 //  - Ventana de edicion (cualquier otra): muestra un marco con lo que ve la
 //    proyeccion. Arrastrar el borde o la etiqueta lo mueve; las esquinas cambian
-//    el zoom. Doble clic en la etiqueta lleva tu vista hasta la camara.
-//  - ?sincamara en la URL desactiva el marco en esa ventana.
+//    el zoom. Doble clic en la etiqueta lleva tu vista hasta la camara. El boton
+//    de arriba a la izquierda muestra el zoom de la camara y lo vuelve al 100%.
+//  - ?sincamara en la URL desactiva todo en esa ventana.
 // Usa window.__pizarraAPI (expuesta por el bundle) y el servidor local (Socket.IO).
 (function () {
   var params = new URLSearchParams(location.search);
   if (params.has("sincamara")) return;
-  var ES_PROYECCION = params.has("proyeccion");
+  var CLAVE_ROL = "pizarra-proyeccion";
+  var esProyeccion = params.has("proyeccion");
+  try { if (sessionStorage.getItem(CLAVE_ROL) === "1") esProyeccion = true; } catch (e) {}
   var ZOOM_MIN = 0.1, ZOOM_MAX = 30;
 
   function api() { return window.__pizarraAPI; }
@@ -31,10 +36,70 @@
     if (s !== sala) {
       sala = s;
       socket.emit("camara-unirse", sala);
-      if (ES_PROYECCION) proyeccion.informar(true);
+      if (esProyeccion) emitir("camara-rol", { proyeccion: true }), proyeccion.informar(true);
       else emitir("camara-pedir", {});
     }
   }
+
+  // Cambia el rol de esta ventana (boton de la barra o aviso de otra ventana)
+  function ponerProyeccion(activo, avisar) {
+    esProyeccion = activo;
+    try {
+      if (activo) sessionStorage.setItem(CLAVE_ROL, "1");
+      else sessionStorage.removeItem(CLAVE_ROL);
+    } catch (e) {}
+    edicion.rect = null;
+    edicion.vistoEn = 0;
+    if (avisar) emitir("camara-rol", { proyeccion: activo });
+    if (activo) proyeccion.informar(true);
+    else emitir("camara-pedir", {});
+    boton.actualizar();
+  }
+
+  // ------------------------------------------------- boton en la barra superior
+  var ICONO =
+    '<svg aria-hidden="true" focusable="false" role="img" viewBox="0 0 24 24" fill="none" ' +
+    'stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">' +
+    '<rect x="3" y="4" width="18" height="12" rx="1.5"/><path d="M12 16v4M8 20h8"/>' +
+    '<path d="M10 8.5v3l3-1.5z" fill="currentColor"/></svg>';
+  var boton = {
+    el: null,
+    crear: function () {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-proyeccion";
+      b.setAttribute("data-testid", "toolbar-proyeccion");
+      b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
+      b.addEventListener("click", function () { ponerProyeccion(!esProyeccion, true); });
+      this.el = b;
+      this.actualizar();
+    },
+    actualizar: function () {
+      if (!this.el) return;
+      this.el.classList.toggle("ToolIcon--checked", esProyeccion);
+      this.el.setAttribute("aria-pressed", esProyeccion ? "true" : "false");
+      var t = esProyeccion
+        ? "Proyección activa: esta ventana es la que ven los estudiantes (clic para desactivar)"
+        : "Proyección: usar esta ventana como la que ven los estudiantes";
+      this.el.title = t;
+      this.el.setAttribute("aria-label", t);
+    },
+    // la barra se vuelve a montar (modo zen, modo vista...), asi que se reinserta
+    vigilar: function () {
+      var self = this;
+      this.crear();
+      setInterval(function () {
+        var stack = document.querySelector(".App-toolbar .Stack");
+        if (!stack || stack.contains(self.el)) return;
+        var div = document.createElement("div");
+        div.className = "App-toolbar__divider pz-divisor";
+        var viejo = stack.querySelector(".pz-divisor");
+        if (viejo) viejo.remove();
+        stack.appendChild(div);
+        stack.appendChild(self.el);
+      }, 300);
+    },
+  };
 
   // ---------------------------------------------------------------- proyeccion
   var proyeccion = {
@@ -67,24 +132,26 @@
     mover: function (d) {
       var self = this;
       if (typeof d.seq === "number") this.seq = d.seq;
-      if (this.anim) cancelAnimationFrame(this.anim), (this.anim = null);
+      if (this.anim) clearTimeout(this.anim), (this.anim = null);
       if (!d.animar || document.hidden) return this.aplicar(d.x, d.y, d.w);
+      // setTimeout y no requestAnimationFrame: la ventana proyectada suele estar
+      // tapada por la de edicion y ahi el navegador frena requestAnimationFrame
       var ini = this.vista(), t0 = performance.now(), DUR = 350;
       (function paso() {
         var t = Math.min(1, (performance.now() - t0) / DUR);
         var e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         self.aplicar(ini.x + (d.x - ini.x) * e, ini.y + (d.y - ini.y) * e, ini.w + (d.w - ini.w) * e);
-        self.anim = t < 1 ? requestAnimationFrame(paso) : null;
+        self.anim = t < 1 ? setTimeout(paso, 16) : null;
       })();
     },
 
     iniciar: function () {
       var self = this;
-      socket.on("camara-mover", function (d) { if (api()) self.mover(d); });
-      socket.on("camara-pedir", function () { self.informar(true); });
+      socket.on("camara-mover", function (d) { if (esProyeccion && api()) self.mover(d); });
+      socket.on("camara-pedir", function () { if (esProyeccion) self.informar(true); });
       // setInterval (y no requestAnimationFrame) para seguir funcionando aunque
       // la ventana proyectada quede tapada por otra
-      setInterval(function () { self.informar(false); }, 30);
+      setInterval(function () { if (esProyeccion) self.informar(false); }, 30);
     },
   };
 
@@ -117,7 +184,15 @@
         // borde superior quede fuera de la pantalla
         "#pz-camara .pz-etiqueta{position:absolute;left:12px;top:0;pointer-events:auto;" +
         "cursor:move;background:#e03131;color:#fff;font:12px/20px Assistant,sans-serif;" +
-        "padding:0 8px;border-radius:0 0 4px 4px;user-select:none;white-space:nowrap}";
+        "padding:0 8px;border-radius:0 0 4px 4px;user-select:none;white-space:nowrap}" +
+        // zoom de la camara: arriba a la izquierda, por fuera del marco; si no
+        // entra en la pantalla pasa adentro, al lado de la etiqueta
+        "#pz-camara .pz-zoom{position:absolute;left:-2px;bottom:calc(100% + 6px);pointer-events:auto;" +
+        "cursor:pointer;background:var(--island-bg-color,#fff);color:var(--text-primary-color,#1b1b1f);" +
+        "border:1px solid #e03131;font:12px/22px Assistant,sans-serif;padding:0 8px;border-radius:6px;" +
+        "user-select:none;white-space:nowrap;min-width:44px;text-align:center;box-sizing:border-box}" +
+        "#pz-camara .pz-zoom:hover{background:#e03131;color:#fff}" +
+        "#pz-camara.pz-adentro .pz-zoom{bottom:auto;top:0;border-radius:0 0 6px 6px}";
       document.head.appendChild(css);
 
       var el = document.createElement("div");
@@ -132,9 +207,12 @@
         '<div class="pz-esq pz-so" data-m="esq" data-ax="1" data-ay="0"></div>' +
         '<div class="pz-esq pz-se" data-m="esq" data-ax="0" data-ay="0"></div>' +
         '<div class="pz-etiqueta" data-m="mover" title="Arrastrá para mover la cámara. ' +
-        'Doble clic: ir a la cámara.">Cámara</div>';
+        'Doble clic: ir a la cámara.">Cámara</div>' +
+        '<div class="pz-zoom" role="button" title="Zoom de la cámara. Clic: volver al 100%">100%</div>';
       document.body.appendChild(el);
       this.el = el;
+      this.elZoom = el.querySelector(".pz-zoom");
+      this.elEtiqueta = el.querySelector(".pz-etiqueta");
 
       var self = this;
       el.addEventListener("pointerdown", function (e) { self.empezar(e); });
@@ -142,6 +220,17 @@
       el.addEventListener("pointerup", function (e) { self.terminar(e); });
       el.addEventListener("pointercancel", function (e) { self.terminar(e); });
       el.querySelector(".pz-etiqueta").addEventListener("dblclick", function () { self.irACamara(); });
+      this.elZoom.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      this.elZoom.addEventListener("click", function () { self.zoomCien(); });
+    },
+
+    // zoom de la camara al 100%, manteniendo el centro
+    zoomCien: function () {
+      var r = this.rect, pw = this.anchoProyeccion;
+      if (!r || !pw) return;
+      var w = pw, h = pw * r.h / r.w, cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+      this.rect = { x: cx - w / 2, y: cy - h / 2, w: w, h: h };
+      this.enviar(true);
     },
 
     aEscena: function (cx, cy) {
@@ -216,7 +305,7 @@
 
     dibujar: function () {
       var el = this.el, r = this.rect, a = api();
-      var visible = a && r && performance.now() - this.vistoEn < 5000 && !!salaActual();
+      var visible = !esProyeccion && a && r && performance.now() - this.vistoEn < 5000 && !!salaActual();
       if (!visible) { if (el.style.display !== "none") el.style.display = "none"; return; }
       var st = a.getAppState(), z = st.zoom.value;
       var izq = (r.x + st.scrollX) * z + st.offsetLeft, arr = (r.y + st.scrollY) * z + st.offsetTop;
@@ -224,12 +313,23 @@
       el.style.transform = "translate(" + izq + "px," + arr + "px)";
       el.style.width = r.w * z + "px";
       el.style.height = r.h * z + "px";
+      var adentro = arr < 40;
+      if (el.classList.contains("pz-adentro") !== adentro) el.classList.toggle("pz-adentro", adentro);
+      if (adentro) this.elZoom.style.left = 12 + this.elEtiqueta.offsetWidth + 6 + "px";
+      else this.elZoom.style.left = "";
+      var texto = this.anchoProyeccion ? Math.round((this.anchoProyeccion / r.w) * 100) + "%" : "100%";
+      if (this.elZoom.textContent !== texto) this.elZoom.textContent = texto;
     },
 
     iniciar: function () {
       var self = this;
       this.crearDOM();
+      socket.on("camara-rol", function (d) {
+        if (d && d.proyeccion && esProyeccion) ponerProyeccion(false, false); // otra ventana tomo el rol
+        else if (d && !d.proyeccion) self.vistoEn = 0;                        // ya no hay proyeccion
+      });
       socket.on("camara-estado", function (d) {
+        if (esProyeccion) return;
         self.vistoEn = performance.now();
         // ignorar estados viejos mientras arrastramos o antes de que llegue nuestro ultimo movimiento
         if (self.arrastre || (typeof d.seq === "number" && d.seq < self.seq)) return;
@@ -247,7 +347,9 @@
     socket.on("connect", function () { sala = null; unirse(); });
     window.addEventListener("hashchange", unirse);
     setInterval(unirse, 1000);
-    (ES_PROYECCION ? proyeccion : edicion).iniciar();
+    proyeccion.iniciar();
+    edicion.iniciar();
+    boton.vigilar();
   }
 
   function esperarAPI() {
