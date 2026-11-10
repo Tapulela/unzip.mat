@@ -33,7 +33,16 @@ CADA VEZ QUE GRABES
        http://localhost:3000/?sinpuntero#room=xxxxxxxx,yyyyyyyy
    Ahi fija el encuadre y no la toques mas.
    (Es la ventana del perfil "Grabacion" de Firefox, como armamos antes.)
+   Si ademas agregas ?proyeccion, podes mover su camara desde la otra ventana:
+       http://localhost:3000/?sinpuntero&proyeccion#room=xxxxxxxx,yyyyyyyy
 4. Escribi en la otra ventana, con el zoom que quieras.
+   Si la ventana grabada tiene ?proyeccion, en esta ventana aparece un marco
+   rojo punteado ("Cámara") que muestra lo que ven los estudiantes:
+   - Arrastra la etiqueta "Cámara" o cualquier borde para mover la vista.
+   - Arrastra una esquina para acercar o alejar (mantiene la proporción).
+   - Doble clic en la etiqueta: tu vista va hasta donde esta la camara.
+   - Por dentro del marco podes dibujar normalmente.
+   - Si no queres el marco en alguna ventana, agrega ?sincamara a su URL.
 5. Al terminar, cerra la ventana negra.
 
 SI ACTUALIZAS A UNA VERSION NUEVA

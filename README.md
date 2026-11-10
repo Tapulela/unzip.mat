@@ -11,6 +11,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
 - No se guarda la escena en Firebase; las imágenes pegadas se guardan (cifradas) en memoria del servidor local.
 - El service worker se autodestruye para no cachear versiones viejas.
 - `?sinpuntero` en la URL oculta el puntero del colaborador (útil para grabar con OBS).
+- Cámara remota (`app/camara.js`): la ventana abierta con `?proyeccion` informa su vista
+  por el servidor local, y las demás ventanas de la sala muestran un marco que la
+  representa y permite moverla y hacer zoom. `?sincamara` desactiva el marco.
+  Requiere que el bundle exponga la API como `window.__pizarraAPI` (una línea agregada
+  antes de `editorLifecycleEvents.emit("editor:mount", …)` en `App.tsx`).
 
 - Sin servicios externos: se quitó la analítica (Simple Analytics), el CDN de fuentes de Excalidraw, Google Fonts y la redirección a Excalidraw+. Estos cambios se hicieron directamente sobre `app/index.html` y `app/assets/*.css` (no están en el diff). La fuente de la interfaz (Assistant) usa solo el peso Regular local.
 

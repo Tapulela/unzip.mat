@@ -122,6 +122,18 @@ io.on("connection", (socket) => {
     socket.volatile.broadcast.to(roomID).emit("client-broadcast", data, iv);
   });
 
+  // Camara remota (app/camara.js): la ventana proyectada informa su vista y la
+  // ventana de edicion la mueve. Canal propio por sala, sin cifrar (todo local).
+  socket.on("camara-unirse", (roomID) => {
+    if (typeof roomID === "string") socket.join(`camara@${roomID}`);
+  });
+  for (const evento of ["camara-estado", "camara-mover", "camara-pedir"]) {
+    socket.on(evento, (roomID, datos) => {
+      if (typeof roomID !== "string") return;
+      socket.broadcast.to(`camara@${roomID}`).emit(evento, datos);
+    });
+  }
+
   socket.on("user-follow", async (payload) => {
     const roomID = `follow@${payload.userToFollow.socketId}`;
     if (payload.action === "FOLLOW") await socket.join(roomID);
