@@ -18,6 +18,12 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   desactiva todo.
   Requiere que el bundle exponga la API como `window.__pizarraAPI` (una línea agregada
   antes de `editorLifecycleEvents.emit("editor:mount", …)` en `App.tsx`).
+- Generadores (`app/generadores.js`, prototipo): botón al final de la barra de
+  herramientas que abre un panel para generar una recta real con intervalos
+  (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
+  (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
+  con la sala y se puede editar. Las opciones quedan en `customData` del grupo:
+  al seleccionar la recta con el panel abierto, se regenera en vivo.
 
 - Sin servicios externos: se quitó la analítica (Simple Analytics), el CDN de fuentes de Excalidraw, Google Fonts y la redirección a Excalidraw+. Estos cambios se hicieron directamente sobre `app/index.html` y `app/assets/*.css` (no están en el diff). La fuente de la interfaz (Assistant) usa solo el peso Regular local.
 

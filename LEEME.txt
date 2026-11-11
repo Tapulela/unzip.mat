@@ -61,6 +61,33 @@ SI ACTUALIZAS A UNA VERSION NUEVA
 3. En cada navegador que uses, abri http://localhost:3000 y apreta F5 una o
    dos veces. Asi descarta la version vieja que tenia guardada.
 
+RECTA REAL CON INTERVALOS (prototipo)
+- Boton de la recta con corchetes, al final de la barra de herramientas:
+  abre un panel a la derecha.
+- Escribi un intervalo por fila, por ejemplo (-2, 1/2] o [1, ∞). Acepta
+  fracciones, π, √ y potencias: (π/2, √2+1]. Para ∞ podes escribir inf o
+  usar el boton ∞. Varios en una fila: (1,2) ∪ [3,4]. Si usas decimales con
+  coma, separa los extremos con punto y coma: [0,5; 2).
+- Si algo esta mal escrito, la fila se pone en rojo y dice por que.
+- Arriba del panel, "Operación" elige Unión (∪) o Intersección (∩): cada fila
+  es un conjunto y la operacion se escribe debajo de la recta, por ejemplo
+  ((-2, 1] ∪ (1,2)) ∩ [1, ∞) ∩ (0, 4).
+- "Escribir el resultado" agrega el resultado calculado despues de un "=":
+  ... = [1, 2). Si no hay elementos escribe ∅, y un solo punto como {1}.
+  Destildala si queres que lo resuelvan los estudiantes.
+- "Incluir referencia" agrega un cuadro arriba a la derecha de la recta con
+  cada conjunto escrito en su color, junto a una muestra de su rayado.
+- "Insertar en el centro" la dibuja en el medio de lo que estas viendo. Es un
+  dibujo comun de la pizarra: se mueve, se borra y se ve en la proyeccion.
+- Para cambiarla despues, seleccionala con el panel abierto: los cambios se
+  aplican en vivo sobre esa recta. Ctrl+Z deshace.
+- Tamaños de los numeros: S, M, L y XL, los mismos de la pizarra.
+  "Márgenes" (izquierdo y derecho, 10% por defecto) es el espacio que queda
+  antes del primer extremo y despues del ultimo, en % del largo de la recta.
+  "( ) y [ ]" cambia el tamaño de los parentesis y corchetes sobre la recta.
+- "Restablecer" vuelve las opciones a como venian de fabrica, sin borrar los
+  intervalos que escribiste.
+
 TIPS
 - En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
   salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la
