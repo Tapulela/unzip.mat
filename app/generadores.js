@@ -25,7 +25,8 @@
   };
   var COLORES = ["#1971c2", "#e03131", "#2f9e44", "#f08c00", "#9c36b5", "#0c8599"];
   var TINTA = "#1e1e1e";
-  var GRIS = "#ced4da";
+  var GRIS = "#ced4da";  // cuadricula
+  var GUIA = "#868e96";  // lineas de trazos de los puntos marcados
 
   function rnd() { return Math.floor(Math.random() * 2147483647); }
   function nuevoId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
@@ -500,6 +501,114 @@
   }
   function nombrePorDefecto(i) { return NOMBRES[i % NOMBRES.length]; }
 
+  // Puntos a marcar: valores de x separados por coma ("-2, -1, 0, 1/2, π").
+  // Con decimales con coma se separan con punto y coma ("0,5; 1,5").
+  function leerPuntos(texto) {
+    var t = String(texto || "").trim();
+    if (!t) return [];
+    return t.split(t.indexOf(";") >= 0 ? ";" : ",").map(function (s) { return s.trim(); })
+      .filter(Boolean).map(function (s) {
+        var v = evaluar(s);
+        return isNaN(v) ? { texto: s, error: "No se entiende el valor «" + s + "»" } : { texto: s, valor: v };
+      });
+  }
+
+  // Dominio propio de una funcion (opcional), para graficarla solo en una parte:
+  //  - como intervalo(s): (1, ∞), [-2, 3), (-∞, 0) ∪ (1, ∞)
+  //  - como desigualdad: x > 1, x >= 1, x ≤ 3, -2 < x <= 3 (≥ y ≤ tambien)
+  // Devuelve { tramos: [{a, b, ca, cb}] } (ca/cb: extremo cerrado), { tramos: null }
+  // si esta vacio (sin restriccion) o { error }.
+  function leerRestriccion(texto) {
+    var t = String(texto || "").trim();
+    if (!t) return { tramos: null };
+    if (/^[\[(]/.test(t)) {
+      var rs = leerIntervalos(t), mal = rs.filter(function (r) { return r.error; });
+      if (mal.length) return { error: mal.map(function (r) { return r.original + ": " + r.error; }).join(" · ") };
+      return { tramos: rs.map(function (r) {
+        return { a: r.izq.valor, b: r.der.valor, ca: r.cizq === "[", cb: r.cder === "]" };
+      }) };
+    }
+    var s = t.replace(/\s+/g, "").replace(/≥/g, ">=").replace(/≤/g, "<=").replace(/[−–]/g, "-");
+    var m, d;
+    if ((m = /^(.+?)(<=|<)[a-zA-Z]\w*(<=|<)(.+)$/.exec(s))) {
+      d = { a: evaluar(m[1]), b: evaluar(m[4]), ca: m[2] === "<=", cb: m[3] === "<=" };
+    } else if ((m = /^[a-zA-Z]\w*(>=|>|<=|<)(.+)$/.exec(s))) {
+      var v = evaluar(m[2]);
+      d = m[1][0] === ">" ? { a: v, b: Infinity, ca: m[1] === ">=", cb: false }
+        : { a: -Infinity, b: v, ca: false, cb: m[1] === "<=" };
+    } else {
+      return { error: "Escribí un intervalo, como (1, ∞), o una desigualdad, como x > 1" };
+    }
+    if (isNaN(d.a) || isNaN(d.b)) return { error: "No se entiende un número de «" + t + "»" };
+    if (!(d.a < d.b || (d.a === d.b && d.ca && d.cb))) return { error: "Ese dominio está vacío" };
+    return { tramos: [d] };
+  }
+
+  function dentroDe(tramos, x) {
+    if (!tramos) return true;
+    return tramos.some(function (d) {
+      return (x > d.a || (d.ca && x === d.a)) && (x < d.b || (d.cb && x === d.b));
+    });
+  }
+
+  // linea de la referencia: f(x) = x², x > 1
+  function textoReferencia(fn) {
+    return textoFuncion(fn.nombre, fn.codigo) + textoRestriccion(fn.dominio, fn.codigo);
+  }
+
+  // texto del dominio para la referencia: ", x > 1" o ", x ∈ (1, ∞)"
+  function textoRestriccion(texto, codigo) {
+    var t = String(texto || "").trim();
+    if (!t || leerRestriccion(t).error) return "";
+    var m = /^\s*\(?\s*([a-zA-Z_$][\w$]*)/.exec(codigo || ""), v = m ? m[1] : "x";
+    if (/^[\[(]/.test(t)) return ", " + v + " ∈ " + t;
+    return ", " + t.replace(/>=/g, "≥").replace(/<=/g, "≤");
+  }
+
+  // puntos validos de una funcion dentro del dominio, con su valor y
+  function valorEnPuntos(fn, xmin, xmax) {
+    var res = [];
+    fn.puntos.forEach(function (p) {
+      if (p.valor < xmin - 1e-9 || p.valor > xmax + 1e-9) return;
+      if (!dentroDe(fn.tramos, p.valor)) return;
+      var y;
+      try { y = Number(fn.f(p.valor)); } catch (e) { y = NaN; }
+      if (isFinite(y)) res.push({ x: p.valor, y: y });
+    });
+    return res;
+  }
+
+  // avisos del dominio propio de una fila
+  function erroresRestriccion(fila) {
+    var r = leerRestriccion(fila.dominio);
+    return r.error ? [r.error] : [];
+  }
+
+  // avisos de los puntos de una fila: mal escritos, fuera del dominio o donde
+  // la funcion no esta definida
+  function erroresPuntos(fila, op, i) {
+    var pts = leerPuntos(fila.puntos);
+    var errores = pts.filter(function (p) { return p.error; }).map(function (p) { return p.error; });
+    var c = compilar(fila.texto), dom = leerDominio(op), restr = leerRestriccion(fila.dominio);
+    if (!c.f) return errores;
+    var nombre = String(fila.nombre || "").trim() || nombrePorDefecto(i);
+    pts.forEach(function (p) {
+      if (p.error) return;
+      if (!dom.error && (p.valor < dom.a - 1e-9 || p.valor > dom.b + 1e-9)) {
+        errores.push("x = " + p.texto + " está fuera del eje x del gráfico");
+        return;
+      }
+      if (!restr.error && !dentroDe(restr.tramos, p.valor)) {
+        errores.push("x = " + p.texto + " está fuera del dominio de " + nombre.replace(/\(.*$/, ""));
+        return;
+      }
+      var y;
+      try { y = Number(c.f(p.valor)); } catch (e) { y = NaN; }
+      if (!isFinite(y)) errores.push(nombre.replace(/\(.*$/, "") + " no está definida en x = " + p.texto);
+    });
+    return errores;
+  }
+
   // Recorre la funcion y arma los tramos visibles de la curva, en pixeles.
   // Corta donde no esta definida, donde sale del rango y en los saltos
   // (asintotas, funciones partidas); al salir/entrar del rango agrega el punto del borde.
@@ -553,18 +662,19 @@
   // dominio y rango escritos en el panel (admiten π, fracciones, etc.)
   function leerDominio(op) {
     var a = evaluar(op.xMin), b = evaluar(op.xMax);
-    if (!(a < b)) return { error: "El dominio tiene que ir de un número menor a uno mayor" };
+    if (!(a < b)) return { error: "El eje x tiene que ir de un número menor a uno mayor" };
     return { a: a, b: b };
   }
   function leerRango(op) {
     var a = evaluar(op.yMin), b = evaluar(op.yMax);
-    if (!(a < b)) return { error: "El rango tiene que ir de un número menor a uno mayor" };
+    if (!(a < b)) return { error: "El eje y tiene que ir de un número menor a uno mayor" };
     return { a: a, b: b };
   }
 
   // Arma el grafico. (ox, oy) = esquina superior izquierda de la zona del grafico.
-  // ORDEN: cuadricula, ejes, marcas y numeracion, marco de la referencia; despues
-  // por cada funcion su linea en la referencia y su curva (de izquierda a derecha).
+  // ORDEN: ejes (x e y), cuadricula, marcas y numeracion, marco de la referencia; despues
+  // por cada funcion su linea en la referencia, sus puntos marcados (trazos y
+  // cruz, en el orden escrito) y su curva (de izquierda a derecha).
   function generarFunciones(op, ox, oy, agregar) {
     var fuente = FUENTES[op.fuente] || FUENTES.normal;
     var tamN = TAMANOS[op.tamNumeros] || 16;
@@ -575,7 +685,14 @@
     op.filas.forEach(function (fila, i) {
       var c = compilar(fila.texto);
       var nombre = String(fila.nombre || "").trim() || nombrePorDefecto(i);
-      if (c.f) funciones.push({ f: c.f, color: fila.color, codigo: fila.texto, nombre: nombre });
+      var puntos = leerPuntos(fila.puntos).filter(function (p) { return !p.error; });
+      var restr = leerRestriccion(fila.dominio), tramos = restr.error ? null : restr.tramos;
+      if (c.f) funciones.push({
+        f: c.f, color: fila.color, codigo: fila.texto, nombre: nombre, puntos: puntos,
+        tramos: tramos, dominio: restr.error ? "" : fila.dominio,
+        // la funcion "recortada": fuera de su dominio propio no existe
+        fd: tramos ? function (x) { return dentroDe(tramos, x) ? c.f(x) : NaN; } : c.f,
+      });
     });
 
     var dom = leerDominio(op);
@@ -591,7 +708,7 @@
       funciones.forEach(function (fn) {
         for (var i = 0; i <= 400; i++) {
           var y;
-          try { y = Number(fn.f(xmin + (xmax - xmin) * i / 400)); } catch (e) { y = NaN; }
+          try { y = Number(fn.fd(xmin + (xmax - xmin) * i / 400)); } catch (e) { y = NaN; }
           if (isFinite(y)) valores.push(y);
         }
       });
@@ -600,6 +717,12 @@
         var cut = valores.length > 50 ? Math.floor(valores.length * 0.02) : 0;
         ymin = valores[cut]; ymax = valores[valores.length - 1 - cut];
       } else { ymin = -1; ymax = 1; }
+      // los puntos marcados siempre tienen que verse
+      funciones.forEach(function (fn) {
+        valorEnPuntos(fn, xmin, xmax).forEach(function (p) {
+          ymin = Math.min(ymin, p.y); ymax = Math.max(ymax, p.y);
+        });
+      });
       if (ymax - ymin < 1e-9) ymin -= 1, ymax += 1;
       var pad = (ymax - ymin) * 0.08;
       ymin -= pad; ymax += pad;
@@ -654,7 +777,15 @@
     var yEje = ymin <= 0 && ymax >= 0 ? Y(0) : (ymin > 0 ? oy + H : oy);
     var xEje = xmin <= 0 && xmax >= 0 ? X(0) : (xmin > 0 ? ox : ox + W);
 
-    // 1. cuadricula
+    // 1. ejes con flecha en el sentido positivo y su nombre
+    agregar(linea(ox - 10, yEje, [[0, 0], [W + 30, 0]], { type: "arrow", endArrowhead: "arrow" }));
+    agregar(texto(ox + W + 24, yEje + 6, "x", tamN, fuente, TINTA, "left"));
+    agregar(linea(xEje, oy + H + 10, [[0, 0], [0, -(H + 30)]], { type: "arrow", endArrowhead: "arrow" }));
+    agregar(texto(xEje + 8, oy - 26 - tamN * fuente.lh / 2, "y", tamN, fuente, TINTA, "left"));
+
+    // cuadricula, recien despues de los dos ejes. Queda por encima de ellos,
+    // pero cada linea cruza su eje justo donde va una marca de la graduacion
+    // (que se dibuja despues, en negro), asi que el eje no se ve cortado.
     if (op.cuadricula) {
       marcasX.forEach(function (v) {
         if (Math.abs(X(v) - xEje) > 0.5) agregar(linea(X(v), oy, [[0, 0], [0, H]], { strokeColor: GRIS, strokeWidth: 1 }));
@@ -663,12 +794,6 @@
         if (Math.abs(Y(v) - yEje) > 0.5) agregar(linea(ox, Y(v), [[0, 0], [W, 0]], { strokeColor: GRIS, strokeWidth: 1 }));
       });
     }
-
-    // ejes con flecha en el sentido positivo y su nombre
-    agregar(linea(ox - 10, yEje, [[0, 0], [W + 30, 0]], { type: "arrow", endArrowhead: "arrow" }));
-    agregar(texto(ox + W + 24, yEje + 6, "x", tamN, fuente, TINTA, "left"));
-    agregar(linea(xEje, oy + H + 10, [[0, 0], [0, -(H + 30)]], { type: "arrow", endArrowhead: "arrow" }));
-    agregar(texto(xEje + 8, oy - 26 - tamN * fuente.lh / 2, "y", tamN, fuente, TINTA, "left"));
 
     // marcas y numeracion (el 0 se escribe una sola vez, en el cruce de los ejes)
     var origenVisible = xmin <= 0 && xmax >= 0 && ymin <= 0 && ymax >= 0;
@@ -695,7 +820,7 @@
       ref = { tam: tamN, muestra: 24, relleno: 8 };
       ref.altoFila = ref.tam * fuente.lh + 4;
       var anchoTxt = 0;
-      funciones.forEach(function (fn) { anchoTxt = Math.max(anchoTxt, medir(textoFuncion(fn.nombre, fn.codigo), ref.tam, fuente)); });
+      funciones.forEach(function (fn) { anchoTxt = Math.max(anchoTxt, medir(textoReferencia(fn), ref.tam, fuente)); });
       ref.ancho = ref.relleno * 2 + ref.muestra + 8 + anchoTxt;
       ref.alto = ref.relleno * 2 + ref.altoFila * funciones.length - 4;
       if (op.posReferencia === "arriba") {
@@ -710,20 +835,60 @@
       }));
     }
 
-    // 2. por cada funcion: su linea en la referencia y su curva
-    var muestras = Math.round(W * 1.5);
+    // 2. por cada funcion: su linea en la referencia, sus puntos marcados "a
+    // mano" y despues su curva. Cada punto: linea de trazos vertical desde el
+    // eje x, linea de trazos horizontal desde el eje y, y una cruz del color de
+    // la funcion en la interseccion (como cuando se grafica con una tabla de valores).
+    var muestras = Math.round(W * 1.5), brazo = 7;
+    var guia = { strokeColor: GUIA, strokeWidth: 1.5, strokeStyle: "dashed" };
     funciones.forEach(function (fn, i) {
       if (ref) {
         var rx = ref.x + ref.relleno;
         var fy = ref.y + ref.relleno + i * ref.altoFila + (ref.altoFila - 4) / 2;
         agregar(linea(rx, fy, [[0, 0], [ref.muestra, 0]], { strokeColor: fn.color, strokeWidth: grosor }));
         agregar(texto(rx + ref.muestra + 8, fy - ref.tam * fuente.lh / 2,
-          textoFuncion(fn.nombre, fn.codigo), ref.tam, fuente, fn.color, "left"));
+          textoReferencia(fn), ref.tam, fuente, fn.color, "left"));
       }
-      tramosCurva(fn.f, xmin, xmax, ymin, ymax, X, Y, muestras).forEach(function (pts) {
-        pts = simplificar(pts, 0.3);
-        if (pts.length > 1) agregar(trazo(pts, { strokeColor: fn.color, strokeWidth: grosor }));
+      valorEnPuntos(fn, xmin, xmax).forEach(function (p) {
+        if (p.y < ymin || p.y > ymax) return; // fuera del rango y elegido
+        var px = X(p.x), py = Y(p.y);
+        if (Math.abs(py - yEje) > 0.5) agregar(linea(px, yEje, [[0, 0], [0, py - yEje]], guia));
+        if (Math.abs(px - xEje) > 0.5) agregar(linea(xEje, py, [[0, 0], [px - xEje, 0]], guia));
+        var cruz = { strokeColor: fn.color, strokeWidth: Math.max(2, grosor) };
+        agregar(linea(px - brazo, py - brazo, [[0, 0], [2 * brazo, 2 * brazo]], cruz));
+        agregar(linea(px - brazo, py + brazo, [[0, 0], [2 * brazo, -2 * brazo]], cruz));
       });
+      // la curva: en todo el dominio del grafico, o solo en las partes del
+      // dominio propio de la funcion (muestreando desde cada extremo exacto)
+      var partes = fn.tramos ? fn.tramos.map(function (d) {
+        return { a: Math.max(d.a, xmin), b: Math.min(d.b, xmax) };
+      }).filter(function (d) { return d.a < d.b; }) : [{ a: xmin, b: xmax }];
+      partes.forEach(function (d) {
+        var n = Math.max(20, Math.round(muestras * (d.b - d.a) / (xmax - xmin)));
+        tramosCurva(fn.f, d.a, d.b, ymin, ymax, X, Y, n).forEach(function (pts) {
+          pts = simplificar(pts, 0.3);
+          if (pts.length > 1) agregar(trazo(pts, { strokeColor: fn.color, strokeWidth: grosor }));
+        });
+      });
+      // extremos del dominio propio: punto lleno si esta incluido, vacio si no
+      if (fn.tramos && op.marcarExtremos) {
+        fn.tramos.forEach(function (d) {
+          [[d.a, d.ca], [d.b, d.cb]].forEach(function (q, k) {
+            if (k === 1 && d.a === d.b) return; // [a, a]: un solo punto
+            var x = q[0];
+            if (!isFinite(x) || x < xmin - 1e-9 || x > xmax + 1e-9) return;
+            var y;
+            try { y = Number(fn.f(x)); } catch (e) { y = NaN; }
+            if (!isFinite(y) || y < ymin || y > ymax) return;
+            var r = Math.max(4.5, grosor * 1.8);
+            agregar(base("ellipse", {
+              x: X(x) - r, y: Y(y) - r, width: 2 * r, height: 2 * r,
+              strokeColor: fn.color, strokeWidth: Math.max(1.5, grosor * 0.8),
+              backgroundColor: q[1] ? fn.color : "#ffffff", fillStyle: "solid",
+            }));
+          });
+        });
+      }
     });
   }
 
@@ -790,12 +955,12 @@
         xMin: "-5", xMax: "5", yAuto: true, yMin: "-5", yMax: "5",
         tamano: "medio", escalaIgual: false, tamNumeros: "S", fuente: "normal", grosor: "normal",
         cuadricula: true, cuadrada: true, soloEnteros: false, ocultarNumeros: false,
-        referencia: true, posReferencia: "derecha",
+        referencia: true, posReferencia: "derecha", marcarExtremos: true,
       },
       contenido: ["filas", "xMin", "xMax", "yAuto", "yMin", "yMax"],
       ejemplo: {
-        filas: [{ nombre: "f", texto: "x => x**2 - 4", color: COLORES[0] },
-          { nombre: "g", texto: "x => 2*x + 1", color: COLORES[1] }],
+        filas: [{ nombre: "f", texto: "x => x**2 - 4", color: COLORES[0], puntos: "-3, -2, -1, 0, 1, 2, 3" },
+          { nombre: "g", texto: "x => 2*x + 1", color: COLORES[1], dominio: "x >= -2", puntos: "-2, 0, 2" }],
         xMin: "-4", xMax: "4", yAuto: true,
       },
       textoEjemplo: "Inserta un gráfico nuevo de ejemplo con dos funciones",
@@ -803,12 +968,29 @@
       placeholder: "Ej: x => x**2 - 3",
       // cada funcion tiene un nombre editable (f, g, h... o f(x), P(t))
       nombreFila: { porDefecto: nombrePorDefecto, titulo: "Nombre de la función: f, g, h... o f(x), P(t)" },
+      // campos extra debajo de cada funcion
+      extrasFila: [
+        // dominio propio: la funcion se grafica solo ahi
+        { clave: "dominio", etiqueta: "Dominio",
+          placeholder: "Ej: x > 1  o  (1, ∞)   (vacío = todo)",
+          titulo: "Parte de x donde se grafica esta función: intervalo como (1, ∞) o [-2, 3), " +
+            "o desigualdad como x > 1, x ≤ 3, -2 < x <= 3",
+          errores: erroresRestriccion },
+        // valores de x donde se marca el punto de la funcion (trazos + cruz)
+        { clave: "puntos", etiqueta: "Puntos x",
+          placeholder: "Ej: -2, -1, 0, 1, 2   (vacío = ninguno)",
+          titulo: "Valores de x a marcar, separados por coma (con decimales con coma, por punto y coma)",
+          errores: erroresPuntos },
+      ],
       simbolos: [["x =>", "x => ", "Escribe x => donde está el cursor"], ["**", "**", "Potencia: x**2"],
         ["π", "PI", "Escribe PI (π) donde está el cursor"]],
       ayuda: "Cada fila es una función anónima de JavaScript: x => x**2 - 3, " +
         "x => sqrt(x), x => 1/x, x => x < 0 ? -x : x**2. Se puede usar Math sin escribir " +
         "«Math.»: sin, cos, tan, sqrt, abs, log, exp, PI, E. La potencia es ** (no ^). " +
-        "El dominio admite π y fracciones: −2π, 1/2. " +
+        "Los ejes admiten π y fracciones: −2π, 1/2. " +
+        "En «Dominio» de cada función se puede limitar dónde se grafica: x > 1, (1, ∞), " +
+        "-2 < x <= 3. En «Puntos x» se escriben valores de x para marcar sus puntos " +
+        "con líneas de trazos y una cruz (como al graficar con una tabla de valores). " +
         "Seleccioná un gráfico ya insertado para editarlo.",
       erroresFila: function (t) {
         var c = compilar(t);
@@ -822,11 +1004,11 @@
       opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
         ui.arriba(function () {
-          ui.campos("Dominio x", [
+          ui.campos("Eje x", [
             { clave: "xMin", prefijo: "de", texto: true, titulo: "Admite π y fracciones: -2π, 1/2" },
             { clave: "xMax", prefijo: "a", texto: true, titulo: "Admite π y fracciones: 2π, 7/2" },
           ], function () { var d = leerDominio(op); return d.error || ""; });
-          ui.seg("Rango y", "yAuto", [[true, "Automático"], [false, "Manual"]], true);
+          ui.seg("Eje y", "yAuto", [[true, "Automático"], [false, "Manual"]], true);
           if (!op.yAuto) {
             ui.campos("", [
               { clave: "yMin", prefijo: "de", texto: true },
@@ -845,6 +1027,7 @@
         ui.chk("Graduación solo en enteros", "soloEnteros");
         ui.chk("Ocultar numeración", "ocultarNumeros");
         ui.chk("Incluir referencia", "referencia");
+        ui.chk("Marcar extremos del dominio (● incluido, ○ excluido)", "marcarExtremos");
       },
     },
   };
@@ -987,6 +1170,9 @@
     ".pz-gen input[type=text]{flex:1;min-width:0;padding:5px 7px;border:1px solid #c9c8d1;border-radius:6px;",
     "font:14px Cascadia,Consolas,monospace;background:transparent;color:inherit}",
     ".pz-gen input.nombre{flex:none;width:52px;text-align:center}",
+    ".pz-gen .subfila{display:flex;gap:6px;align-items:center;margin:4px 34px 0 0}",
+    ".pz-gen .subfila span{flex:none;width:52px;font-size:11px;opacity:.75;text-align:right;line-height:1.1}",
+    ".pz-gen input.extra{font-size:13px;padding:3px 7px}",
     ".pz-gen .invalida input.codigo,.pz-gen input.invalido{border-color:#e03131;background:rgba(224,49,49,.07)}",
     ".pz-gen input[type=color]{width:28px;height:28px;padding:0;border:1px solid #c9c8d1;border-radius:6px;background:none;cursor:pointer}",
     ".pz-gen .error{color:#e03131;font-size:12px;margin:2px 0 0 2px}",
@@ -1145,7 +1331,8 @@
         c.focus();
         c.selectionStart = c.selectionEnd = c.value.length;
       }
-      if (!c || !this.el.querySelector(".filas").contains(c) || !c.classList.contains("codigo")) {
+      if (!c || !this.el.querySelector(".filas").contains(c) ||
+          !(c.classList.contains("codigo") || c.classList.contains("extra"))) {
         c = this.el.querySelector(".filas input.codigo");
         if (!c) return;
         c.focus();
@@ -1160,13 +1347,14 @@
     pintarFilas: function (enfocarUltima) {
       var self = this, gen = this.gen(), cont = this.el.querySelector(".filas");
       cont.innerHTML = "";
+      this.validadores = [];
       this.op.filas.forEach(function (f, i) {
         var caja = document.createElement("div");
         caja.innerHTML = '<div class="fila">' +
           (gen.nombreFila ? '<input type="text" class="nombre" spellcheck="false" autocomplete="off">' : "") +
           '<input type="text" class="codigo" spellcheck="false" autocomplete="off">' +
           '<input type="color"><button class="quitar" title="Quitar">✕</button></div>' +
-          '<div class="error"></div>';
+          '<div class="extras"></div><div class="error"></div>';
         var t = caja.querySelector("input.codigo"), c = caja.querySelector("input[type=color]");
         t.placeholder = gen.placeholder;
         t.value = f.texto; c.value = f.color;
@@ -1178,13 +1366,36 @@
           nom.value = f.nombre || "";
           nom.oninput = function () { f.nombre = nom.value; self.cambio(); };
         }
+        // campos extra debajo de la fila (dominio propio, puntos a marcar...)
+        var extras = (gen.extrasFila || []).map(function (def) {
+          var sub = document.createElement("div");
+          sub.className = "subfila";
+          sub.innerHTML = '<span></span><input type="text" class="extra" spellcheck="false" autocomplete="off">';
+          sub.querySelector("span").textContent = def.etiqueta;
+          var inp = sub.querySelector("input");
+          inp.classList.add(def.clave);
+          inp.placeholder = def.placeholder;
+          inp.title = def.titulo;
+          inp.value = f[def.clave] || "";
+          inp.oninput = function () { f[def.clave] = inp.value; self.cambio(); };
+          caja.querySelector(".extras").appendChild(sub);
+          return { def: def, inp: inp };
+        });
+        // los avisos de los extras dependen de la funcion y de los ejes, asi que
+        // se revisan en cada cambio (ver cambio())
         function validar() {
           var errores = gen.erroresFila(t.value);
           caja.classList.toggle("invalida", errores.length > 0);
+          extras.forEach(function (x) {
+            var e = x.def.errores(f, self.op, i);
+            x.inp.classList.toggle("invalido", e.length > 0);
+            errores = errores.concat(e);
+          });
           caja.querySelector(".error").textContent = errores.join(" · ");
         }
         validar();
-        t.oninput = function () { f.texto = t.value; validar(); self.cambio(); };
+        self.validadores.push(validar);
+        t.oninput = function () { f.texto = t.value; self.cambio(); };
         c.oninput = function () { f.color = c.value; self.cambio(); };
         caja.querySelector(".quitar").onclick = function () {
           self.op.filas.splice(i, 1);
@@ -1292,6 +1503,7 @@
 
     // cada cambio: se guarda y, si hay un dibujo vinculado, se redibuja en vivo
     cambio: function () {
+      (this.validadores || []).forEach(function (v) { v(); });
       this.guardar();
       var self = this, tipo = this.tipo;
       clearTimeout(this.temporizador);

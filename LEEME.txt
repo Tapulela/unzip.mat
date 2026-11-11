@@ -113,8 +113,23 @@ GRAFICOS DE FUNCIONES (prototipo)
   Se pueden usar las funciones de Math sin escribir "Math.": sin, cos, tan,
   sqrt, abs, log, exp, PI, E. La potencia es ** (x**2); ^ no sirve.
   Si algo esta mal escrito, la fila se pone en rojo y dice por que.
-- "Dominio x": desde y hasta donde se grafica (acepta π y fracciones: -2π).
-  "Rango y": Automatico (lo calcula mirando las funciones) o Manual.
+- Debajo de cada funcion hay un campo "Dominio" para graficarla solo en una
+  parte. Se puede escribir como desigualdad (x > 1, x >= 1, x ≤ 3,
+  -2 < x <= 3) o como intervalo ((1, ∞), [-2, 3), (-∞, 0) ∪ (1, ∞); con
+  decimales con coma, separa con punto y coma: [0,5; 2)). Vacio = todo el
+  eje x. En los extremos se marca un punto lleno si el extremo esta incluido
+  y uno vacio si no (se puede desactivar con "Marcar extremos del dominio").
+  La referencia lo muestra: f(x) = x², x > 1.
+- Debajo hay otro campo, "Puntos x", para "dibujarla a mano":
+  escribi valores de x separados por coma (-2, -1, 0, 1/2, π; con decimales
+  con coma, separalos con punto y coma: 0,5; 1,5). Para cada valor se marca:
+  una linea de trazos gris vertical desde el eje x, otra horizontal desde el
+  eje y, y una cruz del color de la funcion en el punto (x, f(x)). Despues se
+  dibuja la curva a partir de la formula, como siempre. Si un valor esta mal
+  escrito, fuera del eje x o del dominio de la funcion, o la funcion no
+  existe ahi, la fila lo avisa. Vacio = sin puntos.
+- "Eje x": desde y hasta donde va el grafico (acepta π y fracciones: -2π).
+  "Eje y": Automatico (lo calcula mirando las funciones) o Manual.
 - "Cuadrícula cuadrada" (activada por defecto): los cuadros de la cuadricula
   son cuadrados. Para lograrlo se ajusta el alto del grafico y el rango y se
   extiende hasta la linea de cuadricula siguiente. El paso de y puede ser
@@ -132,8 +147,10 @@ GRAFICOS DE FUNCIONES (prototipo)
 - Igual que la recta: "Insertar en el centro", "Ejemplo", "Restablecer", y si
   seleccionas un grafico ya insertado con el panel abierto, se edita en vivo.
   El panel cambia solo a "Recta real" o "Funciones" segun lo que selecciones.
-- Al animar, aparece en este orden: cuadricula, ejes y numeracion, y despues
-  cada funcion (su linea en la referencia y su curva de izquierda a derecha).
+- Al animar, aparece en este orden: los dos ejes, la cuadricula, la
+  numeracion, y despues cada funcion (su linea en la referencia, sus puntos
+  marcados en el orden en que los escribiste y su curva de izquierda a
+  derecha).
 - Ojo: lo que escribis en las filas es codigo que se ejecuta en el navegador.
   Una funcion que no termina nunca (por ejemplo un while infinito) cuelga la
   pestaña.

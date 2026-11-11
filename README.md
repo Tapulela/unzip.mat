@@ -33,7 +33,12 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   función anónima de JavaScript (`x => x**2 - 3`, con `Math` disponible sin
   prefijo) que se grafica sobre ejes cartesianos con cuadrícula, dominio y rango
   configurables. Las curvas son elementos `line` (muestreo + Douglas-Peucker) que
-  se cortan en asíntotas, saltos y puntos no definidos. El código de las
+  se cortan en asíntotas, saltos y puntos no definidos. Cada función puede
+  tener un dominio propio (desigualdad o intervalos) donde se grafica, con los
+  extremos marcados como punto lleno (incluido) o vacío (excluido). También puede
+  tener valores de x a marcar: antes de su curva se dibujan, por cada valor,
+  líneas de trazos grises desde los ejes y una cruz del color de la función en
+  (x, f(x)), simulando el graficado manual con tabla de valores. El código de las
   funciones se ejecuta en la página y viaja dentro del dibujo (`customData`) a
   las otras ventanas de la sala.
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
