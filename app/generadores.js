@@ -255,7 +255,7 @@
     var ints = [], conjuntos = [];
     op.filas.forEach(function (f) {
       var propios = leerIntervalos(f.texto || "").filter(function (r) { return !r.error; });
-      propios.forEach(function (r) { r.color = f.color; ints.push(r); });
+      propios.forEach(function (r) { r.color = f.color; r.idx = ints.length; ints.push(r); });
       if (propios.length) conjuntos.push({ color: f.color, ints: propios });
     });
     var simbolo = op.operacion === "interseccion" ? " ∩ " : " ∪ ";
@@ -316,42 +316,90 @@
       if (!op.ocultarNumeros || cero) agregar(texto(xv, yGrilla, formatear(v), tamG, fuente, TINTA, "center"));
     }
 
-    // intervalos: rayado, corchetes/parentesis y extremos tal como se escribieron
+    // ORDEN DE LOS ELEMENTOS: se crean en el orden en que conviene verlos
+    // aparecer (por ejemplo al animar la escena con excalidraw-animate):
+    //  1. recta con graduacion (arriba) y el marco vacio de la referencia
+    //  2. por cada conjunto (fila): su linea en la referencia; y por cada
+    //     intervalo del conjunto: sus extremos escritos debajo de la recta y
+    //     luego el intervalo (signo izquierdo, rayado de izquierda a derecha,
+    //     signo derecho; o el punto si es [a, a])
+    //  3. la operacion y su resultado, de izquierda a derecha
+
     var yExtremos = yGrilla + tamG * fuente.lh + 8;
     var dx = Math.max(4, Math.round(sep * 0.35)), dy = 12, h = sg.h, w = sg.w;
+
+    // 1. (cont.) marco de la referencia: cuadro arriba a la derecha
+    var ref = null;
+    if (op.referencia && conjuntos.length) {
+      ref = { tam: TAMANOS[{ XL: "L", L: "M", M: "S", S: "S" }[op.tamExtremos] || "S"], muestra: 24, relleno: 10 };
+      ref.altoFila = Math.max(ref.tam * fuente.lh, 16) + 6;
+      var anchoTxt = 0;
+      conjuntos.forEach(function (c) { anchoTxt = Math.max(anchoTxt, medir(textoConjunto(c), ref.tam, fuente)); });
+      ref.ancho = ref.relleno * 2 + ref.muestra + 10 + anchoTxt;
+      ref.alto = ref.relleno * 2 + ref.altoFila * conjuntos.length - 6;
+      ref.x = ox + L - ref.ancho;
+      ref.y = oy - h - 16 - ref.alto;
+      agregar(base("rectangle", {
+        x: ref.x, y: ref.y, width: ref.ancho, height: ref.alto, strokeWidth: 1, roundness: { type: 3 },
+      }));
+    }
+
+    // 2.1 linea del conjunto en la referencia: muestra rayada + texto en su color
+    function filaReferencia(c, i) {
+      var fy = ref.y + ref.relleno + i * ref.altoFila, alto = ref.altoFila - 6;
+      agregar(base("rectangle", {
+        x: ref.x + ref.relleno, y: fy + alto / 2 - 7, width: ref.muestra, height: 14,
+        strokeColor: c.color, backgroundColor: c.color, fillStyle: "hachure", strokeWidth: 1,
+      }));
+      agregar(texto(ref.x + ref.relleno + ref.muestra + 10, fy + (alto - ref.tam * fuente.lh) / 2,
+        textoConjunto(c), ref.tam, fuente, c.color, "left"));
+    }
+
+    // 2.2 extremos finitos escritos debajo (sin repetir un mismo valor en el mismo lugar)
     var etiquetas = {};
-    ints.forEach(function (r, idx) {
+    function extremos(r) {
+      [[r.izq, X(r.izq.valor)], [r.der, X(r.der.valor)]].forEach(function (q) {
+        if (!isFinite(q[0].valor)) return;
+        var clave = q[0].texto + "@" + Math.round(q[1]);
+        if (etiquetas[clave]) return;
+        etiquetas[clave] = true;
+        agregar(texto(q[1], yExtremos, q[0].texto, tamE, fuente, r.color, "center"));
+      });
+    }
+
+    // 2.3 el intervalo: signo izquierdo, rayado (izquierda a derecha), signo derecho
+    function signo(xs, car, izquierdo, c) {
+      var d = izquierdo ? w : -w; // hacia dentro del intervalo
+      var pts = car === "[" || car === "]"
+        ? [[0, 0], [-d, 0], [-d, 2 * h], [0, 2 * h]]
+        : [[0, 0], [-d, h], [0, 2 * h]];
+      agregar(linea(xs + d, oy - h, pts, {
+        strokeColor: c, strokeWidth: sg.trazo, roundness: car === "(" || car === ")" ? { type: 2 } : null,
+      }));
+    }
+    function intervalo(r) {
       var xa = X(r.izq.valor), xb = X(r.der.valor), c = r.color;
-      if (xa === xb) {
+      if (xa === xb) { // [a, a] es solo el punto
         agregar(base("ellipse", {
           x: xa - 5, y: oy - 5, width: 10, height: 10, strokeColor: c, backgroundColor: c,
         }));
+        return;
       }
+      if (isFinite(r.izq.valor)) signo(xa, r.cizq, true, c);
       for (var x = xa; x + dx <= xb + 0.5; x += sep) {
-        agregar(idx % 2 === 0
+        agregar(r.idx % 2 === 0
           ? linea(x, oy - dy, [[0, 0], [dx, 2 * dy]], { strokeColor: c, strokeWidth: 1.5 })
           : linea(x + dx, oy - dy, [[0, 0], [-dx, 2 * dy]], { strokeColor: c, strokeWidth: 1.5 }));
       }
-      function signo(xs, car, izquierdo) {
-        var d = izquierdo ? w : -w; // hacia dentro del intervalo
-        var pts = car === "[" || car === "]"
-          ? [[0, 0], [-d, 0], [-d, 2 * h], [0, 2 * h]]
-          : [[0, 0], [-d, h], [0, 2 * h]];
-        agregar(linea(xs + d, oy - h, pts, {
-          strokeColor: c, strokeWidth: sg.trazo, roundness: car === "(" || car === ")" ? { type: 2 } : null,
-        }));
-      }
-      [[r.izq, r.cizq, xa, true], [r.der, r.cder, xb, false]].forEach(function (q) {
-        if (!isFinite(q[0].valor)) return;
-        if (xa !== xb) signo(q[2], q[1], q[3]); // [a, a] es solo el punto
-        var clave = q[0].texto + "@" + Math.round(q[2]);
-        if (etiquetas[clave]) return;
-        etiquetas[clave] = true;
-        agregar(texto(q[2], yExtremos, q[0].texto, tamE, fuente, c, "center"));
-      });
+      if (isFinite(r.der.valor)) signo(xb, r.cder, false, c);
+    }
+
+    conjuntos.forEach(function (c, i) {
+      if (ref) filaReferencia(c, i);
+      c.ints.forEach(function (r) { extremos(r); intervalo(r); });
     });
 
-    // operacion entre los conjuntos (una fila = un conjunto). Con interseccion,
+    // 3. operacion entre los conjuntos (una fila = un conjunto). Con interseccion,
     // una fila que ya es union de varios intervalos va entre parentesis.
     // Con el resultado activado se agrega "= ..." (o solo el resultado si la
     // operacion no se escribe).
@@ -394,30 +442,6 @@
           xt += medir(limpio, tamE, fuente);
         }
         xt += medir(s.t.slice(izq + limpio.length), tamE, fuente);
-      });
-    }
-
-    // referencia: cuadro arriba a la derecha con cada conjunto en su color
-    if (op.referencia && conjuntos.length) {
-      var tamR = TAMANOS[{ XL: "L", L: "M", M: "S", S: "S" }[op.tamExtremos] || "S"];
-      var altoFila = Math.max(tamR * fuente.lh, 16) + 6, muestra = 24, relleno = 10;
-      var anchoTxt = 0;
-      conjuntos.forEach(function (c) { anchoTxt = Math.max(anchoTxt, medir(textoConjunto(c), tamR, fuente)); });
-      var anchoCaja = relleno * 2 + muestra + 10 + anchoTxt;
-      var altoCaja = relleno * 2 + altoFila * conjuntos.length - 6;
-      var cx = ox + L - anchoCaja, cy = oy - h - 16 - altoCaja;
-      agregar(base("rectangle", {
-        x: cx, y: cy, width: anchoCaja, height: altoCaja, strokeWidth: 1, roundness: { type: 3 },
-      }));
-      conjuntos.forEach(function (c, i) {
-        var fy = cy + relleno + i * altoFila, alto = altoFila - 6;
-        // muestra rayada del color del conjunto
-        agregar(base("rectangle", {
-          x: cx + relleno, y: fy + alto / 2 - 7, width: muestra, height: 14,
-          strokeColor: c.color, backgroundColor: c.color, fillStyle: "hachure", strokeWidth: 1,
-        }));
-        agregar(texto(cx + relleno + muestra + 10, fy + (alto - tamR * fuente.lh) / 2,
-          textoConjunto(c), tamR, fuente, c.color, "left"));
       });
     }
     return els;

@@ -84,6 +84,9 @@ RECTA REAL CON INTERVALOS (prototipo)
   dibujo comun de la pizarra: se mueve, se borra y se ve en la proyeccion.
 - Para cambiarla despues, seleccionala con el panel abierto: los cambios se
   aplican en vivo sobre esa recta. Ctrl+Z deshace.
+- Si animas la pizarra (por ejemplo con excalidraw-animate), la recta aparece
+  en este orden: recta y numeracion; despues cada conjunto (su linea en la
+  referencia, sus extremos y su intervalo rayado); al final la operacion.
 - Tamaños de los numeros: S, M, L y XL, los mismos de la pizarra.
   "Márgenes" (izquierdo y derecho, 10% por defecto) es el espacio que queda
   antes del primer extremo y despues del ultimo, en % del largo de la recta.

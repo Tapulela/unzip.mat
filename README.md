@@ -24,6 +24,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
   con la sala y se puede editar. Las opciones quedan en `customData` del grupo:
   al seleccionar la recta con el panel abierto, se regenera en vivo.
+  Los elementos se crean en orden de "dibujo" (útil para animar la escena, por
+  ejemplo con excalidraw-animate): recta y graduación (más el marco de la
+  referencia); luego, por cada conjunto, su línea en la referencia y, por cada
+  intervalo, sus extremos escritos y el intervalo (signo izquierdo, rayado de
+  izquierda a derecha, signo derecho); por último la operación y su resultado.
 
 - Sin servicios externos: se quitó la analítica (Simple Analytics), el CDN de fuentes de Excalidraw, Google Fonts y la redirección a Excalidraw+. Estos cambios se hicieron directamente sobre `app/index.html` y `app/assets/*.css` (no están en el diff). La fuente de la interfaz (Assistant) usa solo el peso Regular local.
 
