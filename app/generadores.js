@@ -1,11 +1,16 @@
-// Generadores de dibujos matematicos (prototipo): recta real con intervalos.
-//  - Boton "Generadores" en la barra de herramientas: abre un panel a la derecha.
-//  - Se escriben intervalos como (-2, 1/2] o [1, ∞) y se insertan en el centro de
-//    la vista como elementos nativos de Excalidraw (agrupados, editables, se
-//    sincronizan con las otras ventanas de la sala como cualquier dibujo).
-//  - Si se selecciona una recta generada, el panel la carga y los cambios se
-//    aplican en vivo sobre ella (manteniendo su posicion). Ctrl+Z deshace.
+// Generadores de dibujos matematicos (prototipo):
+//  - Recta real con intervalos.
+//  - Graficos de funciones de variable real, definidas como funciones anonimas
+//    de JavaScript (x => x**2 - 3).
+// Boton "Generadores" en la barra de herramientas: abre un panel a la derecha,
+// con un selector arriba para elegir el generador.
+//  - Los dibujos se insertan en el centro de la vista como elementos nativos de
+//    Excalidraw (agrupados, editables, se sincronizan con las otras ventanas de
+//    la sala como cualquier dibujo).
+//  - Si se selecciona un dibujo generado, el panel lo carga y los cambios se
+//    aplican en vivo sobre el (manteniendo su posicion). Ctrl+Z deshace.
 //  - Los tamanos de texto usan las unidades de Excalidraw: S, M, L, XL.
+//  - Los elementos se crean en orden de "dibujo" (util para animar la escena).
 // Usa window.__pizarraAPI (expuesta por el bundle).
 (function () {
   function api() { return window.__pizarraAPI; }
@@ -18,37 +23,20 @@
     mano: { id: 5, css: "Excalifont", lh: 1.25, nombre: "A mano" },
     codigo: { id: 3, css: "Cascadia", lh: 1.2, nombre: "Código" },
   };
-  var LARGOS = { corta: 500, media: 800, larga: 1100 };
-  var RAYADOS = { poco: 26, normal: 18, denso: 11 };
-  // parentesis y corchetes: media altura, ancho y grosor del trazo
-  var SIGNOS = {
-    S: { h: 13, w: 7, trazo: 2 },
-    M: { h: 18, w: 9, trazo: 2.5 },
-    L: { h: 26, w: 12, trazo: 3 },
-    XL: { h: 36, w: 16, trazo: 3.5 },
-  };
   var COLORES = ["#1971c2", "#e03131", "#2f9e44", "#f08c00", "#9c36b5", "#0c8599"];
   var TINTA = "#1e1e1e";
-  var CLAVE_OPCIONES = "pizarra-generador-recta";
-
-  var DEFECTO = {
-    filas: [{ texto: "(-2, 1/2]", color: COLORES[0] }, { texto: "[1, ∞)", color: COLORES[1] }],
-    operacion: "union", referencia: false, margenIzq: 10, margenDer: 10,
-    largo: "media", tamGrilla: "S", tamExtremos: "L", tamSignos: "M", fuente: "normal", rayado: "normal",
-    soloEnteros: false, ocultarNumeros: false, mostrarUnion: true, mostrarResultado: true,
-  };
-
-  var EJEMPLO = [{ texto: "[-3, 2)", color: COLORES[0] }, { texto: "(0, 5]", color: COLORES[1] }];
+  var GRIS = "#ced4da";
 
   function rnd() { return Math.floor(Math.random() * 2147483647); }
   function nuevoId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
   function copiar(o) { return JSON.parse(JSON.stringify(o)); }
+  function colorFila(i) { return COLORES[i % COLORES.length]; }
 
-  // -------------------------------------------------------------- parsing
-  // Evalua un extremo: enteros, decimales, fracciones, π, √, potencias.
-  // Ej: "1/2", "-3/2", "2π/3", "√2", "1+√2", "0,5" (con ; como separador).
+  // -------------------------------------------------------------- numeros
+  // Evalua un numero escrito: enteros, decimales, fracciones, π, √, potencias.
+  // Ej: "1/2", "-3/2", "2π/3", "√2", "1+√2", "0,5", "-2pi".
   function evaluar(s) {
-    s = s.replace(/\s+/g, "").replace(/[−–]/g, "-").replace(/pi/gi, "π")
+    s = String(s).replace(/\s+/g, "").replace(/[−–]/g, "-").replace(/pi/gi, "π")
       .replace(/sqrt/gi, "√").replace(/,/g, ".").replace(/[·×]/g, "*");
     var i = 0;
     function expr() {
@@ -86,43 +74,20 @@
     try { var v = expr(); return i === s.length && isFinite(v) ? v : NaN; } catch (e) { return NaN; }
   }
 
-  function leerExtremo(txt) {
-    var t = txt.trim(), n = t.replace(/\s+/g, "").replace(/[−–]/g, "-").toLowerCase();
-    var m = /^([+-]?)(∞|inf|infinito|oo)$/.exec(n);
-    if (m) return { texto: t, valor: m[1] === "-" ? -Infinity : Infinity };
-    return { texto: t, valor: evaluar(t) };
+  function formatear(v) {
+    if (Math.abs(v) < 1e-9) return "0";
+    return String(Number(v.toFixed(6))).replace(".", ",").replace("-", "−");
   }
 
-  // Un texto puede tener varios intervalos unidos con ∪ (o " U ").
-  // Devuelve [{izq, der, cizq, cder, original}] o [{error, original}]
-  function leerIntervalos(texto) {
-    return texto.split(/∪|\s[uU]\s/).map(function (p) { return p.trim(); }).filter(Boolean)
-      .map(leerIntervalo);
+  function pasoLindo(rango, soloEnteros) {
+    var crudo = rango / 10, p = Math.pow(10, Math.floor(Math.log10(crudo))), f = crudo / p;
+    var paso = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+    return soloEnteros ? Math.max(1, Math.round(paso)) : paso;
   }
-
-  function leerIntervalo(t) {
-    var r = { original: t };
-    var a = t[0], c = t[t.length - 1];
-    if (a !== "(" && a !== "[") return (r.error = "Debe empezar con ( o ["), r;
-    if (c !== ")" && c !== "]") return (r.error = "Debe terminar con ) o ]"), r;
-    var interior = t.slice(1, -1);
-    var partes = interior.indexOf(";") >= 0 ? interior.split(";") : interior.split(",");
-    if (partes.length !== 2) {
-      return (r.error = partes.length > 2
-        ? "Si usás decimales con coma, separá los extremos con ;"
-        : "Faltan los dos extremos separados por coma"), r;
-    }
-    var izq = leerExtremo(partes[0]), der = leerExtremo(partes[1]);
-    if (isNaN(izq.valor)) return (r.error = "No se entiende el extremo «" + izq.texto + "»"), r;
-    if (isNaN(der.valor)) return (r.error = "No se entiende el extremo «" + der.texto + "»"), r;
-    if (izq.valor === Infinity) return (r.error = "+∞ no puede ser el extremo izquierdo"), r;
-    if (der.valor === -Infinity) return (r.error = "−∞ no puede ser el extremo derecho"), r;
-    if ((izq.valor === -Infinity && a === "[") || (der.valor === Infinity && c === "]"))
-      return (r.error = "∞ siempre va con paréntesis"), r;
-    if (izq.valor > der.valor) return (r.error = "El extremo izquierdo es mayor que el derecho"), r;
-    if (izq.valor === der.valor && (a === "(" || c === ")")) return (r.error = "Ese intervalo está vacío"), r;
-    r.izq = izq; r.der = der; r.cizq = a; r.cder = c;
-    return r;
+  // siguiente paso "lindo": 1 -> 2 -> 5 -> 10 -> 20...
+  function pasoSiguiente(paso) {
+    var p10 = Math.pow(10, Math.floor(Math.log10(paso) + 1e-9)), man = Math.round(paso / p10);
+    return (man < 2 ? 2 : man < 5 ? 5 : 10) * p10;
   }
 
   // ------------------------------------------------- construccion de elementos
@@ -162,20 +127,71 @@
     return base(tipo, props);
   }
 
+  // linea a partir de puntos absolutos (el primero pasa a ser el origen)
+  function trazo(abs, p) {
+    var x0 = abs[0][0], y0 = abs[0][1];
+    return linea(x0, y0, abs.map(function (q) { return [q[0] - x0, q[1] - y0]; }), p);
+  }
+
   function texto(x, y, str, tam, fuente, color, alineacion) {
     var w = medir(str, tam, fuente);
     return base("text", {
-      x: alineacion === "center" ? x - w / 2 : x, y: y, width: w, height: tam * fuente.lh,
+      x: alineacion === "center" ? x - w / 2 : alineacion === "right" ? x - w : x,
+      y: y, width: w, height: tam * fuente.lh,
       strokeColor: color, text: str, originalText: str, fontSize: tam, fontFamily: fuente.id,
       textAlign: alineacion || "left", verticalAlign: "top", containerId: null,
       autoResize: true, lineHeight: fuente.lh,
     });
   }
 
-  function pasoLindo(rango, soloEnteros) {
-    var crudo = rango / 10, p = Math.pow(10, Math.floor(Math.log10(crudo))), f = crudo / p;
-    var paso = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
-    return soloEnteros ? Math.max(1, Math.round(paso)) : paso;
+  // =================================================== GENERADOR: RECTA REAL
+  var LARGOS = { corta: 500, media: 800, larga: 1100 };
+  var RAYADOS = { poco: 26, normal: 18, denso: 11 };
+  // parentesis y corchetes: media altura, ancho y grosor del trazo
+  var SIGNOS = {
+    S: { h: 13, w: 7, trazo: 2 },
+    M: { h: 18, w: 9, trazo: 2.5 },
+    L: { h: 26, w: 12, trazo: 3 },
+    XL: { h: 36, w: 16, trazo: 3.5 },
+  };
+
+  function leerExtremo(txt) {
+    var t = txt.trim(), n = t.replace(/\s+/g, "").replace(/[−–]/g, "-").toLowerCase();
+    var m = /^([+-]?)(∞|inf|infinito|oo)$/.exec(n);
+    if (m) return { texto: t, valor: m[1] === "-" ? -Infinity : Infinity };
+    return { texto: t, valor: evaluar(t) };
+  }
+
+  // Un texto puede tener varios intervalos unidos con ∪ (o " U ").
+  // Devuelve [{izq, der, cizq, cder, original}] o [{error, original}]
+  function leerIntervalos(texto) {
+    return texto.split(/∪|\s[uU]\s/).map(function (p) { return p.trim(); }).filter(Boolean)
+      .map(leerIntervalo);
+  }
+
+  function leerIntervalo(t) {
+    var r = { original: t };
+    var a = t[0], c = t[t.length - 1];
+    if (a !== "(" && a !== "[") return (r.error = "Debe empezar con ( o ["), r;
+    if (c !== ")" && c !== "]") return (r.error = "Debe terminar con ) o ]"), r;
+    var interior = t.slice(1, -1);
+    var partes = interior.indexOf(";") >= 0 ? interior.split(";") : interior.split(",");
+    if (partes.length !== 2) {
+      return (r.error = partes.length > 2
+        ? "Si usás decimales con coma, separá los extremos con ;"
+        : "Faltan los dos extremos separados por coma"), r;
+    }
+    var izq = leerExtremo(partes[0]), der = leerExtremo(partes[1]);
+    if (isNaN(izq.valor)) return (r.error = "No se entiende el extremo «" + izq.texto + "»"), r;
+    if (isNaN(der.valor)) return (r.error = "No se entiende el extremo «" + der.texto + "»"), r;
+    if (izq.valor === Infinity) return (r.error = "+∞ no puede ser el extremo izquierdo"), r;
+    if (der.valor === -Infinity) return (r.error = "−∞ no puede ser el extremo derecho"), r;
+    if ((izq.valor === -Infinity && a === "[") || (der.valor === Infinity && c === "]"))
+      return (r.error = "∞ siempre va con paréntesis"), r;
+    if (izq.valor > der.valor) return (r.error = "El extremo izquierdo es mayor que el derecho"), r;
+    if (izq.valor === der.valor && (a === "(" || c === ")")) return (r.error = "Ese intervalo está vacío"), r;
+    r.izq = izq; r.der = der; r.cizq = a; r.cder = c;
+    return r;
   }
 
   // ------------------------------------------- operaciones entre conjuntos
@@ -238,19 +254,19 @@
     return Math.max(0, Math.min(40, p)) / 100;
   }
 
-  function formatear(v) {
-    if (Math.abs(v) < 1e-9) return "0";
-    return String(Number(v.toFixed(6))).replace(".", ",").replace("-", "−");
-  }
-
   // Arma todos los elementos de la recta. (ox, oy) = extremo izquierdo de la recta.
-  function generarRecta(op, ox, oy, gid) {
+  // ORDEN DE LOS ELEMENTOS: se crean en el orden en que conviene verlos
+  // aparecer (por ejemplo al animar la escena con excalidraw-animate):
+  //  1. recta con graduacion y el marco vacio de la referencia
+  //  2. por cada conjunto (fila): su linea en la referencia; y por cada
+  //     intervalo del conjunto: sus extremos escritos debajo de la recta y
+  //     luego el intervalo (signo izquierdo, rayado de izquierda a derecha,
+  //     signo derecho; o el punto si es [a, a])
+  //  3. la operacion y su resultado, de izquierda a derecha
+  function generarRecta(op, ox, oy, agregar) {
     var fuente = FUENTES[op.fuente] || FUENTES.normal;
     var tamG = TAMANOS[op.tamGrilla] || 16, tamE = TAMANOS[op.tamExtremos] || 28;
     var L = LARGOS[op.largo] || 800, sep = RAYADOS[op.rayado] || 18;
-    var marca = { pizarra: { tipo: "recta", gid: gid } };
-    var els = [];
-    function agregar(e) { e.groupIds = [gid]; e.customData = copiar(marca); els.push(e); return e; }
 
     // intervalos validos, en orden (la direccion del rayado alterna);
     // conjuntos = una entrada por fila con sus intervalos validos
@@ -267,10 +283,10 @@
     }
 
     // rango visible
-    var finitos = [], negInf = false, posInf = false;
+    var finitos = [];
     ints.forEach(function (r) {
-      if (isFinite(r.izq.valor)) finitos.push(r.izq.valor); else negInf = true;
-      if (isFinite(r.der.valor)) finitos.push(r.der.valor); else posInf = true;
+      if (isFinite(r.izq.valor)) finitos.push(r.izq.valor);
+      if (isFinite(r.der.valor)) finitos.push(r.der.valor);
     });
     var lo = finitos.length ? Math.min.apply(null, finitos) : -1;
     var hi = finitos.length ? Math.max.apply(null, finitos) : 1;
@@ -289,12 +305,10 @@
       return x0 + ((v - vmin) / (vmax - vmin)) * (x1 - x0);
     }
 
-    // recta con flechas (guarda las opciones para poder editarla despues)
-    var eje = agregar(linea(ox, oy, [[0, 0], [L, 0]], {
+    // 1. recta con flechas
+    agregar(linea(ox, oy, [[0, 0], [L, 0]], {
       type: "arrow", startArrowhead: "arrow", endArrowhead: "arrow",
     }));
-    eje.customData.pizarra.eje = true;
-    eje.customData.pizarra.opciones = copiar(op);
 
     // marcas y numeracion de la grilla (la del 0, el doble de larga).
     // La numeracion empieza debajo de los parentesis/corchetes para no taparse.
@@ -308,8 +322,7 @@
         for (var j = Math.ceil(vmin / paso); j * paso <= vmax + 1e-9; j++)
           ancho = Math.max(ancho, medir(formatear(j * paso), tamG, fuente));
         if (X(paso) - X(0) >= ancho + 12) break;
-        var p10 = Math.pow(10, Math.floor(Math.log10(paso) + 1e-9)), man = Math.round(paso / p10);
-        paso = (man < 2 ? 2 : man < 5 ? 5 : 10) * p10;
+        paso = pasoSiguiente(paso);
       }
     }
     for (var k = Math.ceil(vmin / paso); k * paso <= vmax + 1e-9; k++) {
@@ -317,15 +330,6 @@
       agregar(linea(xv, oy - m, [[0, 0], [0, 2 * m]], {}));
       if (!op.ocultarNumeros || cero) agregar(texto(xv, yGrilla, formatear(v), tamG, fuente, TINTA, "center"));
     }
-
-    // ORDEN DE LOS ELEMENTOS: se crean en el orden en que conviene verlos
-    // aparecer (por ejemplo al animar la escena con excalidraw-animate):
-    //  1. recta con graduacion (arriba) y el marco vacio de la referencia
-    //  2. por cada conjunto (fila): su linea en la referencia; y por cada
-    //     intervalo del conjunto: sus extremos escritos debajo de la recta y
-    //     luego el intervalo (signo izquierdo, rayado de izquierda a derecha,
-    //     signo derecho; o el punto si es [a, a])
-    //  3. la operacion y su resultado, de izquierda a derecha
 
     var yExtremos = yGrilla + tamG * fuente.lh + 8;
     var dx = Math.max(4, Math.round(sep * 0.35)), dy = 12, h = sg.h, w = sg.w;
@@ -411,11 +415,11 @@
     if ((op.mostrarUnion || op.mostrarResultado) && conjuntos.length) {
       var inter = op.operacion === "interseccion";
       var tramos = [];
-      function poner(t, color) {
+      var poner = function (t, color) {
         var u = tramos[tramos.length - 1];
         if (u && u.color === color) u.t += t; // se juntan los seguidos del mismo color
         else tramos.push({ t: t, color: color });
-      }
+      };
       if (op.mostrarUnion) {
         conjuntos.forEach(function (c, i) {
           if (i) poner(simbolo, TINTA);
@@ -446,17 +450,414 @@
         xt += medir(s.t.slice(izq + limpio.length), tamE, fuente);
       });
     }
-    return els;
   }
 
+  // ================================================ GENERADOR: FUNCIONES
+  var ANCHOS = { chico: 500, medio: 800, grande: 1100 };
+  var GROSORES = { fino: 1.5, normal: 2.5, grueso: 4 };
+  var NOMBRES = ["f", "g", "h", "p", "q", "r", "s", "t"];
+
+  // Compila el texto de una funcion anonima de JavaScript (x => ..., function (x) {...}).
+  // Las funciones y constantes de Math se pueden usar sin "Math." (sin, sqrt, PI...).
+  // OJO: es codigo JavaScript que se ejecuta en esta pagina (lo escribe quien usa la
+  // pizarra; tambien llega a las otras ventanas de la sala dentro del dibujo).
+  var cacheFunciones = {};
+  function compilar(codigo) {
+    var src = String(codigo || "").trim();
+    if (!src) return { error: "Escribí una función, por ejemplo x => x**2" };
+    if (cacheFunciones[src]) return cacheFunciones[src];
+    var r;
+    if (/[^*]\^|^\^/.test(src)) {
+      r = { error: "En JavaScript la potencia es ** (x**2); ^ es otra operación" };
+    } else {
+      try {
+        /* jshint evil:true */
+        var f = new Function("M", "with (M) { return (" + src + "\n); }")(Math);
+        if (typeof f !== "function") r = { error: "Tiene que ser una función, por ejemplo x => x**2" };
+        else {
+          f(0.5); // detecta errores como variables inexistentes
+          r = { f: f };
+        }
+      } catch (e) {
+        r = { error: (e instanceof SyntaxError ? "Error de escritura: " : "Error al calcular: ") + e.message };
+      }
+    }
+    cacheFunciones[src] = r;
+    return r;
+  }
+
+  // Texto legible para la referencia: f(x) = x² − 3.
+  // El nombre lo elige quien escribe la funcion: "f" se completa con la
+  // variable (f(x)); si ya trae parentesis ("f(x)", "P(t)") se usa tal cual.
+  function textoFuncion(nombre, codigo) {
+    var m = /^\s*\(?\s*([a-zA-Z_$][\w$]*)\s*\)?\s*=>\s*([^{][\s\S]*)$/.exec(codigo || "");
+    var nom = /\(/.test(nombre) ? nombre : nombre + "(" + (m ? m[1] : "x") + ")";
+    if (!m) return nom;
+    var cuerpo = m[2].trim().replace(/Math\./g, "")
+      .replace(/\*\*\s*2(?![\d.])/g, "²").replace(/\*\*\s*3(?![\d.])/g, "³")
+      .replace(/\s*\*\s*/g, "·").replace(/-/g, "−");
+    return nom + " = " + cuerpo;
+  }
+  function nombrePorDefecto(i) { return NOMBRES[i % NOMBRES.length]; }
+
+  // Recorre la funcion y arma los tramos visibles de la curva, en pixeles.
+  // Corta donde no esta definida, donde sale del rango y en los saltos
+  // (asintotas, funciones partidas); al salir/entrar del rango agrega el punto del borde.
+  function tramosCurva(f, xmin, xmax, ymin, ymax, X, Y, n) {
+    var tramos = [], actual = null, prev = null;
+    function cerrar() { if (actual && actual.length > 1) tramos.push(actual); actual = null; }
+    function borde(a, b, yb) { return [X(a.x + (b.x - a.x) * (yb - a.y) / (b.y - a.y)), Y(yb)]; }
+    for (var i = 0; i <= n; i++) {
+      var x = xmin + (xmax - xmin) * i / n, y;
+      try { y = Number(f(x)); } catch (e) { y = NaN; }
+      var p = { x: x, y: y, ok: isFinite(y), dentro: isFinite(y) && y >= ymin && y <= ymax };
+      if (!p.ok) { cerrar(); prev = p; continue; }
+      if (prev && prev.ok) {
+        if (prev.dentro && p.dentro) {
+          if (Math.abs(Y(p.y) - Y(prev.y)) > 30) { cerrar(); actual = [[X(p.x), Y(p.y)]]; }
+          else actual.push([X(p.x), Y(p.y)]);
+        } else if (prev.dentro) {
+          actual.push(borde(prev, p, p.y > ymax ? ymax : ymin));
+          cerrar();
+        } else if (p.dentro) {
+          actual = [borde(prev, p, prev.y > ymax ? ymax : ymin), [X(p.x), Y(p.y)]];
+        }
+      } else if (p.dentro) {
+        actual = [[X(p.x), Y(p.y)]];
+      }
+      prev = p;
+    }
+    cerrar();
+    return tramos;
+  }
+
+  // Ramer-Douglas-Peucker: saca puntos que no cambian la forma (tolerancia en px)
+  function simplificar(pts, tol) {
+    if (pts.length < 3) return pts;
+    var queda = pts.map(function () { return false; });
+    queda[0] = queda[pts.length - 1] = true;
+    var pila = [[0, pts.length - 1]];
+    while (pila.length) {
+      var r = pila.pop(), a = r[0], b = r[1], dmax = 0, idx = -1;
+      var ax = pts[a][0], ay = pts[a][1], vx = pts[b][0] - ax, vy = pts[b][1] - ay;
+      var largo = Math.sqrt(vx * vx + vy * vy) || 1;
+      for (var i = a + 1; i < b; i++) {
+        var d = Math.abs(vy * (pts[i][0] - ax) - vx * (pts[i][1] - ay)) / largo;
+        if (d > dmax) dmax = d, idx = i;
+      }
+      if (dmax > tol) { queda[idx] = true; pila.push([a, idx], [idx, b]); }
+    }
+    return pts.filter(function (p, i) { return queda[i]; });
+  }
+
+  // dominio y rango escritos en el panel (admiten π, fracciones, etc.)
+  function leerDominio(op) {
+    var a = evaluar(op.xMin), b = evaluar(op.xMax);
+    if (!(a < b)) return { error: "El dominio tiene que ir de un número menor a uno mayor" };
+    return { a: a, b: b };
+  }
+  function leerRango(op) {
+    var a = evaluar(op.yMin), b = evaluar(op.yMax);
+    if (!(a < b)) return { error: "El rango tiene que ir de un número menor a uno mayor" };
+    return { a: a, b: b };
+  }
+
+  // Arma el grafico. (ox, oy) = esquina superior izquierda de la zona del grafico.
+  // ORDEN: cuadricula, ejes, marcas y numeracion, marco de la referencia; despues
+  // por cada funcion su linea en la referencia y su curva (de izquierda a derecha).
+  function generarFunciones(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal;
+    var tamN = TAMANOS[op.tamNumeros] || 16;
+    var W = ANCHOS[op.tamano] || 800, H = Math.round(W * 0.62);
+    var grosor = GROSORES[op.grosor] || 2.5;
+
+    var funciones = [];
+    op.filas.forEach(function (fila, i) {
+      var c = compilar(fila.texto);
+      var nombre = String(fila.nombre || "").trim() || nombrePorDefecto(i);
+      if (c.f) funciones.push({ f: c.f, color: fila.color, codigo: fila.texto, nombre: nombre });
+    });
+
+    var dom = leerDominio(op);
+    var xmin = dom.error ? -5 : dom.a, xmax = dom.error ? 5 : dom.b;
+
+    // rango y: manual, o automatico mirando los valores (sin los extremos
+    // mas raros, para que una asintota no aplaste todo)
+    var ymin, ymax;
+    var rango = op.yAuto ? { error: true } : leerRango(op);
+    if (!rango.error) { ymin = rango.a; ymax = rango.b; }
+    else {
+      var valores = [];
+      funciones.forEach(function (fn) {
+        for (var i = 0; i <= 400; i++) {
+          var y;
+          try { y = Number(fn.f(xmin + (xmax - xmin) * i / 400)); } catch (e) { y = NaN; }
+          if (isFinite(y)) valores.push(y);
+        }
+      });
+      valores.sort(function (a, b) { return a - b; });
+      if (valores.length) {
+        var cut = valores.length > 50 ? Math.floor(valores.length * 0.02) : 0;
+        ymin = valores[cut]; ymax = valores[valores.length - 1 - cut];
+      } else { ymin = -1; ymax = 1; }
+      if (ymax - ymin < 1e-9) ymin -= 1, ymax += 1;
+      var pad = (ymax - ymin) * 0.08;
+      ymin -= pad; ymax += pad;
+    }
+
+    // misma escala en x y en y: el alto sale de la proporcion (con limites);
+    // si no entra, se ajusta el rango y alrededor de su centro
+    if (op.escalaIgual) {
+      var pxu = W / (xmax - xmin);
+      H = Math.round(Math.max(W * 0.3, Math.min(W * 1.2, (ymax - ymin) * pxu)));
+      var cy = (ymin + ymax) / 2, mitad = H / pxu / 2;
+      ymin = cy - mitad; ymax = cy + mitad;
+    }
+
+    function X(v) { return ox + (v - xmin) / (xmax - xmin) * W; }
+    function Y(v) { return oy + H - (v - ymin) / (ymax - ymin) * H; }
+
+    // pasos de la graduacion (se agrandan si los numeros no entran)
+    var pasoX = pasoLindo(xmax - xmin, op.soloEnteros), pasoY = pasoLindo(ymax - ymin, op.soloEnteros);
+    if (!op.ocultarNumeros) {
+      for (var n1 = 0; n1 < 12; n1++) {
+        var anchoMax = 0;
+        for (var j = Math.ceil(xmin / pasoX); j * pasoX <= xmax + 1e-9; j++)
+          anchoMax = Math.max(anchoMax, medir(formatear(j * pasoX), tamN, fuente));
+        if (pasoX / (xmax - xmin) * W >= anchoMax + 10) break;
+        pasoX = pasoSiguiente(pasoX);
+      }
+      for (var n2 = 0; n2 < 12; n2++) {
+        if (pasoY / (ymax - ymin) * H >= tamN * fuente.lh + 4) break;
+        pasoY = pasoSiguiente(pasoY);
+      }
+    }
+    // cuadricula cuadrada: el alto se elige para que cada cuadro mida lo mismo
+    // en x y en y, y el rango y se extiende hasta multiplos de su paso (asi la
+    // cuadricula cierra justo arriba y abajo). Si queda demasiado alto, se usa
+    // un paso y mas grande. Con misma escala, el paso y es el mismo que el x.
+    if (op.cuadrada) {
+      var lado = pasoX / (xmax - xmin) * W; // px de cada cuadro
+      if (op.escalaIgual) pasoY = pasoX;
+      for (var n3 = 0; n3 < 20; n3++) {
+        var ya = Math.floor(ymin / pasoY + 1e-9) * pasoY, yb = Math.ceil(ymax / pasoY - 1e-9) * pasoY;
+        var alto = (yb - ya) / pasoY * lado;
+        if (alto <= W * 1.2 || op.escalaIgual) { ymin = ya; ymax = yb; H = alto; break; }
+        pasoY = pasoSiguiente(pasoY);
+      }
+    }
+    var marcasX = [], marcasY = [];
+    for (var a = Math.ceil(xmin / pasoX - 1e-9); a * pasoX <= xmax + 1e-9; a++) marcasX.push(a * pasoX);
+    for (var b = Math.ceil(ymin / pasoY - 1e-9); b * pasoY <= ymax + 1e-9; b++) marcasY.push(b * pasoY);
+
+    // los ejes pasan por el 0; si el 0 no se ve, van por el borde
+    var yEje = ymin <= 0 && ymax >= 0 ? Y(0) : (ymin > 0 ? oy + H : oy);
+    var xEje = xmin <= 0 && xmax >= 0 ? X(0) : (xmin > 0 ? ox : ox + W);
+
+    // 1. cuadricula
+    if (op.cuadricula) {
+      marcasX.forEach(function (v) {
+        if (Math.abs(X(v) - xEje) > 0.5) agregar(linea(X(v), oy, [[0, 0], [0, H]], { strokeColor: GRIS, strokeWidth: 1 }));
+      });
+      marcasY.forEach(function (v) {
+        if (Math.abs(Y(v) - yEje) > 0.5) agregar(linea(ox, Y(v), [[0, 0], [W, 0]], { strokeColor: GRIS, strokeWidth: 1 }));
+      });
+    }
+
+    // ejes con flecha en el sentido positivo y su nombre
+    agregar(linea(ox - 10, yEje, [[0, 0], [W + 30, 0]], { type: "arrow", endArrowhead: "arrow" }));
+    agregar(texto(ox + W + 24, yEje + 6, "x", tamN, fuente, TINTA, "left"));
+    agregar(linea(xEje, oy + H + 10, [[0, 0], [0, -(H + 30)]], { type: "arrow", endArrowhead: "arrow" }));
+    agregar(texto(xEje + 8, oy - 26 - tamN * fuente.lh / 2, "y", tamN, fuente, TINTA, "left"));
+
+    // marcas y numeracion (el 0 se escribe una sola vez, en el cruce de los ejes)
+    var origenVisible = xmin <= 0 && xmax >= 0 && ymin <= 0 && ymax >= 0;
+    marcasX.forEach(function (v) {
+      var x = X(v), cero = Math.abs(v) < 1e-9;
+      if (cero && Math.abs(x - xEje) < 0.5) return;
+      agregar(linea(x, yEje - 5, [[0, 0], [0, 10]], {}));
+      if (!op.ocultarNumeros) agregar(texto(x, yEje + 8, formatear(v), tamN, fuente, TINTA, "center"));
+    });
+    marcasY.forEach(function (v) {
+      var y = Y(v), cero = Math.abs(v) < 1e-9;
+      if (cero && Math.abs(y - yEje) < 0.5) return;
+      agregar(linea(xEje - 5, y, [[0, 0], [10, 0]], {}));
+      if (!op.ocultarNumeros) agregar(texto(xEje - 8, y - tamN * fuente.lh / 2, formatear(v), tamN, fuente, TINTA, "right"));
+    });
+    if (origenVisible) agregar(texto(xEje - 6, yEje + 6, "0", tamN, fuente, TINTA, "right"));
+
+    // 1. (cont.) marco de la referencia: una funcion por renglon, fuera de la
+    // cuadricula. "derecha": a la derecha del grafico, alineada arriba (pasando
+    // la flecha y el nombre del eje x). "arriba": encima del grafico, alineada
+    // a la derecha (pasando la flecha y el nombre del eje y).
+    var ref = null;
+    if (op.referencia && funciones.length) {
+      ref = { tam: tamN, muestra: 24, relleno: 8 };
+      ref.altoFila = ref.tam * fuente.lh + 4;
+      var anchoTxt = 0;
+      funciones.forEach(function (fn) { anchoTxt = Math.max(anchoTxt, medir(textoFuncion(fn.nombre, fn.codigo), ref.tam, fuente)); });
+      ref.ancho = ref.relleno * 2 + ref.muestra + 8 + anchoTxt;
+      ref.alto = ref.relleno * 2 + ref.altoFila * funciones.length - 4;
+      if (op.posReferencia === "arriba") {
+        ref.x = ox + W - ref.ancho;
+        ref.y = oy - 30 - tamN * fuente.lh - ref.alto;
+      } else {
+        ref.x = ox + W + 30 + medir("x", tamN, fuente) + 16;
+        ref.y = oy;
+      }
+      agregar(base("rectangle", {
+        x: ref.x, y: ref.y, width: ref.ancho, height: ref.alto, strokeWidth: 1, roundness: { type: 3 },
+      }));
+    }
+
+    // 2. por cada funcion: su linea en la referencia y su curva
+    var muestras = Math.round(W * 1.5);
+    funciones.forEach(function (fn, i) {
+      if (ref) {
+        var rx = ref.x + ref.relleno;
+        var fy = ref.y + ref.relleno + i * ref.altoFila + (ref.altoFila - 4) / 2;
+        agregar(linea(rx, fy, [[0, 0], [ref.muestra, 0]], { strokeColor: fn.color, strokeWidth: grosor }));
+        agregar(texto(rx + ref.muestra + 8, fy - ref.tam * fuente.lh / 2,
+          textoFuncion(fn.nombre, fn.codigo), ref.tam, fuente, fn.color, "left"));
+      }
+      tramosCurva(fn.f, xmin, xmax, ymin, ymax, X, Y, muestras).forEach(function (pts) {
+        pts = simplificar(pts, 0.3);
+        if (pts.length > 1) agregar(trazo(pts, { strokeColor: fn.color, strokeWidth: grosor }));
+      });
+    });
+  }
+
+  // ====================================================== GENERADORES
+  // Cada generador define su contenido (filas), opciones, panel y como dibujar.
+  // contenido: claves que "Restablecer" no toca (lo que se grafica, no el aspecto).
+  var GEN = {
+    recta: {
+      titulo: "Recta real",
+      clave: "pizarra-generador-recta",
+      defecto: {
+        filas: [{ texto: "(-2, 1/2]", color: COLORES[0] }, { texto: "[1, ∞)", color: COLORES[1] }],
+        operacion: "union", referencia: false, margenIzq: 10, margenDer: 10,
+        largo: "media", tamGrilla: "S", tamExtremos: "L", tamSignos: "M", fuente: "normal", rayado: "normal",
+        soloEnteros: false, ocultarNumeros: false, mostrarUnion: true, mostrarResultado: true,
+      },
+      contenido: ["filas", "operacion"],
+      ejemplo: { filas: [{ texto: "[-3, 2)", color: COLORES[0] }, { texto: "(0, 5]", color: COLORES[1] }] },
+      textoEjemplo: "Inserta una recta nueva de ejemplo con dos intervalos",
+      agregarFila: "+ Intervalo",
+      placeholder: "Ej: (1/2, 3]",
+      simbolos: [["∞", "∞", "Escribe ∞ donde está el cursor"], ["∪", " ∪ ", "Escribe ∪ donde está el cursor"]],
+      ayuda: "Ejemplos: (1/2, 3], [−2, ∞), (π/2, √2+1). " +
+        "Para decimales con coma separá con punto y coma: [0,5; 2). " +
+        "Varios intervalos en una fila: (1,2) ∪ [3,4]. " +
+        "Seleccioná una recta ya insertada para editarla.",
+      erroresFila: function (t) {
+        return leerIntervalos(t).filter(function (r) { return r.error; })
+          .map(function (r) { return r.original + ": " + r.error; });
+      },
+      posicion: function (op, cx, cy) { return { x: cx - (LARGOS[op.largo] || 800) / 2, y: cy - 40 }; },
+      generar: generarRecta,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.seg("Operación", "operacion", [["union", "Unión ∪"], ["interseccion", "Intersección ∩"]]);
+        });
+        ui.seg("Largo", "largo", [["corta", "Corta"], ["media", "Media"], ["larga", "Larga"]]);
+        ui.campos("Márgenes", [
+          { clave: "margenIzq", prefijo: "Izq.", sufijo: "%", numero: [0, 40],
+            titulo: "Espacio antes del primer extremo (0 a 40% del largo)" },
+          { clave: "margenDer", prefijo: "Der.", sufijo: "%", numero: [0, 40],
+            titulo: "Espacio después del último extremo (0 a 40% del largo)" },
+        ]);
+        ui.seg("Números grilla", "tamGrilla", tam);
+        ui.seg("Números extremos", "tamExtremos", tam);
+        ui.seg("( ) y [ ]", "tamSignos", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.seg("Rayado", "rayado", [["poco", "Ralo"], ["normal", "Normal"], ["denso", "Denso"]]);
+        ui.chk("Grilla solo en enteros", "soloEnteros");
+        ui.chk("Ocultar numeración (mantener el 0)", "ocultarNumeros");
+        ui.chk("Escribir la operación debajo", "mostrarUnion");
+        ui.chk("Escribir el resultado", "mostrarResultado");
+        ui.chk("Incluir referencia", "referencia");
+      },
+    },
+
+    funcion: {
+      titulo: "Funciones",
+      clave: "pizarra-generador-funcion",
+      defecto: {
+        filas: [{ nombre: "f", texto: "x => x**2 / 2 - 2", color: COLORES[0] },
+          { nombre: "g", texto: "x => 2 * sin(x)", color: COLORES[1] }],
+        xMin: "-5", xMax: "5", yAuto: true, yMin: "-5", yMax: "5",
+        tamano: "medio", escalaIgual: false, tamNumeros: "S", fuente: "normal", grosor: "normal",
+        cuadricula: true, cuadrada: true, soloEnteros: false, ocultarNumeros: false,
+        referencia: true, posReferencia: "derecha",
+      },
+      contenido: ["filas", "xMin", "xMax", "yAuto", "yMin", "yMax"],
+      ejemplo: {
+        filas: [{ nombre: "f", texto: "x => x**2 - 4", color: COLORES[0] },
+          { nombre: "g", texto: "x => 2*x + 1", color: COLORES[1] }],
+        xMin: "-4", xMax: "4", yAuto: true,
+      },
+      textoEjemplo: "Inserta un gráfico nuevo de ejemplo con dos funciones",
+      agregarFila: "+ Función",
+      placeholder: "Ej: x => x**2 - 3",
+      // cada funcion tiene un nombre editable (f, g, h... o f(x), P(t))
+      nombreFila: { porDefecto: nombrePorDefecto, titulo: "Nombre de la función: f, g, h... o f(x), P(t)" },
+      simbolos: [["x =>", "x => ", "Escribe x => donde está el cursor"], ["**", "**", "Potencia: x**2"],
+        ["π", "PI", "Escribe PI (π) donde está el cursor"]],
+      ayuda: "Cada fila es una función anónima de JavaScript: x => x**2 - 3, " +
+        "x => sqrt(x), x => 1/x, x => x < 0 ? -x : x**2. Se puede usar Math sin escribir " +
+        "«Math.»: sin, cos, tan, sqrt, abs, log, exp, PI, E. La potencia es ** (no ^). " +
+        "El dominio admite π y fracciones: −2π, 1/2. " +
+        "Seleccioná un gráfico ya insertado para editarlo.",
+      erroresFila: function (t) {
+        var c = compilar(t);
+        return c.error ? [c.error] : [];
+      },
+      posicion: function (op, cx, cy) {
+        var W = ANCHOS[op.tamano] || 800;
+        return { x: cx - W / 2, y: cy - W * 0.31 };
+      },
+      generar: generarFunciones,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.campos("Dominio x", [
+            { clave: "xMin", prefijo: "de", texto: true, titulo: "Admite π y fracciones: -2π, 1/2" },
+            { clave: "xMax", prefijo: "a", texto: true, titulo: "Admite π y fracciones: 2π, 7/2" },
+          ], function () { var d = leerDominio(op); return d.error || ""; });
+          ui.seg("Rango y", "yAuto", [[true, "Automático"], [false, "Manual"]], true);
+          if (!op.yAuto) {
+            ui.campos("", [
+              { clave: "yMin", prefijo: "de", texto: true },
+              { clave: "yMax", prefijo: "a", texto: true },
+            ], function () { var r = leerRango(op); return r.error || ""; });
+          }
+        });
+        ui.seg("Tamaño", "tamano", [["chico", "Chico"], ["medio", "Medio"], ["grande", "Grande"]]);
+        ui.seg("Números", "tamNumeros", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.seg("Curvas", "grosor", [["fino", "Finas"], ["normal", "Normales"], ["grueso", "Gruesas"]]);
+        ui.chk("Misma escala en x y en y", "escalaIgual");
+        ui.seg("Referencia", "posReferencia", [["derecha", "A la derecha"], ["arriba", "Arriba"]]);
+        ui.chk("Cuadrícula", "cuadricula");
+        ui.chk("Cuadrícula cuadrada", "cuadrada");
+        ui.chk("Graduación solo en enteros", "soloEnteros");
+        ui.chk("Ocultar numeración", "ocultarNumeros");
+        ui.chk("Incluir referencia", "referencia");
+      },
+    },
+  };
+
   // ------------------------------------------------- insertar / reemplazar
-  var vinculo = null; // gid de la recta que se esta editando
+  var vinculo = null;      // gid del dibujo que se esta editando
+  var seleccionado = null; // ultimo dibujo generado visto en la seleccion
   var turno = 0;
 
+  function datosDe(e) { return e && e.customData && e.customData.pizarra; }
+
   function elementosDe(gid, todos) {
-    return todos.filter(function (e) {
-      return !e.isDeleted && e.customData && e.customData.pizarra && e.customData.pizarra.gid === gid;
-    });
+    return todos.filter(function (e) { return !e.isDeleted && datosDe(e) && datosDe(e).gid === gid; });
   }
 
   // rectangulo que ocupa un elemento (las lineas pueden tener puntos negativos)
@@ -479,31 +880,33 @@
     return b;
   }
 
-  function aplicar(op, nueva) {
-    var A = api();
-    if (!A) return;
+  // Dibuja con el generador `tipo`. Si hay un dibujo vinculado (y no es `nueva`)
+  // lo reemplaza en su lugar; si no, inserta uno nuevo en el centro de la vista.
+  // El primer elemento del dibujo ("ancla") guarda las opciones y su distancia
+  // al origen del dibujo, para poder regenerarlo en el mismo lugar.
+  function aplicar(tipo, op, nueva) {
+    var A = api(), gen = GEN[tipo];
+    if (!A || !gen) return;
     var mio = ++turno;
     var fuente = FUENTES[op.fuente] || FUENTES.normal;
-    var tams = [TAMANOS[op.tamGrilla], TAMANOS[op.tamExtremos]];
     // medir con la fuente ya cargada
-    Promise.all(tams.map(function (t) {
-      return document.fonts.load(t + "px " + fuente.css).catch(function () {});
-    })).then(function () {
+    document.fonts.load("16px " + fuente.css).catch(function () {}).then(function () {
       if (mio !== turno) return;
       var todos = A.getSceneElementsIncludingDeleted();
       var gid = nueva ? null : vinculo, ox, oy, viejos = [];
       var st = A.getAppState(), z = st.zoom.value;
-      var recien = false, vista = {}; // recta nueva / cambios de vista
+      var recien = false, vista = {};
       if (gid) {
         viejos = elementosDe(gid, todos);
-        var eje = viejos.filter(function (e) { return e.customData.pizarra.eje; })[0];
-        if (eje) ox = eje.x, oy = eje.y; else gid = null, viejos = [];
+        var ancla = viejos.filter(function (e) { return datosDe(e).eje; })[0];
+        if (ancla && datosDe(ancla).tipo === tipo) {
+          var o = datosDe(ancla).origen || [0, 0]; // las rectas viejas no lo guardaban
+          ox = ancla.x - o[0]; oy = ancla.y - o[1];
+        } else gid = null, viejos = [];
       }
       if (!gid) {
-        var L = LARGOS[op.largo] || 800;
-        gid = nuevoId();
-        ox = -st.scrollX + st.width / z / 2 - L / 2;
-        oy = -st.scrollY + st.height / z / 2 - 40;
+        var pos = gen.posicion(op, -st.scrollX + st.width / z / 2, -st.scrollY + st.height / z / 2);
+        gid = nuevoId(); ox = pos.x; oy = pos.y;
         recien = true;
       }
       var borrar = {};
@@ -516,8 +919,21 @@
         d.isDeleted = true; d.version = e.version + 1; d.versionNonce = rnd(); d.updated = ahora;
         return d;
       });
-      var nuevos = generarRecta(op, ox, oy, gid);
-      // una recta nueva no se encima a lo que ya hay: baja hasta un lugar libre
+
+      var nuevos = [];
+      gen.generar(op, ox, oy, function (e) {
+        e.groupIds = [gid];
+        e.customData = { pizarra: { tipo: tipo, gid: gid } };
+        nuevos.push(e);
+        return e;
+      });
+      if (!nuevos.length) return;
+      var datos = nuevos[0].customData.pizarra;
+      datos.eje = true;
+      datos.opciones = copiar(op);
+      datos.origen = [nuevos[0].x - ox, nuevos[0].y - oy];
+
+      // un dibujo nuevo no se encima a lo que ya hay: baja hasta un lugar libre
       if (recien) {
         var ocupados = resto.filter(function (e) { return !e.isDeleted; }).map(caja);
         for (var vuelta = 0; vuelta < 50; vuelta++) {
@@ -529,7 +945,7 @@
           var bajar = choque - b.y0 + 40;
           nuevos.forEach(function (e) { e.y += bajar; });
         }
-        // si quedo fuera de la vista, la vista baja hasta ella
+        // si quedo fuera de la vista, la vista baja hasta el
         b = cajaDe(nuevos);
         var arriba = -st.scrollY, abajo = arriba + st.height / z;
         if (b.y0 < arriba || b.y1 > abajo) vista.scrollY = -((b.y0 + b.y1) / 2 - st.height / z / 2);
@@ -538,7 +954,7 @@
       nuevos.forEach(function (e) { sel[e.id] = true; });
       var grupos = {};
       grupos[gid] = true;
-      vinculo = gid;
+      vinculo = seleccionado = gid;
       A.updateScene({
         elements: resto.concat(nuevos),
         appState: Object.assign({ selectedElementIds: sel, selectedGroupIds: grupos, editingGroupId: null }, vista),
@@ -557,22 +973,24 @@
     '<path d="M9.5 13l2-3M12 13l2-3" stroke-width="1"/></svg>';
 
   var ESTILO = [
-    ".pz-gen{position:fixed;top:64px;right:16px;width:340px;max-height:calc(100vh - 96px);overflow:auto;",
+    ".pz-gen{position:fixed;top:64px;right:16px;width:350px;max-height:calc(100vh - 96px);overflow:auto;",
     "z-index:20;background:#fff;color:#1b1b1f;border:1px solid #e0dfe6;border-radius:10px;",
     "box-shadow:0 4px 18px rgba(0,0,0,.12);padding:12px 14px;font:13px/1.4 Assistant,system-ui,sans-serif}",
     ".pz-gen.oscuro{background:#232329;color:#e3e3e8;border-color:#3a3a43}",
-    ".pz-gen h3{margin:0;font-size:15px;flex:1}",
-    ".pz-gen .cab{display:flex;align-items:center;gap:8px;margin-bottom:4px}",
-    ".pz-gen .modo{font-size:11px;padding:1px 7px;border-radius:9px;background:#e7f5ff;color:#1864ab}",
+    ".pz-gen .cab{display:flex;align-items:center;gap:8px;margin-bottom:6px}",
+    ".pz-gen .cab .tipos{flex:1}",
+    ".pz-gen .modo{font-size:11px;padding:1px 7px;border-radius:9px;background:#e7f5ff;color:#1864ab;white-space:nowrap}",
     ".pz-gen.oscuro .modo{background:#1c3a57;color:#a5d8ff}",
     ".pz-gen .cerrar,.pz-gen .quitar{border:0;background:none;color:inherit;cursor:pointer;font-size:15px;opacity:.6;padding:2px 4px}",
     ".pz-gen .cerrar:hover,.pz-gen .quitar:hover{opacity:1}",
     ".pz-gen .fila{display:flex;gap:6px;align-items:center;margin-top:6px}",
     ".pz-gen input[type=text]{flex:1;min-width:0;padding:5px 7px;border:1px solid #c9c8d1;border-radius:6px;",
     "font:14px Cascadia,Consolas,monospace;background:transparent;color:inherit}",
-    ".pz-gen .invalida input[type=text]{border-color:#e03131;background:rgba(224,49,49,.07)}",
+    ".pz-gen input.nombre{flex:none;width:52px;text-align:center}",
+    ".pz-gen .invalida input.codigo,.pz-gen input.invalido{border-color:#e03131;background:rgba(224,49,49,.07)}",
     ".pz-gen input[type=color]{width:28px;height:28px;padding:0;border:1px solid #c9c8d1;border-radius:6px;background:none;cursor:pointer}",
     ".pz-gen .error{color:#e03131;font-size:12px;margin:2px 0 0 2px}",
+    ".pz-gen .opc .error{grid-column:1/3;margin:0}",
     ".pz-gen .botones{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}",
     ".pz-gen button.b{border:1px solid #c9c8d1;background:transparent;color:inherit;border-radius:6px;padding:5px 10px;cursor:pointer;font:inherit}",
     ".pz-gen button.b:hover{background:rgba(127,127,127,.12)}",
@@ -584,15 +1002,19 @@
     ".pz-gen .seg button+button{border-left:1px solid #c9c8d1}",
     ".pz-gen .seg button.activo{background:#6965db;color:#fff}",
     ".pz-gen .opc-op{margin:4px 0 6px}",
-    ".pz-gen .margenes{display:flex;gap:12px}",
-    ".pz-gen .margenes input{width:48px;padding:3px 5px;border:1px solid #c9c8d1;border-radius:6px;",
-    "background:transparent;color:inherit;font:inherit}",
+    ".pz-gen .campos{display:flex;gap:10px;align-items:center}",
+    ".pz-gen .campos input{width:56px;padding:3px 5px;border:1px solid #c9c8d1;border-radius:6px;",
+    "background:transparent;color:inherit;font:inherit;flex:none}",
     ".pz-gen label.chk{display:flex;gap:6px;align-items:center;grid-column:1/3;cursor:pointer}",
     ".pz-gen .ayuda{font-size:12px;opacity:.7;margin-top:10px}",
   ].join("");
 
   var panel = {
-    el: null, abierto: false, op: null, temporizador: null,
+    el: null, abierto: false, tipo: "recta", ops: {}, temporizador: null,
+
+    get op() { return this.ops[this.tipo]; },
+    set op(v) { this.ops[this.tipo] = v; },
+    gen: function () { return GEN[this.tipo]; },
 
     construir: function () {
       var st = document.createElement("style");
@@ -602,57 +1024,56 @@
       el.className = "pz-gen";
       el.style.display = "none";
       el.innerHTML =
-        '<div class="cab"><h3>Recta real</h3><span class="modo"></span>' +
+        '<div class="cab"><div class="tipos"></div><span class="modo"></span>' +
         '<button class="cerrar" title="Cerrar">✕</button></div>' +
         '<div class="opc opc-op"></div>' +
         '<div class="filas"></div>' +
-        '<div class="botones"><button class="b agregar">+ Intervalo</button>' +
-        '<button class="b infinito" title="Escribe ∞ donde está el cursor">∞</button>' +
-        '<button class="b union" title="Escribe ∪ donde está el cursor">∪</button></div>' +
-        '<div class="opc"></div>' +
+        '<div class="botones simbolos"></div>' +
+        '<div class="opc opc-main"></div>' +
         '<div class="botones"><button class="b principal insertar">Insertar en el centro</button>' +
         '<button class="b copia">Insertar copia</button>' +
-        '<button class="b restablecer" title="Vuelve las opciones a los valores ' +
-        'predeterminados (los intervalos escritos se mantienen)">Restablecer</button>' +
-        '<button class="b ejemplo" title="Inserta una recta nueva de ejemplo con dos intervalos">' +
-        'Ejemplo</button></div>' +
-        '<div class="ayuda">Ejemplos: (1/2, 3], [−2, ∞), (π/2, √2+1). ' +
-        'Para decimales con coma separá con punto y coma: [0,5; 2). ' +
-        'Varios intervalos en una fila: (1,2) ∪ [3,4]. ' +
-        'Seleccioná una recta ya insertada para editarla.</div>';
+        '<button class="b restablecer">Restablecer</button>' +
+        '<button class="b ejemplo">Ejemplo</button></div>' +
+        '<div class="ayuda"></div>';
       document.body.appendChild(el);
       this.el = el;
       var self = this;
-      el.querySelector(".cerrar").onclick = function () { self.alternar(false); };
-      el.querySelector(".agregar").onclick = function () {
-        self.op.filas.push({ texto: "", color: COLORES[self.op.filas.length % COLORES.length] });
-        self.pintarFilas(true);
-        self.cambio();
-      };
-      // los botones de simbolos no roban el foco del campo de texto
-      [[".infinito", "∞"], [".union", " ∪ "]].forEach(function (b) {
-        var boton = el.querySelector(b[0]);
-        boton.onmousedown = function (e) { e.preventDefault(); };
-        boton.onclick = function () { self.escribir(b[1]); };
+
+      // selector de generador
+      var tipos = el.querySelector(".tipos"), s = document.createElement("div");
+      s.className = "seg";
+      Object.keys(GEN).forEach(function (t) {
+        var b = document.createElement("button");
+        b.textContent = GEN[t].titulo;
+        b.setAttribute("data-tipo", t);
+        b.onclick = function () {
+          if (t === self.tipo) return;
+          clearTimeout(self.temporizador);
+          vinculo = null; // el dibujo seleccionado es de otro tipo
+          self.mostrar(t);
+        };
+        s.appendChild(b);
       });
-      el.querySelector(".insertar").onclick = function () { aplicar(self.op, !vinculo); };
-      el.querySelector(".copia").onclick = function () { aplicar(self.op, true); };
-      // recta nueva de ejemplo: carga dos intervalos que se superponen (para
-      // que se vea el rayado cruzado) y la inserta en el centro. No toca la
-      // recta que este seleccionada; el aspecto elegido se mantiene.
+      tipos.appendChild(s);
+
+      el.querySelector(".cerrar").onclick = function () { self.alternar(false); };
+      el.querySelector(".insertar").onclick = function () { aplicar(self.tipo, self.op, !vinculo); };
+      el.querySelector(".copia").onclick = function () { aplicar(self.tipo, self.op, true); };
+      // dibujo nuevo de ejemplo: carga su contenido y lo inserta en el centro.
+      // No toca el dibujo que este seleccionado; el aspecto elegido se mantiene.
       el.querySelector(".ejemplo").onclick = function () {
         clearTimeout(self.temporizador);
-        self.op.filas = copiar(EJEMPLO);
-        self.pintarFilas();
-        try { localStorage.setItem(CLAVE_OPCIONES, JSON.stringify(self.op)); } catch (e) {}
-        aplicar(self.op, true);
+        var ej = copiar(self.gen().ejemplo);
+        for (var k in ej) self.op[k] = ej[k];
+        self.pintarTodo();
+        self.guardar();
+        aplicar(self.tipo, self.op, true);
       };
-      // opciones a los valores predeterminados; los intervalos escritos y la
-      // operacion entre ellos se mantienen (son el contenido, no el aspecto)
+      // opciones a los valores predeterminados; el contenido (lo que se grafica)
+      // se mantiene
       el.querySelector(".restablecer").onclick = function () {
-        var d = copiar(DEFECTO);
-        d.filas = self.op.filas;
-        d.operacion = self.op.operacion;
+        var d = copiar(self.gen().defecto);
+        self.gen().contenido.forEach(function (k) { d[k] = self.op[k]; });
         self.op = d;
         self.pintarOpciones();
         self.cambio();
@@ -663,10 +1084,53 @@
       });
     },
 
-    cargar: function (op) {
-      var d = copiar(DEFECTO);
+    // muestra el generador `tipo` con sus opciones actuales
+    mostrar: function (tipo) {
+      this.tipo = tipo;
+      try { localStorage.setItem("pizarra-generador-tipo", tipo); } catch (e) {}
+      this.pintarTodo();
+    },
+
+    // carga opciones (de un dibujo seleccionado o guardadas) para el generador `tipo`
+    cargar: function (tipo, op) {
+      var d = copiar(GEN[tipo].defecto);
       for (var k in op) d[k] = op[k];
-      this.op = d;
+      this.ops[tipo] = d;
+      if (this.el && tipo === this.tipo) this.pintarTodo();
+    },
+
+    pintarTodo: function () {
+      var self = this, gen = this.gen();
+      [].forEach.call(this.el.querySelectorAll(".tipos button"), function (b) {
+        b.className = b.getAttribute("data-tipo") === self.tipo ? "activo" : "";
+      });
+      var sim = this.el.querySelector(".simbolos");
+      sim.innerHTML = "";
+      var agregar = document.createElement("button");
+      agregar.className = "b";
+      agregar.textContent = gen.agregarFila;
+      agregar.onclick = function () {
+        var nueva = { texto: "", color: colorFila(self.op.filas.length) };
+        if (gen.nombreFila) nueva.nombre = gen.nombreFila.porDefecto(self.op.filas.length);
+        self.op.filas.push(nueva);
+        self.pintarFilas(true);
+        self.cambio();
+      };
+      sim.appendChild(agregar);
+      // los botones de simbolos no roban el foco del campo de texto
+      gen.simbolos.forEach(function (s) {
+        var b = document.createElement("button");
+        b.className = "b";
+        b.textContent = s[0];
+        b.title = s[2] || "";
+        b.onmousedown = function (e) { e.preventDefault(); };
+        b.onclick = function () { self.escribir(s[1]); };
+        sim.appendChild(b);
+      });
+      this.el.querySelector(".ejemplo").title = gen.textoEjemplo;
+      this.el.querySelector(".restablecer").title =
+        "Vuelve el aspecto a los valores predeterminados (lo que se grafica se mantiene)";
+      this.el.querySelector(".ayuda").textContent = gen.ayuda;
       this.pintarFilas();
       this.pintarOpciones();
       this.modo();
@@ -674,8 +1138,15 @@
 
     escribir: function (s) {
       var c = document.activeElement;
-      if (!c || !this.el.contains(c) || c.type !== "text") {
-        c = this.el.querySelector(".filas input[type=text]");
+      // los simbolos van al campo de la funcion/intervalo con el foco (o al primero)
+      // (si el foco esta en el nombre, va a la funcion de esa misma fila)
+      if (c && c.classList.contains("nombre") && this.el.querySelector(".filas").contains(c)) {
+        c = c.parentNode.querySelector("input.codigo");
+        c.focus();
+        c.selectionStart = c.selectionEnd = c.value.length;
+      }
+      if (!c || !this.el.querySelector(".filas").contains(c) || !c.classList.contains("codigo")) {
+        c = this.el.querySelector(".filas input.codigo");
         if (!c) return;
         c.focus();
         c.selectionStart = c.selectionEnd = c.value.length;
@@ -687,20 +1158,30 @@
     },
 
     pintarFilas: function (enfocarUltima) {
-      var self = this, cont = this.el.querySelector(".filas");
+      var self = this, gen = this.gen(), cont = this.el.querySelector(".filas");
       cont.innerHTML = "";
       this.op.filas.forEach(function (f, i) {
         var caja = document.createElement("div");
-        caja.innerHTML = '<div class="fila"><input type="text" spellcheck="false" ' +
-          'placeholder="Ej: (1/2, 3]"><input type="color"><button class="quitar" title="Quitar">✕</button></div>' +
+        caja.innerHTML = '<div class="fila">' +
+          (gen.nombreFila ? '<input type="text" class="nombre" spellcheck="false" autocomplete="off">' : "") +
+          '<input type="text" class="codigo" spellcheck="false" autocomplete="off">' +
+          '<input type="color"><button class="quitar" title="Quitar">✕</button></div>' +
           '<div class="error"></div>';
-        var t = caja.querySelector("input[type=text]"), c = caja.querySelector("input[type=color]");
+        var t = caja.querySelector("input.codigo"), c = caja.querySelector("input[type=color]");
+        t.placeholder = gen.placeholder;
         t.value = f.texto; c.value = f.color;
+        var nom = caja.querySelector("input.nombre");
+        if (nom) {
+          // vacio = nombre por defecto segun la posicion (f, g, h...)
+          nom.placeholder = gen.nombreFila.porDefecto(i);
+          nom.title = gen.nombreFila.titulo;
+          nom.value = f.nombre || "";
+          nom.oninput = function () { f.nombre = nom.value; self.cambio(); };
+        }
         function validar() {
-          var errores = leerIntervalos(t.value).filter(function (r) { return r.error; });
+          var errores = gen.erroresFila(t.value);
           caja.classList.toggle("invalida", errores.length > 0);
-          caja.querySelector(".error").textContent = errores.length
-            ? errores.map(function (r) { return r.original + ": " + r.error; }).join(" · ") : "";
+          caja.querySelector(".error").textContent = errores.join(" · ");
         }
         validar();
         t.oninput = function () { f.texto = t.value; validar(); self.cambio(); };
@@ -716,124 +1197,149 @@
     },
 
     pintarOpciones: function () {
-      var self = this, op = this.op, cont = this.el.querySelector(".opc:not(.opc-op)");
-      var arriba = this.el.querySelector(".opc-op");
-      cont.innerHTML = "";
+      var self = this, op = this.op;
+      var principal = this.el.querySelector(".opc-main"), arriba = this.el.querySelector(".opc-op");
+      principal.innerHTML = "";
       arriba.innerHTML = "";
-      function segmentado(etiqueta, clave, opciones, destino) {
+      var destino = principal;
+      function etiqueta(txt) {
         var l = document.createElement("span");
-        l.textContent = etiqueta;
-        var s = document.createElement("div");
-        s.className = "seg";
-        opciones.forEach(function (o) {
-          var b = document.createElement("button");
-          b.textContent = o[1];
-          b.className = op[clave] === o[0] ? "activo" : "";
-          b.onclick = function () {
-            op[clave] = o[0];
-            [].forEach.call(s.children, function (x) { x.className = ""; });
-            b.className = "activo";
-            self.cambio();
-          };
-          s.appendChild(b);
-        });
-        (destino || cont).appendChild(l);
-        (destino || cont).appendChild(s);
+        l.textContent = txt;
+        destino.appendChild(l);
       }
-      function casilla(etiqueta, clave) {
-        var l = document.createElement("label");
-        l.className = "chk";
-        l.innerHTML = '<input type="checkbox"> ';
-        l.appendChild(document.createTextNode(etiqueta));
-        var c = l.querySelector("input");
-        c.checked = !!op[clave];
-        c.onchange = function () { op[clave] = c.checked; self.cambio(); };
-        cont.appendChild(l);
-      }
-      var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
-      // margenes izquierdo y derecho, en % del largo de la recta
-      function margenes() {
-        var l = document.createElement("span");
-        l.textContent = "Márgenes";
-        var d = document.createElement("div");
-        d.className = "margenes";
-        [["margenIzq", "Izq."], ["margenDer", "Der."]].forEach(function (m) {
-          var lab = document.createElement("label");
-          lab.innerHTML = m[1] + ' <input type="number" min="0" max="40" step="1"> %';
-          var inp = lab.querySelector("input");
-          inp.value = op[m[0]];
-          inp.title = "Espacio antes del primer extremo / después del último (0 a 40%)";
-          inp.oninput = function () {
-            if (inp.value === "" || !isFinite(Number(inp.value))) return;
-            op[m[0]] = Math.max(0, Math.min(40, Number(inp.value)));
-            self.cambio();
-          };
-          inp.onchange = function () { inp.value = op[m[0]]; };
-          d.appendChild(lab);
-        });
-        cont.appendChild(l);
-        cont.appendChild(d);
-      }
-      // operacion entre los conjuntos (cada fila es un conjunto), al inicio del panel
-      segmentado("Operación", "operacion", [["union", "Unión ∪"], ["interseccion", "Intersección ∩"]], arriba);
-      segmentado("Largo", "largo", [["corta", "Corta"], ["media", "Media"], ["larga", "Larga"]]);
-      margenes();
-      segmentado("Números grilla", "tamGrilla", tam);
-      segmentado("Números extremos", "tamExtremos", tam);
-      segmentado("( ) y [ ]", "tamSignos", tam);
-      segmentado("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
-      segmentado("Rayado", "rayado", [["poco", "Ralo"], ["normal", "Normal"], ["denso", "Denso"]]);
-      casilla("Grilla solo en enteros", "soloEnteros");
-      casilla("Ocultar numeración (mantener el 0)", "ocultarNumeros");
-      casilla("Escribir la operación debajo", "mostrarUnion");
-      casilla("Escribir el resultado", "mostrarResultado");
-      casilla("Incluir referencia", "referencia");
+      var ui = {
+        // las opciones definidas dentro de fn van arriba de las filas
+        arriba: function (fn) { destino = arriba; fn(); destino = principal; },
+        // botones excluyentes; repintar: vuelve a armar las opciones al cambiar
+        seg: function (txt, clave, opciones, repintar) {
+          etiqueta(txt);
+          var s = document.createElement("div");
+          s.className = "seg";
+          opciones.forEach(function (o) {
+            var b = document.createElement("button");
+            b.textContent = o[1];
+            b.className = op[clave] === o[0] ? "activo" : "";
+            b.onclick = function () {
+              op[clave] = o[0];
+              [].forEach.call(s.children, function (x) { x.className = ""; });
+              b.className = "activo";
+              self.cambio();
+              if (repintar) self.pintarOpciones();
+            };
+            s.appendChild(b);
+          });
+          destino.appendChild(s);
+        },
+        chk: function (txt, clave) {
+          var l = document.createElement("label");
+          l.className = "chk";
+          l.innerHTML = '<input type="checkbox"> ';
+          l.appendChild(document.createTextNode(txt));
+          var c = l.querySelector("input");
+          c.checked = !!op[clave];
+          c.onchange = function () { op[clave] = c.checked; self.cambio(); };
+          destino.appendChild(l);
+        },
+        // campos cortos en una fila. numero: [min, max] (se limita); texto: libre.
+        // error(): mensaje a mostrar debajo si los valores no sirven
+        campos: function (txt, defs, error) {
+          etiqueta(txt);
+          var d = document.createElement("div");
+          d.className = "campos";
+          var aviso = document.createElement("div");
+          aviso.className = "error";
+          var inputs = [];
+          function revisar() {
+            var msj = error ? error() : "";
+            aviso.textContent = msj;
+            aviso.style.display = msj ? "" : "none";
+            inputs.forEach(function (i) { i.classList.toggle("invalido", !!msj); });
+          }
+          defs.forEach(function (def) {
+            var lab = document.createElement("label");
+            lab.appendChild(document.createTextNode(def.prefijo + " "));
+            var inp = document.createElement("input");
+            inp.type = def.numero ? "number" : "text";
+            if (def.numero) { inp.min = def.numero[0]; inp.max = def.numero[1]; inp.step = 1; }
+            inp.spellcheck = false;
+            inp.value = op[def.clave];
+            if (def.titulo) inp.title = def.titulo;
+            inp.oninput = function () {
+              if (def.numero) {
+                if (inp.value === "" || !isFinite(Number(inp.value))) return;
+                op[def.clave] = Math.max(def.numero[0], Math.min(def.numero[1], Number(inp.value)));
+              } else op[def.clave] = inp.value;
+              revisar();
+              self.cambio();
+            };
+            if (def.numero) inp.onchange = function () { inp.value = op[def.clave]; };
+            lab.appendChild(inp);
+            if (def.sufijo) lab.appendChild(document.createTextNode(" " + def.sufijo));
+            inputs.push(inp);
+            d.appendChild(lab);
+          });
+          destino.appendChild(d);
+          destino.appendChild(aviso);
+          revisar();
+        },
+      };
+      this.gen().opciones(ui, op);
     },
 
-    // cada cambio: se guarda y, si hay una recta vinculada, se redibuja en vivo
+    guardar: function () {
+      try { localStorage.setItem(this.gen().clave, JSON.stringify(this.op)); } catch (e) {}
+    },
+
+    // cada cambio: se guarda y, si hay un dibujo vinculado, se redibuja en vivo
     cambio: function () {
-      try { localStorage.setItem(CLAVE_OPCIONES, JSON.stringify(this.op)); } catch (e) {}
-      var self = this;
+      this.guardar();
+      var self = this, tipo = this.tipo;
       clearTimeout(this.temporizador);
-      if (vinculo) this.temporizador = setTimeout(function () { aplicar(self.op, false); }, 250);
+      if (vinculo) this.temporizador = setTimeout(function () { aplicar(tipo, self.op, false); }, 250);
     },
 
     modo: function () {
       if (!this.el) return;
-      this.el.querySelector(".modo").textContent = vinculo ? "editando la seleccionada" : "nueva";
+      var dibujo = this.tipo === "recta" ? "recta" : "gráfico";
+      this.el.querySelector(".modo").textContent = vinculo ? "editando " + (this.tipo === "recta" ? "la" : "el") +
+        " seleccionad" + (this.tipo === "recta" ? "a" : "o") : "nuevo";
       this.el.querySelector(".insertar").textContent = vinculo ? "Redibujar" : "Insertar en el centro";
       this.el.querySelector(".copia").style.display = vinculo ? "" : "none";
+      this.el.querySelector(".copia").title = "Inserta otr" + (dibujo === "recta" ? "a recta" : "o gráfico") + " igual";
     },
 
     alternar: function (abrir) {
       this.abierto = abrir === undefined ? !this.abierto : abrir;
       this.el.style.display = this.abierto ? "" : "none";
       boton.actualizar();
-      if (this.abierto) seleccionCambio();
+      if (this.abierto) seleccionado = undefined, seleccionCambio();
     },
   };
 
-  // Al seleccionar una recta generada, el panel la carga para editarla
+  // Al seleccionar un dibujo generado, el panel cambia a su generador y lo carga
   function seleccionCambio() {
     var A = api();
     if (!A || !panel.abierto) return;
     var st = A.getAppState();
     panel.el.classList.toggle("oscuro", st.theme === "dark");
     var ids = Object.keys(st.selectedElementIds || {});
-    var gid = null;
+    var gid = null, tipo = null;
     if (ids.length) {
       var porId = {};
       A.getSceneElements().forEach(function (e) { porId[e.id] = e; });
       for (var i = 0; i < ids.length && !gid; i++) {
-        var e = porId[ids[i]];
-        if (e && e.customData && e.customData.pizarra && e.customData.pizarra.tipo === "recta") gid = e.customData.pizarra.gid;
+        var d = datosDe(porId[ids[i]]);
+        if (d && GEN[d.tipo]) gid = d.gid, tipo = d.tipo;
       }
     }
-    if (gid === vinculo) return;
+    if (gid === seleccionado) return; // solo se reacciona cuando cambia la seleccion
+    seleccionado = gid;
     vinculo = gid;
     if (gid) {
-      var eje = elementosDe(gid, A.getSceneElements()).filter(function (e) { return e.customData.pizarra.eje; })[0];
-      if (eje && eje.customData.pizarra.opciones) panel.cargar(eje.customData.pizarra.opciones);
+      clearTimeout(panel.temporizador);
+      var ancla = elementosDe(gid, A.getSceneElements()).filter(function (e) { return datosDe(e).eje; })[0];
+      if (ancla && datosDe(ancla).opciones) panel.cargar(tipo, datosDe(ancla).opciones);
+      if (tipo !== panel.tipo) panel.mostrar(tipo);
     }
     panel.modo();
   }
@@ -846,7 +1352,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: recta real con intervalos";
+      b.title = "Generadores: recta real con intervalos y gráficos de funciones";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.addEventListener("click", function () { panel.alternar(); });
@@ -879,10 +1385,15 @@
 
   // ----------------------------------------------------------------- inicio
   function iniciar() {
+    Object.keys(GEN).forEach(function (t) {
+      var guardado = null;
+      try { guardado = JSON.parse(localStorage.getItem(GEN[t].clave) || "null"); } catch (e) {}
+      panel.cargar(t, guardado || {});
+    });
+    var tipo = "recta";
+    try { tipo = localStorage.getItem("pizarra-generador-tipo") || "recta"; } catch (e) {}
     panel.construir();
-    var guardado = null;
-    try { guardado = JSON.parse(localStorage.getItem(CLAVE_OPCIONES) || "null"); } catch (e) {}
-    panel.cargar(guardado || {});
+    panel.mostrar(GEN[tipo] ? tipo : "recta");
     boton.crear();
     boton.actualizar();
     boton.vigilar();

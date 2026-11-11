@@ -29,6 +29,16 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   referencia); luego, por cada conjunto, su línea en la referencia y, por cada
   intervalo, sus extremos escritos y el intervalo (signo izquierdo, rayado de
   izquierda a derecha, signo derecho); por último la operación y su resultado.
+  El mismo panel tiene un segundo generador, **Funciones**: cada fila es una
+  función anónima de JavaScript (`x => x**2 - 3`, con `Math` disponible sin
+  prefijo) que se grafica sobre ejes cartesianos con cuadrícula, dominio y rango
+  configurables. Las curvas son elementos `line` (muestreo + Douglas-Peucker) que
+  se cortan en asíntotas, saltos y puntos no definidos. El código de las
+  funciones se ejecuta en la página y viaja dentro del dibujo (`customData`) a
+  las otras ventanas de la sala.
+  Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
+  función de dibujo); el dibujo guarda en su primer elemento las opciones y su
+  distancia al origen, para regenerarlo en el mismo lugar.
 
 - Sin servicios externos: se quitó la analítica (Simple Analytics), el CDN de fuentes de Excalidraw, Google Fonts y la redirección a Excalidraw+. Estos cambios se hicieron directamente sobre `app/index.html` y `app/assets/*.css` (no están en el diff). La fuente de la interfaz (Assistant) usa solo el peso Regular local.
 

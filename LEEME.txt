@@ -99,6 +99,45 @@ RECTA REAL CON INTERVALOS (prototipo)
 - "Restablecer" vuelve las opciones a como venian de fabrica, sin borrar los
   intervalos que escribiste.
 
+GRAFICOS DE FUNCIONES (prototipo)
+- En el mismo panel, arriba, elegi "Funciones" (en vez de "Recta real").
+- Cada fila es una funcion anonima de JavaScript, con su color:
+      x => x**2 - 3
+      x => sqrt(x)
+      x => 1/x
+      x => x < 0 ? -x : x**2      (funcion partida)
+  A la izquierda de cada fila va el nombre de la funcion (f, g, h... por
+  defecto). Si escribis solo la letra se completa con la variable: "f" queda
+  f(x). Si lo escribis con parentesis se usa tal cual: "P(t)" con t => t**2.
+  Si lo dejas vacio, toma la letra que le toca por su lugar.
+  Se pueden usar las funciones de Math sin escribir "Math.": sin, cos, tan,
+  sqrt, abs, log, exp, PI, E. La potencia es ** (x**2); ^ no sirve.
+  Si algo esta mal escrito, la fila se pone en rojo y dice por que.
+- "Dominio x": desde y hasta donde se grafica (acepta π y fracciones: -2π).
+  "Rango y": Automatico (lo calcula mirando las funciones) o Manual.
+- "Cuadrícula cuadrada" (activada por defecto): los cuadros de la cuadricula
+  son cuadrados. Para lograrlo se ajusta el alto del grafico y el rango y se
+  extiende hasta la linea de cuadricula siguiente. El paso de y puede ser
+  distinto del de x (por ejemplo x de 1 en 1 e y de 2 en 2); si queres la
+  misma escala en los dos ejes, marca tambien "Misma escala en x y en y".
+- "Referencia": el cuadro (una funcion debajo de la otra) va fuera de la
+  cuadricula, "A la derecha" del grafico (alineado arriba) o "Arriba" del
+  grafico (alineado a la derecha).
+- Las curvas se cortan solas donde la funcion no existe, en las asintotas
+  (1/x, tan) y en los saltos de las funciones partidas.
+- Opciones: tamaño del grafico, tamaño de los numeros (S a XL), fuente,
+  grosor de las curvas, misma escala en x y en y, cuadricula, graduacion solo
+  en enteros, ocultar numeracion e incluir referencia (cuadro arriba a la
+  derecha con f(x) = ..., g(x) = ... en el color de cada curva).
+- Igual que la recta: "Insertar en el centro", "Ejemplo", "Restablecer", y si
+  seleccionas un grafico ya insertado con el panel abierto, se edita en vivo.
+  El panel cambia solo a "Recta real" o "Funciones" segun lo que selecciones.
+- Al animar, aparece en este orden: cuadricula, ejes y numeracion, y despues
+  cada funcion (su linea en la referencia y su curva de izquierda a derecha).
+- Ojo: lo que escribis en las filas es codigo que se ejecuta en el navegador.
+  Una funcion que no termina nunca (por ejemplo un while infinito) cuelga la
+  pestaña.
+
 TIPS
 - En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
   salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la
