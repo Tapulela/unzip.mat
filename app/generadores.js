@@ -38,6 +38,8 @@
     soloEnteros: false, ocultarNumeros: false, mostrarUnion: true, mostrarResultado: true,
   };
 
+  var EJEMPLO = [{ texto: "[-3, 2)", color: COLORES[0] }, { texto: "(0, 5]", color: COLORES[1] }];
+
   function rnd() { return Math.floor(Math.random() * 2147483647); }
   function nuevoId() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
   function copiar(o) { return JSON.parse(JSON.stringify(o)); }
@@ -457,6 +459,26 @@
     });
   }
 
+  // rectangulo que ocupa un elemento (las lineas pueden tener puntos negativos)
+  function caja(e) {
+    var x0 = e.x, y0 = e.y, x1 = e.x + e.width, y1 = e.y + e.height;
+    if (e.points && e.points.length) {
+      var xs = e.points.map(function (p) { return e.x + p[0]; }), ys = e.points.map(function (p) { return e.y + p[1]; });
+      x0 = Math.min.apply(null, xs); x1 = Math.max.apply(null, xs);
+      y0 = Math.min.apply(null, ys); y1 = Math.max.apply(null, ys);
+    }
+    return { x0: x0, y0: y0, x1: x1, y1: y1 };
+  }
+  function cajaDe(lista) {
+    var b = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    lista.forEach(function (e) {
+      var c = caja(e);
+      b.x0 = Math.min(b.x0, c.x0); b.y0 = Math.min(b.y0, c.y0);
+      b.x1 = Math.max(b.x1, c.x1); b.y1 = Math.max(b.y1, c.y1);
+    });
+    return b;
+  }
+
   function aplicar(op, nueva) {
     var A = api();
     if (!A) return;
@@ -470,17 +492,19 @@
       if (mio !== turno) return;
       var todos = A.getSceneElementsIncludingDeleted();
       var gid = nueva ? null : vinculo, ox, oy, viejos = [];
+      var st = A.getAppState(), z = st.zoom.value;
+      var recien = false, vista = {}; // recta nueva / cambios de vista
       if (gid) {
         viejos = elementosDe(gid, todos);
         var eje = viejos.filter(function (e) { return e.customData.pizarra.eje; })[0];
         if (eje) ox = eje.x, oy = eje.y; else gid = null, viejos = [];
       }
       if (!gid) {
-        var st = A.getAppState(), z = st.zoom.value, L = LARGOS[op.largo] || 800;
+        var L = LARGOS[op.largo] || 800;
         gid = nuevoId();
         ox = -st.scrollX + st.width / z / 2 - L / 2;
         oy = -st.scrollY + st.height / z / 2 - 40;
-        if (nueva && vinculo) oy += 60; // copia: un poco mas abajo para que se vea
+        recien = true;
       }
       var borrar = {};
       viejos.forEach(function (e) { borrar[e.id] = true; });
@@ -493,6 +517,23 @@
         return d;
       });
       var nuevos = generarRecta(op, ox, oy, gid);
+      // una recta nueva no se encima a lo que ya hay: baja hasta un lugar libre
+      if (recien) {
+        var ocupados = resto.filter(function (e) { return !e.isDeleted; }).map(caja);
+        for (var vuelta = 0; vuelta < 50; vuelta++) {
+          var b = cajaDe(nuevos), choque = null;
+          ocupados.forEach(function (o) {
+            if (o.x1 > b.x0 && o.x0 < b.x1 && o.y1 > b.y0 && o.y0 < b.y1) choque = Math.max(choque || -Infinity, o.y1);
+          });
+          if (choque === null) break;
+          var bajar = choque - b.y0 + 40;
+          nuevos.forEach(function (e) { e.y += bajar; });
+        }
+        // si quedo fuera de la vista, la vista baja hasta ella
+        b = cajaDe(nuevos);
+        var arriba = -st.scrollY, abajo = arriba + st.height / z;
+        if (b.y0 < arriba || b.y1 > abajo) vista.scrollY = -((b.y0 + b.y1) / 2 - st.height / z / 2);
+      }
       var sel = {};
       nuevos.forEach(function (e) { sel[e.id] = true; });
       var grupos = {};
@@ -500,7 +541,7 @@
       vinculo = gid;
       A.updateScene({
         elements: resto.concat(nuevos),
-        appState: { selectedElementIds: sel, selectedGroupIds: grupos, editingGroupId: null },
+        appState: Object.assign({ selectedElementIds: sel, selectedGroupIds: grupos, editingGroupId: null }, vista),
         captureUpdate: "IMMEDIATELY",
       });
       panel.modo();
@@ -572,7 +613,9 @@
         '<div class="botones"><button class="b principal insertar">Insertar en el centro</button>' +
         '<button class="b copia">Insertar copia</button>' +
         '<button class="b restablecer" title="Vuelve las opciones a los valores ' +
-        'predeterminados (los intervalos escritos se mantienen)">Restablecer</button></div>' +
+        'predeterminados (los intervalos escritos se mantienen)">Restablecer</button>' +
+        '<button class="b ejemplo" title="Inserta una recta nueva de ejemplo con dos intervalos">' +
+        'Ejemplo</button></div>' +
         '<div class="ayuda">Ejemplos: (1/2, 3], [−2, ∞), (π/2, √2+1). ' +
         'Para decimales con coma separá con punto y coma: [0,5; 2). ' +
         'Varios intervalos en una fila: (1,2) ∪ [3,4]. ' +
@@ -594,6 +637,16 @@
       });
       el.querySelector(".insertar").onclick = function () { aplicar(self.op, !vinculo); };
       el.querySelector(".copia").onclick = function () { aplicar(self.op, true); };
+      // recta nueva de ejemplo: carga dos intervalos que se superponen (para
+      // que se vea el rayado cruzado) y la inserta en el centro. No toca la
+      // recta que este seleccionada; el aspecto elegido se mantiene.
+      el.querySelector(".ejemplo").onclick = function () {
+        clearTimeout(self.temporizador);
+        self.op.filas = copiar(EJEMPLO);
+        self.pintarFilas();
+        try { localStorage.setItem(CLAVE_OPCIONES, JSON.stringify(self.op)); } catch (e) {}
+        aplicar(self.op, true);
+      };
       // opciones a los valores predeterminados; los intervalos escritos y la
       // operacion entre ellos se mantienen (son el contenido, no el aspecto)
       el.querySelector(".restablecer").onclick = function () {

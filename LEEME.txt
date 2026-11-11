@@ -91,6 +91,11 @@ RECTA REAL CON INTERVALOS (prototipo)
   "Márgenes" (izquierdo y derecho, 10% por defecto) es el espacio que queda
   antes del primer extremo y despues del ultimo, en % del largo de la recta.
   "( ) y [ ]" cambia el tamaño de los parentesis y corchetes sobre la recta.
+- "Ejemplo" inserta una recta nueva con dos intervalos que se superponen,
+  [-3, 2) y (0, 5], usando el aspecto elegido en el panel. No modifica la
+  recta que este seleccionada.
+- Las rectas nuevas no se enciman con lo que ya hay: si el centro de la vista
+  esta ocupado, aparecen mas abajo y la vista baja hasta ellas.
 - "Restablecer" vuelve las opciones a como venian de fabrica, sin borrar los
   intervalos que escribiste.
 
