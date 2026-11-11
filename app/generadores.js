@@ -355,16 +355,46 @@
     // una fila que ya es union de varios intervalos va entre parentesis.
     // Con el resultado activado se agrega "= ..." (o solo el resultado si la
     // operacion no se escribe).
+    // Un texto de Excalidraw tiene un solo color, asi que la linea se arma con
+    // varios textos seguidos: cada intervalo en el color de su conjunto y los
+    // simbolos (∪, ∩, =, parentesis) y el resultado en negro.
     if ((op.mostrarUnion || op.mostrarResultado) && conjuntos.length) {
       var inter = op.operacion === "interseccion";
-      var partes = [];
-      if (op.mostrarUnion) partes.push(conjuntos.map(function (c) { return textoConjunto(c, inter); }).join(simbolo));
+      var tramos = [];
+      function poner(t, color) {
+        var u = tramos[tramos.length - 1];
+        if (u && u.color === color) u.t += t; // se juntan los seguidos del mismo color
+        else tramos.push({ t: t, color: color });
+      }
+      if (op.mostrarUnion) {
+        conjuntos.forEach(function (c, i) {
+          if (i) poner(simbolo, TINTA);
+          var parentesis = inter && c.ints.length > 1;
+          if (parentesis) poner("(", TINTA);
+          c.ints.forEach(function (r, j) {
+            if (j) poner(" ∪ ", TINTA);
+            poner(r.original, c.color);
+          });
+          if (parentesis) poner(")", TINTA);
+        });
+      }
       if (op.mostrarResultado) {
         var res = conjuntos.map(function (c) { return normalizar(c.ints.map(tramo)); })
           .reduce(function (A, B) { return inter ? intersecar(A, B) : unir(A, B); });
-        partes.push("= " + textoResultado(res));
+        poner((op.mostrarUnion ? " = " : "= ") + textoResultado(res), TINTA);
       }
-      agregar(texto(ox, yExtremos + tamE * fuente.lh + 14, partes.join(" "), tamE, fuente, TINTA, "left"));
+      var xt = ox, yt = yExtremos + tamE * fuente.lh + 14;
+      tramos.forEach(function (s) {
+        // los espacios de los bordes se avanzan pero no quedan dentro del texto
+        var izq = s.t.length - s.t.replace(/^\s+/, "").length;
+        var limpio = s.t.trim();
+        xt += medir(s.t.slice(0, izq), tamE, fuente);
+        if (limpio) {
+          agregar(texto(xt, yt, limpio, tamE, fuente, s.color, "left"));
+          xt += medir(limpio, tamE, fuente);
+        }
+        xt += medir(s.t.slice(izq + limpio.length), tamE, fuente);
+      });
     }
 
     // referencia: cuadro arriba a la derecha con cada conjunto en su color

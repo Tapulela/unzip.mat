@@ -72,6 +72,9 @@ RECTA REAL CON INTERVALOS (prototipo)
 - Arriba del panel, "Operación" elige Unión (∪) o Intersección (∩): cada fila
   es un conjunto y la operacion se escribe debajo de la recta, por ejemplo
   ((-2, 1] ∪ (1,2)) ∩ [1, ∞) ∩ (0, 4).
+  Cada intervalo se escribe en el color de su conjunto (como en la
+  referencia); los simbolos y el resultado van en negro. Esa linea son varios
+  textos seguidos, asi que para cambiarla conviene usar el panel.
 - "Escribir el resultado" agrega el resultado calculado despues de un "=":
   ... = [1, 2). Si no hay elementos escribe ∅, y un solo punto como {1}.
   Destildala si queres que lo resuelvan los estudiantes.
