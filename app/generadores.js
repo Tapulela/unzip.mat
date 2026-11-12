@@ -145,6 +145,40 @@
     });
   }
 
+  // ------------------------------------------------------------ titulos
+  // Cada grafico puede llevar un titulo ("Tabla de verdad", "Diagrama
+  // sagital"...) arriba a la izquierda, un tamaño mas grande que su texto.
+  function tamTitulo(tam) { return tam < 20 ? 20 : tam < 28 ? 28 : 36; }
+
+  // Dibuja con `dibujar` (en cualquier lugar) y lo pone con su esquina superior
+  // izquierda en (x, y), con el titulo encima si hay. Devuelve { w, h } del total.
+  function colocarConTitulo(dibujar, x, y, titulo, tam, fuente, agregar) {
+    var tmp = [];
+    dibujar(function (e) { tmp.push(e); return e; });
+    if (!tmp.length) return { w: 0, h: 0 };
+    var dy = 0, wt = 0;
+    if (titulo) {
+      var ts = tamTitulo(tam);
+      agregar(texto(x, y, titulo, ts, fuente, TINTA, "left"));
+      dy = ts * fuente.lh + 12;
+      wt = medir(titulo, ts, fuente);
+    }
+    var b = cajaDe(tmp);
+    tmp.forEach(function (e) { e.x += x - b.x0; e.y += y + dy - b.y0; agregar(e); });
+    return { w: Math.max(b.x1 - b.x0, wt), h: b.y1 - b.y0 + dy };
+  }
+
+  // Dibuja con `dibujar` donde corresponda y agrega antes un titulo encima de todo.
+  function conTitulo(titulo, tam, fuente, agregar, dibujar) {
+    if (!titulo) { dibujar(agregar); return; }
+    var tmp = [];
+    dibujar(function (e) { tmp.push(e); return e; });
+    if (!tmp.length) return;
+    var b = cajaDe(tmp), ts = tamTitulo(tam);
+    agregar(texto(b.x0, b.y0 - ts * fuente.lh - 14, titulo, ts, fuente, TINTA, "left"));
+    tmp.forEach(agregar);
+  }
+
   // =================================================== GENERADOR: RECTA REAL
   var LARGOS = { corta: 500, media: 800, larga: 1100 };
   var RAYADOS = { poco: 26, normal: 18, denso: 11 };
@@ -1523,8 +1557,9 @@
     var t = armarTabla(op), fuente = t.fuente, tam = t.tam, af = t.altoFila;
     var y = oy, alto = tam * fuente.lh + 4;
     if (op.mostrarTabla !== false) {
-      dibujarCuerpoTabla(t, op, ox, oy, agregar);
-      y = oy + t.H + 14;
+      var tb = colocarConTitulo(function (ag) { dibujarCuerpoTabla(t, op, 0, 0, ag); }, ox, oy,
+        op.titulos && "Tabla de verdad", tam, fuente, agregar);
+      y = oy + tb.h + 14;
     }
     if (op.clasificar) {
       t.exprs.forEach(function (e) {
@@ -1545,11 +1580,10 @@
         var cuales = op.circuitoDe === "simple" ? [e.minima] : op.circuitoDe === "ambas" ? [e.arbol, e.minima] : [e.arbol];
         if (cuales.length === 2 && imprimirLogica(cuales[1], false) === e.texto) cuales.pop();
         cuales.forEach(function (arbol) {
-          var tmp = [];
-          dibujarInterruptores(arbol, imprimirLogica(arbol, false), e.color, op.diseno, tam, fuente, function (el) { tmp.push(el); });
-          var b = cajaDe(tmp);
-          tmp.forEach(function (el) { el.x += ox - b.x0; el.y += y - b.y0; agregar(el); });
-          y += b.y1 - b.y0 + 36;
+          var c = colocarConTitulo(function (ag) {
+            dibujarInterruptores(arbol, imprimirLogica(arbol, false), e.color, op.diseno, tam, fuente, ag);
+          }, ox, y, op.titulos && "Circuito de interruptores", tam, fuente, agregar);
+          y += c.h + 36;
         });
       });
     }
@@ -2040,12 +2074,8 @@
       });
       return piezas;
     };
-    var colocar = function (dibujar, x, yTop) {
-      var tmp = [];
-      dibujar(function (e) { tmp.push(e); });
-      var b = cajaDe(tmp);
-      tmp.forEach(function (e) { e.x += x - b.x0; e.y += yTop - b.y0; agregar(e); });
-      return { w: b.x1 - b.x0, h: b.y1 - b.y0 };
+    var colocar = function (dibujar, x, yTop, titulo) {
+      return colocarConTitulo(dibujar, x, yTop, op.titulos && titulo, tam, fuente, agregar);
     };
 
     op.filas.forEach(function (f, i) {
@@ -2063,12 +2093,13 @@
       var cob = coberturaLogica(valores, n, fnc), conMapa = op.karnaugh && n <= 4;
       var x = ox, alto = 0;
       if (op.tabla) {
-        var tb = colocar(function (ag) { dibujarTablaBoole(vars, valores, nombre, color, tam, fuente, ag); }, x, y);
+        var tb = colocar(function (ag) { dibujarTablaBoole(vars, valores, nombre, color, tam, fuente, ag); }, x, y, "Tabla de verdad");
         x += tb.w + 60;
         alto = Math.max(alto, tb.h);
       }
       if (conMapa) {
-        var km = colocar(function (ag) { dibujarKarnaugh(vars, valores, cob, fnc, fmt, op.indices, tam, fuente, ag); }, x, y);
+        var km = colocar(function (ag) { dibujarKarnaugh(vars, valores, cob, fnc, fmt, op.indices, tam, fuente, ag); }, x, y,
+          "Mapa de Karnaugh (" + (fnc ? "maxitérminos" : "minitérminos") + ")");
         alto = Math.max(alto, km.h);
       }
       if (alto) y += alto + 20;
@@ -2107,10 +2138,11 @@
         var cuales = op.circuitoDe === "simple" ? [simple] : op.circuitoDe === "escrita" ? [escrita] : [escrita, simple];
         if (cuales.length === 2 && imprimirBoole(cuales[0], fmt) === imprimirBoole(cuales[1], fmt)) cuales.pop();
         y += 20;
-        cuales.forEach(function (arbol) {
+        cuales.forEach(function (arbol, k) {
+          var cual = cuales.length === 1 ? "" : k === 0 ? " (expresión escrita)" : " (simplificada)";
           var c = colocar(function (ag) {
             dibujarCircuito(arbol, vars, nombre + " = " + imprimirBoole(arbol, fmt), color, tam, fuente, ag, fmt.neg);
-          }, ox, y);
+          }, ox, y, "Circuito lógico" + cual);
           y += c.h + 40;
         });
       }
@@ -3017,6 +3049,9 @@
       if (op.propiedades && f.homogenea) propiedadesRelacion(f).forEach(function (t) { esc.linea(t, f.color); });
     });
 
+    dibujarCartesiano.titulo = "Gráfico cartesiano";
+    dibujarSagital.titulo = "Diagrama sagital";
+    dibujarGrafo.titulo = "Grafo dirigido";
     var dibujos = [op.cartesiano && dibujarCartesiano, op.sagital && dibujarSagital, op.grafo && dibujarGrafo]
       .filter(Boolean);
     if (!dibujos.length) return;
@@ -3027,12 +3062,10 @@
       y += tam * fuente.lh + 30;
       var x = ox, alto = 0;
       dibujos.forEach(function (dibujar) {
-        var tmp = [];
-        dibujar(f, tam, fuente, function (e) { tmp.push(e); });
-        var b = cajaDe(tmp);
-        tmp.forEach(function (e) { e.x += x - b.x0; e.y += y - b.y0; agregar(e); });
-        x += b.x1 - b.x0 + 90;
-        alto = Math.max(alto, b.y1 - b.y0);
+        var c = colocarConTitulo(function (ag) { dibujar(f, tam, fuente, ag); }, x, y,
+          op.titulos && dibujar.titulo, tam, fuente, agregar);
+        x += c.w + 90;
+        alto = Math.max(alto, c.h);
       });
       y += alto + 60;
     });
@@ -3056,6 +3089,7 @@
         operacion: "union", estilo: "rayado", referencia: false, margenIzq: 10, margenDer: 10,
         largo: "media", tamGrilla: "S", tamExtremos: "L", tamSignos: "M", fuente: "normal", rayado: "normal",
         soloEnteros: false, ocultarNumeros: false, mostrarUnion: true, mostrarResultado: true,
+        titulos: true,
       },
       contenido: ["filas", "operacion"],
       ejemplo: { filas: [{ texto: "[-3, 2)", color: COLORES[0] }, { texto: "(0, 5]", color: COLORES[1] }] },
@@ -3072,7 +3106,10 @@
           .map(function (r) { return r.original + ": " + r.error; });
       },
       posicion: function (op, cx, cy) { return { x: cx - (LARGOS[op.largo] || 800) / 2, y: cy - 40 }; },
-      generar: generarRecta,
+      generar: function (op, ox, oy, agregar) {
+        conTitulo(op.titulos && "Recta real", TAMANOS[op.tamGrilla] || 16, FUENTES[op.fuente] || FUENTES.normal,
+          agregar, function (ag) { generarRecta(op, ox, oy, ag); });
+      },
       opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
         var lineas = op.estilo === "lineas";
@@ -3098,6 +3135,7 @@
         ui.chk("Escribir la operación debajo", "mostrarUnion");
         ui.chk("Escribir el resultado", "mostrarResultado");
         ui.chk("Incluir referencia", "referencia");
+        ui.chk("Título («Recta real»)", "titulos");
       },
     },
 
@@ -3110,7 +3148,7 @@
         xMin: "-5", xMax: "5", yAuto: true, yMin: "-5", yMax: "5",
         tamano: "medio", escalaIgual: false, tamNumeros: "S", fuente: "normal", grosor: "normal",
         cuadricula: true, cuadrada: true, soloEnteros: false, ocultarNumeros: false,
-        referencia: true, posReferencia: "derecha", marcarExtremos: true,
+        referencia: true, posReferencia: "derecha", marcarExtremos: true, titulos: true,
       },
       contenido: ["filas", "xMin", "xMax", "yAuto", "yMin", "yMax"],
       ejemplo: {
@@ -3155,7 +3193,10 @@
         var W = ANCHOS[op.tamano] || 800;
         return { x: cx - W / 2, y: cy - W * 0.31 };
       },
-      generar: generarFunciones,
+      generar: function (op, ox, oy, agregar) {
+        conTitulo(op.titulos && "Gráfico de funciones", TAMANOS[op.tamNumeros] || 16, FUENTES[op.fuente] || FUENTES.normal,
+          agregar, function (ag) { generarFunciones(op, ox, oy, ag); });
+      },
       opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
         ui.arriba(function () {
@@ -3183,6 +3224,7 @@
         ui.chk("Ocultar numeración", "ocultarNumeros");
         ui.chk("Incluir referencia", "referencia");
         ui.chk("Marcar extremos del dominio (● incluido, ○ excluido)", "marcarExtremos");
+        ui.chk("Título («Gráfico de funciones»)", "titulos");
       },
     },
 
@@ -3196,7 +3238,7 @@
         tamTexto: "M", fuente: "normal", intermedias: true, lineasFilas: true,
         colorResultado: true, clasificar: false, ocultar: false,
         mostrarTabla: true, simplificar: false, forma: "fnd",
-        interruptores: false, diseno: "abierto", circuitoDe: "original",
+        interruptores: false, diseno: "abierto", circuitoDe: "original", titulos: true,
       },
       contenido: ["filas", "nVars", "nombres"],
       ejemplo: { filas: [{ texto: "[(p → q) ∧ p] → q", color: COLORES[0] }], nVars: 2 },
@@ -3235,6 +3277,7 @@
         ui.chk("Escribir si es tautología, contradicción o contingencia", "clasificar");
         ui.chk("Dejar vacías las columnas a calcular (para completar)", "ocultar");
         ui.chk("Dibujar la tabla", "mostrarTabla");
+        ui.chk("Títulos («Tabla de verdad», «Circuito de interruptores»)", "titulos");
         ui.chk("Escribir la expresión simplificada", "simplificar", true);
         ui.chk("Circuito de interruptores", "interruptores", true);
         if (op.interruptores) {
@@ -3256,7 +3299,7 @@
         nVars: 3, nombres: "A, B, C, D, E",
         tabla: true, minterminos: true, maxiterminos: false, karnaugh: true, agrupar: "min",
         simplificar: true, indices: true, circuito: true, circuitoDe: "ambas",
-        negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal",
+        negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal", titulos: true,
       },
       contenido: ["filas", "nVars", "nombres"],
       ejemplo: {
@@ -3299,6 +3342,7 @@
         ui.chk("Mapa de Karnaugh (hasta 4 variables)", "karnaugh", true);
         if (op.karnaugh) ui.chk("Número de cada celda en el mapa", "indices");
         ui.chk("Escribir la simplificada", "simplificar");
+        ui.chk("Títulos («Tabla de verdad», «Mapa de Karnaugh», «Circuito lógico»)", "titulos");
         ui.chk("Circuito lógico", "circuito", true);
         if (op.circuito) {
           ui.seg("Circuito de", "circuitoDe", [["escrita", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]]);
@@ -3397,7 +3441,7 @@
         ],
         tamTexto: "M", fuente: "normal", ancho: "medio",
         escribir: true, mostrarDef: true, dominio: false, propiedades: true,
-        cartesiano: true, sagital: true, grafo: true,
+        cartesiano: true, sagital: true, grafo: true, titulos: true,
       },
       contenido: ["filas"],
       ejemplo: {
@@ -3445,6 +3489,7 @@
         ui.chk("Escribir la definición por comprensión", "mostrarDef");
         ui.chk("Escribir dominio e imagen", "dominio");
         ui.chk("Propiedades (relaciones en A × A)", "propiedades");
+        ui.chk("Títulos de los diagramas («Diagrama sagital»...)", "titulos");
       },
     },
   };

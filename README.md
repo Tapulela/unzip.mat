@@ -80,6 +80,10 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   sagital y grafo dirigido (con lazos y flechas curvas si están los dos
   sentidos); opcionalmente escribe dominio, imagen y propiedades (reflexiva,
   simétrica, antisimétrica, transitiva, con contraejemplos).
+  Todos los gráficos llevan un título (opción «Títulos», activada por
+  defecto): «Tabla de verdad», «Circuito de interruptores», «Mapa de
+  Karnaugh», «Circuito lógico», «Gráfico cartesiano», «Diagrama sagital»,
+  «Grafo dirigido», «Recta real» y «Gráfico de funciones».
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.

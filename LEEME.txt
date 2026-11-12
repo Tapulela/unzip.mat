@@ -387,6 +387,20 @@ RELACIONES BINARIAS (prototipo)
   una de equivalencia y una inversa), "Restablecer", y si seleccionas un
   dibujo ya insertado se edita en vivo.
 
+TITULOS DE LOS GRAFICOS
+- Cada grafico que se inserta lleva su titulo arriba a la izquierda, un
+  tamaño mas grande que su texto:
+  - Tabla de verdad: "Tabla de verdad" y "Circuito de interruptores".
+  - Algebra de Boole: "Tabla de verdad", "Mapa de Karnaugh (miniterminos)"
+    o "(maxiterminos)" y "Circuito logico" (si se dibujan los dos, con
+    "(expresion escrita)" y "(simplificada)").
+  - Relaciones: "Grafico cartesiano", "Diagrama sagital" y "Grafo dirigido"
+    sobre cada diagrama.
+  - Recta real: "Recta real". Funciones: "Grafico de funciones".
+  - Conjuntos solo escribe texto, asi que no lleva titulos.
+- En cada panel, la opcion "Titulos" (activada por defecto) los saca.
+- Al animar, cada titulo aparece justo antes de su grafico.
+
 TIPS
 - En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
   salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la
