@@ -948,12 +948,268 @@
     });
   }
 
+  // ========================================= GENERADOR: TABLAS DE VERDAD
+  // Expresiones de logica proposicional. Conectivos (de mayor a menor prioridad):
+  //   ¬ (~ ! - no not)   ∧ (& && ^ · y and)   ∨ (| || + o or v) y ⊻ (⊕ xor)
+  //   → (-> => ⇒, asocia a derecha)   ↔ (<-> <=> ⇔ ≡)
+  // Constantes: V F 1 0 ⊤ ⊥ (V y F solo si no son nombres de variables).
+  var LETRAS = ["p", "q", "r", "s", "t", "u"];
+  var MAX_VARIABLES = 5;
+  var CONECTIVOS = { y: "∧", o: "∨", xo: "⊻", entonces: "→", sii: "↔" };
+  var PALABRAS = { no: "no", not: "no", y: "y", and: "y", o: "o", or: "o", v: "o", xor: "xo" };
+  var SIMBOLOS_LOGICOS = [
+    ["<->", "sii"], ["<=>", "sii"], ["↔", "sii"], ["⇔", "sii"], ["≡", "sii"],
+    ["->", "entonces"], ["=>", "entonces"], ["→", "entonces"], ["⇒", "entonces"],
+    ["&&", "y"], ["||", "o"], ["∧", "y"], ["&", "y"], ["^", "y"], ["·", "y"],
+    ["∨", "o"], ["|", "o"], ["+", "o"], ["⊻", "xo"], ["⊕", "xo"],
+    ["¬", "no"], ["~", "no"], ["!", "no"], ["-", "no"], ["−", "no"],
+    ["(", "("], ["[", "("], [")", ")"], ["]", ")"],
+  ];
+  var IDENT = /^[A-Za-zÀ-ÿ_][A-Za-zÀ-ÿ_0-9]*/;
+
+  // Variables de la tabla: las primeras n de los nombres escritos (completando
+  // con p, q, r... si faltan). Devuelve { vars, error }.
+  function leerVariables(op) {
+    var n = Math.max(1, Math.min(MAX_VARIABLES, Number(op.nVars) || 2));
+    var vars = [], errores = [];
+    String(op.nombres || "").split(/[\s,;]+/).filter(Boolean).forEach(function (v) {
+      if (vars.length >= n) return;
+      var m = IDENT.exec(v);
+      if (!m || m[0] !== v) errores.push("«" + v + "» no sirve como nombre (usá letras)");
+      else if (vars.indexOf(v) >= 0) errores.push("«" + v + "» está repetida");
+      else vars.push(v);
+    });
+    for (var i = 0; vars.length < n; i++) {
+      var l = i < LETRAS.length ? LETRAS[i] : "x" + (i - LETRAS.length + 1);
+      if (vars.indexOf(l) < 0) vars.push(l);
+    }
+    return { vars: vars, error: errores.join(" · ") };
+  }
+
+  function tokensLogicos(s, vars) {
+    var res = [], i = 0;
+    while (i < s.length) {
+      if (/\s/.test(s[i])) { i++; continue; }
+      var resto = s.slice(i), sim = null;
+      for (var k = 0; k < SIMBOLOS_LOGICOS.length && !sim; k++)
+        if (resto.indexOf(SIMBOLOS_LOGICOS[k][0]) === 0) sim = SIMBOLOS_LOGICOS[k];
+      if (sim) { res.push({ t: sim[1], txt: sim[0] }); i += sim[0].length; continue; }
+      var m = IDENT.exec(resto);
+      if (m) {
+        var w = m[0];
+        if (vars.indexOf(w) >= 0) res.push({ t: "var", n: w, txt: w });
+        else if (PALABRAS[w.toLowerCase()]) res.push({ t: PALABRAS[w.toLowerCase()], txt: w });
+        else if (w === "V" || w === "F") res.push({ t: "const", v: w === "V", txt: w });
+        else throw "«" + w + "» no es una variable (las variables son " + vars.join(", ") + ")" +
+          (w.length > 1 && w.length <= 3 ? "; separá con espacios: " + w.split("").join(" ") : "");
+        i += w.length;
+        continue;
+      }
+      if (/[01⊤⊥]/.test(s[i])) { res.push({ t: "const", v: s[i] === "1" || s[i] === "⊤", txt: s[i] }); i++; continue; }
+      throw "No se entiende «" + s[i] + "»";
+    }
+    return res;
+  }
+
+  // Arma el arbol de la expresion: { arbol } o { error }.
+  // Nodos: {t:"var", n} {t:"const", v, txt} {t:"no", a} {t:"bin", op, a, b};
+  // par: "(" o "[" si estaba entre parentesis (se respetan al escribirla).
+  function analizarLogica(texto, vars) {
+    var s = String(texto || "").trim();
+    if (!s) return { error: "Escribí una expresión, por ejemplo p → q" };
+    try {
+      var tk = tokensLogicos(s, vars), i = 0;
+      var es = function (t) { return tk[i] && tk[i].t === t; };
+      var bicond = function () {
+        var a = cond();
+        while (es("sii")) { i++; a = { t: "bin", op: "sii", a: a, b: cond() }; }
+        return a;
+      };
+      var cond = function () {
+        var a = disy();
+        if (es("entonces")) { i++; return { t: "bin", op: "entonces", a: a, b: cond() }; }
+        return a;
+      };
+      var disy = function () {
+        var a = conj();
+        while (es("o") || es("xo")) { var o = tk[i++].t; a = { t: "bin", op: o, a: a, b: conj() }; }
+        return a;
+      };
+      var conj = function () {
+        var a = neg();
+        while (es("y")) { i++; a = { t: "bin", op: "y", a: a, b: neg() }; }
+        return a;
+      };
+      var neg = function () {
+        if (es("no")) { i++; return { t: "no", a: neg() }; }
+        return atomo();
+      };
+      var atomo = function () {
+        var k = tk[i];
+        if (!k) throw i ? "Falta algo después de «" + tk[i - 1].txt + "»" : "Expresión vacía";
+        if (k.t === "var") { i++; return { t: "var", n: k.n }; }
+        if (k.t === "const") { i++; return { t: "const", v: k.v, txt: k.txt }; }
+        if (k.t === "(") {
+          i++;
+          var e = bicond();
+          if (!es(")")) throw "Falta cerrar «" + k.txt + "»";
+          var cierre = tk[i++].txt, debe = k.txt === "[" ? "]" : ")";
+          if (cierre !== debe) throw "«" + k.txt + "» se cierra con «" + debe + "»";
+          e.par = k.txt;
+          return e;
+        }
+        if (k.t === ")") throw "Sobra «" + k.txt + "» o falta algo antes";
+        throw "Falta algo antes de «" + k.txt + "»";
+      };
+      var arbol = bicond();
+      if (i < tk.length) {
+        throw tk[i].t === ")" ? "Sobra «" + tk[i].txt + "»"
+          : "Falta un conectivo antes de «" + tk[i].txt + "»";
+      }
+      return { arbol: arbol };
+    } catch (e) {
+      if (typeof e === "string") return { error: e };
+      throw e;
+    }
+  }
+
+  // la expresion escrita con los simbolos de siempre (y los parentesis del autor)
+  function imprimirLogica(n, conPar) {
+    var s;
+    if (n.t === "var") s = n.n;
+    else if (n.t === "const") s = n.txt;
+    else if (n.t === "no") s = "¬" + imprimirLogica(n.a, true);
+    else s = imprimirLogica(n.a, true) + " " + CONECTIVOS[n.op] + " " + imprimirLogica(n.b, true);
+    if (conPar && n.par) s = n.par + s + (n.par === "[" ? "]" : ")");
+    return s;
+  }
+
+  function valorLogico(n, env) {
+    switch (n.t) {
+      case "var": return env[n.n];
+      case "const": return n.v;
+      case "no": return !valorLogico(n.a, env);
+    }
+    var a = valorLogico(n.a, env), b = valorLogico(n.b, env);
+    switch (n.op) {
+      case "y": return a && b;
+      case "o": return a || b;
+      case "xo": return a !== b;
+      case "entonces": return !a || b;
+      default: return a === b;
+    }
+  }
+
+  // Calcula columnas, valores y medidas de la tabla (sin dibujar).
+  // Columnas: las variables; despues, por cada expresion, sus subexpresiones en
+  // el orden en que se resuelven (si se piden) y la expresion completa.
+  function armarTabla(op) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal;
+    var tam = TAMANOS[op.tamTexto] || 20;
+    var vars = leerVariables(op).vars, nFilas = Math.pow(2, vars.length);
+    var cols = vars.map(function (v) { return { texto: v, nodo: { t: "var", n: v }, color: TINTA, variable: true }; });
+    var porTexto = {};
+    cols.forEach(function (c) { porTexto[c.texto] = c; });
+    var exprs = [];
+    op.filas.forEach(function (f) {
+      var r = analizarLogica(f.texto, vars);
+      if (r.error) return;
+      var color = op.colorResultado ? f.color : TINTA;
+      (function visitar(n, raiz) {
+        if (n.t === "no") visitar(n.a, false);
+        else if (n.t === "bin") { visitar(n.a, false); visitar(n.b, false); }
+        else if (!raiz) return; // variables y constantes sueltas no son columnas
+        if (!raiz && !op.intermedias) return;
+        var k = imprimirLogica(n, false), ya = porTexto[k];
+        if (ya) { if (raiz && !ya.variable) { ya.color = color; ya.raiz = true; } return; }
+        var c = { texto: k, nodo: n, color: raiz ? color : TINTA, raiz: raiz };
+        porTexto[k] = c;
+        cols.push(c);
+      })(r.arbol, true);
+      exprs.push({ arbol: r.arbol, texto: imprimirLogica(r.arbol, false), color: color });
+    });
+
+    // valores: fila 0 = todas V (o todas F); la primera variable cambia cada
+    // mitad, la ultima en cada fila
+    var envs = [];
+    for (var r = 0; r < nFilas; r++) {
+      var env = {};
+      vars.forEach(function (v, j) {
+        var bit = (r >> (vars.length - 1 - j)) & 1;
+        env[v] = op.primero === "F" ? bit === 1 : bit === 0;
+      });
+      envs.push(env);
+    }
+    cols.forEach(function (c) { c.valores = envs.map(function (e) { return valorLogico(c.nodo, e); }); });
+    exprs.forEach(function (e) {
+      var vs = envs.map(function (en) { return valorLogico(e.arbol, en); });
+      e.clase = vs.every(Boolean) ? "Tautología" : vs.some(Boolean) ? "Contingencia" : "Contradicción";
+    });
+
+    var V = op.valores === "10" ? "1" : "V", F = op.valores === "10" ? "0" : "F";
+    var padX = Math.round(tam * 0.6), padY = Math.round(tam * 0.3);
+    var anchoValor = Math.max(medir(V, tam, fuente), medir(F, tam, fuente));
+    var anchos = cols.map(function (c) {
+      return Math.max(medir(c.texto, tam, fuente), anchoValor, tam) + 2 * padX;
+    });
+    var altoFila = Math.round(tam * fuente.lh + 2 * padY);
+    var W = anchos.reduce(function (a, b) { return a + b; }, 0);
+    var H = altoFila * (nFilas + 1);
+    var altoClases = op.clasificar && exprs.length ? 14 + exprs.length * (tam * fuente.lh + 4) : 0;
+    return { fuente: fuente, tam: tam, vars: vars, cols: cols, exprs: exprs, nFilas: nFilas,
+      V: V, F: F, anchos: anchos, altoFila: altoFila, W: W, H: H, Htotal: H + altoClases };
+  }
+
+  // Dibuja la tabla. (ox, oy) = esquina superior izquierda.
+  // ORDEN: marco, linea bajo los encabezados, lineas verticales, lineas entre
+  // filas; los encabezados de izquierda a derecha; despues los valores columna
+  // por columna (de arriba abajo, en el orden en que se resuelve) y al final la
+  // clasificacion de cada expresion.
+  function generarTabla(op, ox, oy, agregar) {
+    var t = armarTabla(op), fuente = t.fuente, tam = t.tam, af = t.altoFila;
+    agregar(base("rectangle", { x: ox, y: oy, width: t.W, height: t.H, strokeWidth: 2 }));
+    agregar(linea(ox, oy + af, [[0, 0], [t.W, 0]], { strokeWidth: 2 }));
+    var xs = [ox];
+    t.anchos.forEach(function (a, j) { xs.push(xs[j] + a); });
+    for (var j = 1; j < t.cols.length; j++) {
+      // linea mas gruesa entre las variables y las columnas calculadas
+      agregar(linea(xs[j], oy, [[0, 0], [0, t.H]], { strokeWidth: j === t.vars.length ? 2 : 1 }));
+    }
+    if (op.lineasFilas) {
+      for (var r = 1; r < t.nFilas; r++)
+        agregar(linea(ox, oy + af * (r + 1), [[0, 0], [t.W, 0]], { strokeWidth: 1 }));
+    }
+    var dy = (af - tam * fuente.lh) / 2;
+    t.cols.forEach(function (c, j) {
+      agregar(texto((xs[j] + xs[j + 1]) / 2, oy + dy, c.texto, tam, fuente, c.color, "center"));
+    });
+    t.cols.forEach(function (c, j) {
+      if (op.ocultar && !c.variable) return; // para completar a mano
+      c.valores.forEach(function (v, r) {
+        agregar(texto((xs[j] + xs[j + 1]) / 2, oy + af * (r + 1) + dy, v ? t.V : t.F, tam, fuente, c.color, "center"));
+      });
+    });
+    if (op.clasificar) {
+      var y = oy + t.H + 14;
+      t.exprs.forEach(function (e) {
+        agregar(texto(ox, y, e.texto + ": " + e.clase, tam, fuente, e.color, "left"));
+        y += tam * fuente.lh + 4;
+      });
+    }
+  }
+
+  function erroresLogica(t, op) {
+    var r = analizarLogica(t, leerVariables(op).vars);
+    return r.error ? [r.error] : [];
+  }
+
   // ====================================================== GENERADORES
   // Cada generador define su contenido (filas), opciones, panel y como dibujar.
   // contenido: claves que "Restablecer" no toca (lo que se grafica, no el aspecto).
   var GEN = {
     recta: {
       titulo: "Recta real",
+      dibujo: "recta", femenino: true,
       clave: "pizarra-generador-recta",
       defecto: {
         filas: [{ texto: "(-2, 1/2]", color: COLORES[0] }, { texto: "[1, ∞)", color: COLORES[1] }],
@@ -1089,10 +1345,62 @@
         ui.chk("Marcar extremos del dominio (● incluido, ○ excluido)", "marcarExtremos");
       },
     },
+
+    tabla: {
+      titulo: "Tabla de verdad",
+      dibujo: "tabla", femenino: true,
+      clave: "pizarra-generador-tabla",
+      defecto: {
+        filas: [{ texto: "(p ∨ q) ∧ ¬p", color: COLORES[0] }],
+        nVars: 2, nombres: "p, q, r, s, t", valores: "VF", primero: "V",
+        tamTexto: "M", fuente: "normal", intermedias: true, lineasFilas: true,
+        colorResultado: true, clasificar: false, ocultar: false,
+      },
+      contenido: ["filas", "nVars", "nombres"],
+      ejemplo: { filas: [{ texto: "[(p → q) ∧ p] → q", color: COLORES[0] }], nVars: 2 },
+      textoEjemplo: "Inserta una tabla nueva de ejemplo (modus ponens)",
+      agregarFila: "+ Expresión",
+      placeholder: "Ej: (p → q) ∧ ¬r",
+      simbolos: [["¬", "¬", "Negación"], ["∧", " ∧ ", "Conjunción (y)"], ["∨", " ∨ ", "Disyunción (o)"],
+        ["⊻", " ⊻ ", "Disyunción excluyente"], ["→", " → ", "Condicional"], ["↔", " ↔ ", "Bicondicional"]],
+      ayuda: "Cada fila es una expresión; todas comparten las variables de arriba. " +
+        "Conectivos: ¬ (~ !), ∧ (& ^ y), ∨ (| o v), ⊻ (xor), → (->), ↔ (<->). " +
+        "Sin paréntesis, ¬ se resuelve primero, después ∧, ∨, → y por último ↔. " +
+        "Se pueden usar ( ) y [ ]. Seleccioná una tabla ya insertada para editarla.",
+      erroresFila: erroresLogica,
+      posicion: function (op, cx, cy) {
+        var t = armarTabla(op);
+        return { x: cx - t.W / 2, y: cy - t.Htotal / 2 };
+      },
+      generar: generarTabla,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          var n = [];
+          for (var i = 1; i <= MAX_VARIABLES; i++) n.push([i, String(i)]);
+          ui.seg("Variables", "nVars", n);
+          ui.campos("Nombres", [{ clave: "nombres", prefijo: "", texto: true, ancho: 150,
+            titulo: "Nombres de las variables, en orden, separados por coma" }],
+          function () { return leerVariables(op).error; });
+        });
+        ui.seg("Valores", "valores", [["VF", "V / F"], ["10", "1 / 0"]]);
+        ui.seg("Primera fila", "primero", [["V", "Todo verdadero"], ["F", "Todo falso"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Columnas intermedias (paso a paso)", "intermedias");
+        ui.chk("Líneas entre filas", "lineasFilas");
+        ui.chk("Resultado en el color de la expresión", "colorResultado");
+        ui.chk("Escribir si es tautología, contradicción o contingencia", "clasificar");
+        ui.chk("Dejar vacías las columnas a calcular (para completar)", "ocultar");
+      },
+    },
   };
 
+  // orden de las pestanas del panel (la primera es la que se abre por defecto)
+  var ORDEN = ["tabla", "recta", "funcion"];
+
   // ------------------------------------------------- insertar / reemplazar
-  var vinculo = null;      // gid del dibujo que se esta editando
+  var vinculo = null;     // gid del dibujo que se esta editando
   var seleccionado = null; // ultimo dibujo generado visto en la seleccion
   var turno = 0;
 
@@ -1219,8 +1527,10 @@
     "z-index:20;background:#fff;color:#1b1b1f;border:1px solid #e0dfe6;border-radius:10px;",
     "box-shadow:0 4px 18px rgba(0,0,0,.12);padding:12px 14px;font:13px/1.4 Assistant,system-ui,sans-serif}",
     ".pz-gen.oscuro{background:#232329;color:#e3e3e8;border-color:#3a3a43}",
-    ".pz-gen .cab{display:flex;align-items:center;gap:8px;margin-bottom:6px}",
+    ".pz-gen .cab{display:flex;align-items:center;gap:6px 8px;margin-bottom:6px;flex-wrap:wrap}",
     ".pz-gen .cab .tipos{flex:1}",
+    ".pz-gen .cab .tipos .seg button{white-space:nowrap;padding:3px 8px}",
+    ".pz-gen .cab .cerrar{order:1}.pz-gen .cab .modo{order:2}",
     ".pz-gen .modo{font-size:11px;padding:1px 7px;border-radius:9px;background:#e7f5ff;color:#1864ab;white-space:nowrap}",
     ".pz-gen.oscuro .modo{background:#1c3a57;color:#a5d8ff}",
     ".pz-gen .cerrar,.pz-gen .quitar{border:0;background:none;color:inherit;cursor:pointer;font-size:15px;opacity:.6;padding:2px 4px}",
@@ -1287,7 +1597,7 @@
       // selector de generador
       var tipos = el.querySelector(".tipos"), s = document.createElement("div");
       s.className = "seg";
-      Object.keys(GEN).forEach(function (t) {
+      ORDEN.forEach(function (t) {
         var b = document.createElement("button");
         b.textContent = GEN[t].titulo;
         b.setAttribute("data-tipo", t);
@@ -1443,7 +1753,7 @@
         // los avisos de los extras dependen de la funcion y de los ejes, asi que
         // se revisan en cada cambio (ver cambio())
         function validar() {
-          var errores = gen.erroresFila(t.value);
+          var errores = gen.erroresFila(t.value, self.op);
           caja.classList.toggle("invalida", errores.length > 0);
           extras.forEach(function (x) {
             var e = x.def.errores(f, self.op, i);
@@ -1534,6 +1844,7 @@
             inp.spellcheck = false;
             inp.value = op[def.clave];
             if (def.titulo) inp.title = def.titulo;
+            if (def.ancho) inp.style.width = def.ancho + "px";
             inp.oninput = function () {
               if (def.numero) {
                 if (inp.value === "" || !isFinite(Number(inp.value))) return;
@@ -1571,12 +1882,12 @@
 
     modo: function () {
       if (!this.el) return;
-      var dibujo = this.tipo === "recta" ? "recta" : "gráfico";
-      this.el.querySelector(".modo").textContent = vinculo ? "editando " + (this.tipo === "recta" ? "la" : "el") +
-        " seleccionad" + (this.tipo === "recta" ? "a" : "o") : "nuevo";
+      var gen = this.gen(), fem = !!gen.femenino, dibujo = gen.dibujo || "gráfico";
+      this.el.querySelector(".modo").textContent = vinculo ? "editando " + (fem ? "la" : "el") +
+        " seleccionad" + (fem ? "a" : "o") : "nuevo";
       this.el.querySelector(".insertar").textContent = vinculo ? "Redibujar" : "Insertar en el centro";
       this.el.querySelector(".copia").style.display = vinculo ? "" : "none";
-      this.el.querySelector(".copia").title = "Inserta otr" + (dibujo === "recta" ? "a recta" : "o gráfico") + " igual";
+      this.el.querySelector(".copia").title = "Inserta otr" + (fem ? "a " : "o ") + dibujo + " igual";
     },
 
     alternar: function (abrir) {
@@ -1623,7 +1934,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: recta real con intervalos y gráficos de funciones";
+      b.title = "Generadores: recta real con intervalos, gráficos de funciones y tablas de verdad";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.addEventListener("click", function () { panel.alternar(); });
@@ -1661,10 +1972,10 @@
       try { guardado = JSON.parse(localStorage.getItem(GEN[t].clave) || "null"); } catch (e) {}
       panel.cargar(t, guardado || {});
     });
-    var tipo = "recta";
-    try { tipo = localStorage.getItem("pizarra-generador-tipo") || "recta"; } catch (e) {}
+    var tipo = ORDEN[0];
+    try { tipo = localStorage.getItem("pizarra-generador-tipo") || ORDEN[0]; } catch (e) {}
     panel.construir();
-    panel.mostrar(GEN[tipo] ? tipo : "recta");
+    panel.mostrar(GEN[tipo] ? tipo : ORDEN[0]);
     boton.crear();
     boton.actualizar();
     boton.vigilar();

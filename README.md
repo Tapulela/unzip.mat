@@ -44,6 +44,12 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (x, f(x)), simulando el graficado manual con tabla de valores. El código de las
   funciones se ejecuta en la página y viaja dentro del dibujo (`customData`) a
   las otras ventanas de la sala.
+  Un tercer generador, **Tabla de verdad**, arma tablas de verdad de expresiones
+  de lógica proposicional: se elige la cantidad de variables (1 a 5) y sus
+  nombres, y cada fila es una expresión (¬ ∧ ∨ ⊻ → ↔, con equivalentes en ASCII
+  como `~ & | -> <->`). Agrega columnas intermedias en el orden en que se
+  resuelve, puede clasificar cada expresión (tautología, contradicción,
+  contingencia) o dejar vacías las columnas calculadas para completar.
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.

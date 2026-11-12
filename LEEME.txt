@@ -163,6 +163,41 @@ GRAFICOS DE FUNCIONES (prototipo)
   Una funcion que no termina nunca (por ejemplo un while infinito) cuelga la
   pestaña.
 
+TABLAS DE VERDAD (prototipo)
+- En el mismo panel, arriba, elegi "Tabla de verdad".
+- "Variables": cuantas variables tiene la tabla (1 a 5). "Nombres": como se
+  llaman, en orden (p, q, r, s, t por defecto). Si escribis menos nombres que
+  variables, se completan con p, q, r...
+- Cada fila es una expresion compuesta. Todas comparten las mismas variables
+  y van en la misma tabla. Conectivos (los botones del panel los escriben):
+      ¬  negacion             tambien ~  !  no
+      ∧  conjuncion           tambien &  ^  y  and
+      ∨  disyuncion           tambien |  o  v  or
+      ⊻  disyuncion excluyente  tambien xor
+      →  condicional          tambien ->  =>
+      ↔  bicondicional        tambien <->  <=>
+  Sin parentesis se resuelve primero ¬, despues ∧, despues ∨ y ⊻, despues →
+  y por ultimo ↔. Se pueden usar ( ) y [ ]: [(p → q) ∧ p] → q.
+  Constantes: V, F, 1, 0. Si algo esta mal escrito (una variable que no
+  existe, un parentesis sin cerrar...), la fila se pone en rojo y dice por que.
+- La primera fila de valores es todo verdadero (o todo falso, con "Primera
+  fila"); la primera variable cambia cada mitad y la ultima en cada fila.
+  "Valores" elige V/F o 1/0.
+- "Columnas intermedias": agrega una columna por cada parte de la expresion,
+  en el orden en que se resuelve (¬p, p → q, ...), antes del resultado. Las
+  partes repetidas aparecen una sola vez. Una linea mas gruesa separa las
+  variables de lo calculado.
+- "Resultado en el color de la expresion": la columna final de cada
+  expresion va en su color.
+- "Escribir si es tautologia, contradiccion o contingencia" lo agrega debajo
+  de la tabla, una linea por expresion.
+- "Dejar vacias las columnas a calcular" escribe solo los valores de las
+  variables, para que los completen los estudiantes.
+- Igual que los otros: "Insertar en el centro", "Ejemplo" (modus ponens),
+  "Restablecer", y si seleccionas una tabla ya insertada se edita en vivo.
+- Al animar, aparece en este orden: el marco y las lineas, los encabezados
+  y despues los valores columna por columna, de izquierda a derecha.
+
 TIPS
 - En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
   salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la
