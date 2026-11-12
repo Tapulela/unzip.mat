@@ -50,6 +50,16 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   como `~ & | -> <->`). Agrega columnas intermedias en el orden en que se
   resuelve, puede clasificar cada expresión (tautología, contradicción,
   contingencia) o dejar vacías las columnas calculadas para completar.
+  El cuarto, **Conjuntos**, hace cálculos de teoría de conjuntos sobre un
+  universo finito (por extensión) o ℕ, ℤ, ℚ, ℝ. Cada fila es un conjunto por
+  extensión (`{1, 2, ..., 10}`), por comprensión (una función de JavaScript
+  que recibe cada elemento de U y devuelve verdadero o falso, `x => x % 2 == 0`;
+  los conjuntos de filas anteriores se usan como funciones: `x => A(x) && !B(x)`)
+  o una operación con las filas anteriores (∪ ∩ − Δ, complemento `A'`, ×,
+  `P(A)`, paréntesis). Cada conjunto se escribe por extensión con un límite de
+  elementos y puntos suspensivos; los universos infinitos se recorren en orden
+  (ℚ por altura |p| + q, hasta 20000 elementos), y en ℝ los conjuntos que no
+  se pueden listar se escriben por comprensión.
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.

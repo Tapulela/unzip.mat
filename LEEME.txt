@@ -198,6 +198,73 @@ TABLAS DE VERDAD (prototipo)
 - Al animar, aparece en este orden: el marco y las lineas, los encabezados
   y despues los valores columna por columna, de izquierda a derecha.
 
+CONJUNTOS (prototipo)
+- En el mismo panel, arriba, elegi "Conjuntos".
+- "Universo": Finito (escribis sus elementos en "U =") o ℕ, ℤ, ℚ, ℝ.
+  Un universo finito se escribe como un conjunto por extension, con o sin
+  llaves: 1, 2, ..., 10 / 1..100 / a, e, i, o, u / 2, 4, ..., 20.
+  En ℕ podes marcar "ℕ incluye el 0".
+- Cada fila es un conjunto, con su nombre (A, B, C... por defecto) y color.
+  Se puede escribir de tres formas:
+  1. Por extension: {1, 2, 3}, {a, b, c}, {1, 2, ..., 10}, {1/2, π}.
+     Con decimales con coma, separa con punto y coma: {0,5; 1,5}.
+  2. Por comprension: una funcion de JavaScript que recibe cada elemento de U
+     y devuelve verdadero o falso (es la proposicion que define el conjunto):
+         x => x % 2 == 0            (pares)
+         x => x > 3 && x <= 8
+         x => sqrt(x) % 1 == 0      (cuadrados perfectos)
+         x => "aeiou".includes(x)   (vocales, con U de letras)
+     Math se usa sin "Math." y la potencia es ** (x**2). En la pizarra se
+     escribe "a mano": {x ∈ ℕ / x mod 2 = 0}.
+     Los conjuntos de las filas de arriba se pueden usar como funciones que
+     dicen si un valor pertenece:
+         x => A(x) && !B(x)         (en la pizarra: x ∈ A ∧ x ∉ B)
+         x => B(x) || x > 20
+         x => A(x + 1)              (x + 1 ∈ A)
+     Solo se pueden usar los de filas anteriores (una fila no puede usarse a
+     si misma ni a las de abajo). Si un conjunto se llama como algo de Math
+     (por ejemplo E), dentro de la funcion E es el conjunto.
+  3. Una operacion con los conjuntos de las filas de arriba (y U, ∅):
+         A ∪ B    union                (tambien |  +)
+         A ∩ B    interseccion         (tambien &)
+         A − B    diferencia           (tambien -  \)
+         A Δ B    diferencia simetrica (tambien ^)
+         A'       complemento respecto de U (tambien ~A)
+         A × B    producto cartesiano  (tambien *), solo conjuntos finitos
+         P(A)     conjunto de partes, hasta 8 elementos
+     Se pueden usar ( ) y [ ] y conjuntos escritos ahi mismo: A ∩ {1, 2, 3}.
+     El complemento se resuelve primero, despues × y ∩, y por ultimo ∪, − y Δ
+     (de izquierda a derecha). Ante la duda, poné parentesis.
+  Si algo esta mal escrito, la fila se pone en rojo y dice por que. Si un
+  elemento escrito por extension no esta en U, se avisa y se ignora.
+- Cada conjunto se escribe por extension, entre llaves y separado por comas:
+      C = A ∪ B = {1, 2, 3, 4, 5, 6, 8, 10}
+  "Elementos" (solo con universo finito): Todos, o Hasta un limite. Con
+  universo infinito siempre hay limite ("Mostrar hasta N elementos").
+  Si hay mas elementos que el limite se ponen puntos suspensivos:
+  - con un universo infinito, al final: {3, 6, 9, 12, …}; en ℤ tambien al
+    principio si siguen hacia los negativos: {…, −4, −2, 0, 2, 4, …}.
+  - si se conocen todos (es finito), se escribe tambien el ultimo:
+    {1, 2, 3, …, 100}.
+  ℕ y ℤ se escriben de menor a mayor; ℚ en el orden en que se recorre
+  (0, 1, −1, 2, −2, 1/2, −1/2, ...).
+- En un universo infinito se revisan como mucho los primeros 20000
+  elementos: un conjunto como x => x > 50000 aparece vacio.
+- En ℝ no se pueden listar los elementos: los conjuntos infinitos se
+  escriben por comprension ({x ∈ ℝ / x ≥ 2}, y las operaciones como
+  {x ∈ ℝ / x ∈ A ∨ x ∉ B}). Los finitos (B ∩ {1, 2, π}) si se listan.
+- Opciones: tamaño del texto, fuente, ancho (las lineas largas se cortan
+  y siguen debajo, alineadas), escribir el universo, escribir la definicion
+  (A ∪ B = ..., {x ∈ U / ...} = ...) y el cardinal |A| (solo cuando se
+  conocen todos los elementos).
+- Igual que los otros: "Insertar en el centro", "Ejemplo" (en ℕ),
+  "Restablecer" (no borra los conjuntos ni el universo), y si seleccionas un
+  calculo ya insertado se edita en vivo.
+- Al animar, aparece una linea despues de otra: el universo y cada conjunto
+  en el orden de las filas.
+- Ojo: igual que en Funciones, las funciones son codigo que se ejecuta en
+  el navegador.
+
 TIPS
 - En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
   salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la

@@ -1203,6 +1203,548 @@
     return r.error ? [r.error] : [];
   }
 
+  // ============================================== GENERADOR: CONJUNTOS
+  // Un universo U (finito, escrito por extension, o ℕ, ℤ, ℚ, ℝ) y una fila por
+  // conjunto. Cada fila puede ser:
+  //  - por extension: {1, 2, 3}, {a, e, i}, {1, 2, ..., 10}, {1..10}
+  //  - por comprension: una funcion de JavaScript que recibe cada elemento de U
+  //    y devuelve verdadero o falso: x => x % 2 == 0
+  //  - una operacion con los conjuntos de las filas anteriores:
+  //    A ∪ B, A ∩ B, A − B, A Δ B, A' (complemento), A × B, P(A), (A ∪ B)'
+  // Elementos: { v: valor, t: texto a mostrar, k: clave para comparar }.
+  // Conjuntos: { lista: elementos (si se conocen todos) o null, tiene(e), deU }.
+  var UNIVERSOS = { N: "ℕ", Z: "ℤ", Q: "ℚ", R: "ℝ" };
+  var NOMBRES_CONJ = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M"];
+  var ANCHOS_CONJ = { angosto: 600, medio: 900, ancho: 1200 };
+  var BUSQUEDA = 20000; // elementos de un universo infinito que se revisan como maximo
+  var SIM_CONJ = { union: "∪", inter: "∩", dif: "−", simdif: "Δ", prod: "×" };
+  var OPS_CONJ = [
+    ["∪", "union"], ["|", "union"], ["+", "union"], ["∩", "inter"], ["&", "inter"],
+    ["−", "dif"], ["-", "dif"], ["∖", "dif"], ["\\", "dif"], ["–", "dif"],
+    ["Δ", "simdif"], ["∆", "simdif"], ["△", "simdif"], ["⊕", "simdif"], ["^", "simdif"],
+    ["×", "prod"], ["*", "prod"], ["'", "comp"], ["′", "comp"], ["ᶜ", "comp"],
+    ["~", "neg"], ["¬", "neg"], ["∅", "vacio"],
+    ["(", "("], ["[", "("], [")", ")"], ["]", ")"],
+  ];
+
+  function nombreConj(i) { return NOMBRES_CONJ[i % NOMBRES_CONJ.length]; }
+  function claveNum(v) { return "n:" + Number(v.toPrecision(12)); }
+  function elemNum(v, t) { return { v: v, t: t != null ? t : formatear(v), k: claveNum(v) }; }
+  function elemTxt(s) { return { v: s, t: s, k: "s:" + s }; }
+
+  // Elementos escritos por extension, con o sin llaves. Separados por coma (o
+  // por punto y coma si hay decimales con coma). "1, 2, ..., 10" y "1..10"
+  // completan la sucesion. Lo que no es un numero queda como texto.
+  function leerElementos(texto) {
+    var t = String(texto || "").trim(), errores = [];
+    if (t[0] === "{") {
+      if (t[t.length - 1] !== "}") return { elems: [], errores: ["Falta cerrar la llave }"] };
+      t = t.slice(1, -1);
+    }
+    if (!t.trim()) return { elems: [], errores: [] };
+    var SUSP = {}, res = [];
+    t.split(t.indexOf(";") >= 0 ? ";" : ",").forEach(function (p) {
+      p = p.trim();
+      if (!p) { errores.push("Hay un elemento vacío (dos comas seguidas)"); return; }
+      if (p === "..." || p === "…") { res.push(SUSP); return; }
+      var m = /^([+-]?\d+)\s*\.\.\s*([+-]?\d+)$/.exec(p.replace(/[−–]/g, "-"));
+      if (m) {
+        var a = Number(m[1]), b = Number(m[2]), d = a <= b ? 1 : -1;
+        if (Math.abs(b - a) > 10000) { errores.push("«" + p + "» tiene demasiados elementos"); return; }
+        for (var x = a; d > 0 ? x <= b : x >= b; x += d) res.push(elemNum(x));
+        return;
+      }
+      var q = /^["'](.*)["']$/.exec(p);
+      if (q) { res.push(elemTxt(q[1])); return; }
+      var v = evaluar(p);
+      res.push(isNaN(v) ? elemTxt(p) : elemNum(v, p.replace(/^-/, "−")));
+    });
+    // puntos suspensivos entre dos numeros: 1, 2, ..., 10 o 2, 4, ..., 20
+    var elems = [];
+    res.forEach(function (e, j) {
+      if (e !== SUSP) { elems.push(e); return; }
+      var a = res[j - 1], b = res[j + 1], c = res[j - 2];
+      var num = function (z) { return z && z !== SUSP && typeof z.v === "number"; };
+      if (!num(a) || !num(b)) { errores.push("Los … tienen que ir entre dos números: 1, 2, ..., 10"); return; }
+      var paso = num(c) ? a.v - c.v : (b.v >= a.v ? 1 : -1);
+      var n = (b.v - a.v) / paso;
+      if (!paso || n < 1 || Math.abs(n - Math.round(n)) > 1e-9) {
+        errores.push("No se puede ir de " + a.t + " a " + b.t + " de " + formatear(Math.abs(paso)) + " en " + formatear(Math.abs(paso)));
+        return;
+      }
+      if (n > 10000) { errores.push("Los … generan demasiados elementos"); return; }
+      for (var i = 1; i < Math.round(n); i++) elems.push(elemNum(a.v + i * paso));
+    });
+    var vistos = {};
+    elems = elems.filter(function (e) { if (vistos[e.k]) return false; vistos[e.k] = true; return true; });
+    return { elems: elems, errores: errores };
+  }
+
+  function mcd(a, b) { while (b) { var r = a % b; a = b; b = r; } return a; }
+
+  // recorre un universo infinito: ℕ = 1, 2, 3...; ℤ = 0, 1, −1, 2, −2...;
+  // ℚ por "altura" |p| + q: 0, 1, −1, 2, −2, 1/2, −1/2, 3, −3, 1/3...
+  function enumerador(tipo, cero) {
+    if (tipo === "N") { var n = cero ? 0 : 1; return function () { return elemNum(n++); }; }
+    if (tipo === "Z") {
+      var z = 0;
+      return function () { var i = z++; return elemNum(i === 0 ? 0 : i % 2 ? (i + 1) / 2 : -i / 2); };
+    }
+    var pend = [], h = 1;
+    return function () {
+      while (!pend.length) {
+        for (var q = 1; q <= h; q++) {
+          var p = h - q;
+          if (p === 0) { if (q === 1) pend.push(elemNum(0, "0")); continue; }
+          if (mcd(p, q) !== 1) continue;
+          var t = q === 1 ? String(p) : p + "/" + q;
+          pend.push(elemNum(p / q, t), elemNum(-p / q, "−" + t));
+        }
+        h++;
+      }
+      return pend.shift();
+    };
+  }
+
+  function leerUniverso(op) {
+    var tipo = op.universo;
+    if (UNIVERSOS[tipo]) {
+      var cero = tipo === "N" && !!op.conCero;
+      return {
+        infinito: true, tipo: tipo, simbolo: cero ? "ℕ₀" : UNIVERSOS[tipo], lista: null, error: "",
+        contiene: function (e) {
+          if (typeof e.v !== "number" || !isFinite(e.v)) return false;
+          if (tipo === "Q" || tipo === "R") return true;
+          return Number.isInteger(e.v) && (tipo === "Z" || e.v >= (cero ? 0 : 1));
+        },
+        enumerar: tipo === "R" ? null : function () { return enumerador(tipo, cero); },
+      };
+    }
+    var r = leerElementos(op.universoTexto), claves = {};
+    r.elems.forEach(function (e) { claves[e.k] = true; });
+    return {
+      infinito: false, simbolo: "U", lista: r.elems,
+      error: r.errores.join(" · ") || (r.elems.length ? "" : "Escribí los elementos de U, por ejemplo 1, 2, ..., 10"),
+      contiene: function (e) { return !!claves[e.k]; },
+    };
+  }
+
+  // conjunto con todos sus elementos conocidos (en un orden lindo: el de U si
+  // es finito, de menor a mayor si son numeros)
+  function desdeLista(lista, U, deU) {
+    var claves = {}, sin = [];
+    lista.forEach(function (e) { if (!claves[e.k]) { claves[e.k] = true; sin.push(e); } });
+    if (deU && !U.infinito) sin = U.lista.filter(function (e) { return claves[e.k]; });
+    else if (sin.every(function (e) { return typeof e.v === "number"; })) sin.sort(function (a, b) { return a.v - b.v; });
+    return { lista: sin, tiene: function (e) { return !!claves[e.k]; }, deU: deU };
+  }
+
+  // elemento a partir de un valor que usa una funcion (numero o texto)
+  function elemDeValor(v) {
+    if (typeof v === "number") return elemNum(v);
+    if (typeof v === "string") return elemTxt(v);
+    return { v: v, t: String(v), k: "?" };
+  }
+
+  // Compila la funcion de una fila por comprension. Adentro se pueden usar
+  // Math sin prefijo y los conjuntos de las filas anteriores como funciones
+  // que dicen si un valor pertenece: x => A(x) && !B(x). Cada fila tiene su
+  // propio ambito (solo ve los conjuntos definidos antes que ella), asi que no
+  // hay referencias circulares. Un conjunto que se llame como algo de Math (E)
+  // lo tapa.
+  function compilarCondicion(src, conj) {
+    if (/[^*]\^|^\^/.test(src)) return { error: "En JavaScript la potencia es ** (x**2); ^ es otra operación" };
+    var ambito = {};
+    Object.keys(conj).forEach(function (n) {
+      var S = conj[n];
+      ambito[n] = function (v) { return S.tiene(elemDeValor(v)); };
+    });
+    try {
+      /* jshint evil:true */
+      var f = new Function("M", "C", "with (M) { with (C) { return (" + src + "\n); } }")(Math, ambito);
+      return typeof f === "function" ? { f: f } : { error: "Tiene que ser una función, por ejemplo x => x % 2 == 0" };
+    } catch (e) {
+      return { error: "Error de escritura: " + e.message };
+    }
+  }
+
+  // la condicion escrita "a mano": x => x % 2 === 0 && x > 3  ->  x mod 2 = 0 ∧ x > 3
+  // Los conjuntos usados como funciones se escriben con ∈: A(x) -> x ∈ A, !B(x) -> x ∉ B
+  function textoCondicion(codigo, nombres) {
+    var m = /^\s*\(?\s*([a-zA-Z_$][\w$]*)\s*\)?\s*=>\s*([^{][\s\S]*)$/.exec(codigo || "");
+    if (!m) return { v: "x", cond: String(codigo || "").trim() };
+    var c = m[2].trim().replace(/Math\./g, "");
+    (nombres || []).forEach(function (n) {
+      var esc = n.replace(/[$]/g, "\\$");
+      c = c.replace(new RegExp("!\\s*" + esc + "\\s*\\(([^()]+)\\)", "g"), function (t, a) { return a.trim() + " ∉ " + n; })
+        .replace(new RegExp("(^|[^\\w$.])" + esc + "\\s*\\(([^()]+)\\)", "g"), function (t, p, a) { return p + a.trim() + " ∈ " + n; });
+    });
+    c = c
+      .replace(/\s*!==?\s*/g, " ≠ ").replace(/\s*===?\s*/g, " = ")
+      .replace(/\s*<=\s*/g, " ≤ ").replace(/\s*>=\s*/g, " ≥ ")
+      .replace(/\s*&&\s*/g, " ∧ ").replace(/\s*\|\|\s*/g, " ∨ ").replace(/!/g, "¬")
+      .replace(/\s*%\s*/g, " mod ").replace(/\*\*\s*2(?![\d.])/g, "²").replace(/\*\*\s*3(?![\d.])/g, "³")
+      .replace(/\s*\*\s*/g, "·").replace(/-/g, "−").replace(/\s+/g, " ");
+    return { v: m[1], cond: c };
+  }
+
+  // expresion con conjuntos: arbol o { error }. nombres = conjuntos ya definidos
+  function analizarConjunto(texto, nombres) {
+    var s = String(texto || "").trim();
+    try {
+      var tk = [], i = 0;
+      while (i < s.length) {
+        if (/\s/.test(s[i])) { i++; continue; }
+        if (s[i] === "{") {
+          var fin = s.indexOf("}", i);
+          if (fin < 0) throw "Falta cerrar la llave }";
+          tk.push({ t: "lit", txt: s.slice(i, fin + 1) });
+          i = fin + 1;
+          continue;
+        }
+        var resto = s.slice(i), sim = null;
+        for (var k = 0; k < OPS_CONJ.length && !sim; k++) if (resto.indexOf(OPS_CONJ[k][0]) === 0) sim = OPS_CONJ[k];
+        if (sim) { tk.push({ t: sim[1], txt: sim[0] }); i += sim[0].length; continue; }
+        var m = IDENT.exec(resto);
+        if (!m) throw "No se entiende «" + s[i] + "»";
+        var w = m[0];
+        i += w.length;
+        if (w === "P" && /^\s*\(/.test(s.slice(i))) tk.push({ t: "partes", txt: "P" });
+        else if (w === "U") tk.push({ t: "U", txt: "U" });
+        else if (/^vac[ií]o$/i.test(w)) tk.push({ t: "vacio", txt: w });
+        else if (nombres.indexOf(w) >= 0) tk.push({ t: "ref", n: w, txt: w });
+        else throw "«" + w + "» no es un conjunto definido en una fila anterior" +
+          (nombres.length ? " (hay: " + nombres.join(", ") + ")" : "");
+      }
+      i = 0;
+      var es = function (t) { return tk[i] && tk[i].t === t; };
+      var expr = function () {
+        var a = term();
+        while (es("union") || es("dif") || es("simdif")) { var o = tk[i++].t; a = { t: "bin", op: o, a: a, b: term() }; }
+        return a;
+      };
+      var term = function () {
+        var a = prod();
+        while (es("inter")) { i++; a = { t: "bin", op: "inter", a: a, b: prod() }; }
+        return a;
+      };
+      var prod = function () {
+        var a = unario();
+        while (es("prod")) { i++; a = { t: "bin", op: "prod", a: a, b: unario() }; }
+        return a;
+      };
+      var unario = function () {
+        if (es("neg")) { i++; return { t: "comp", a: unario() }; }
+        var a = atomo();
+        while (es("comp")) { i++; a = { t: "comp", a: a }; }
+        return a;
+      };
+      var atomo = function () {
+        var k = tk[i];
+        if (!k) throw i ? "Falta algo después de «" + tk[i - 1].txt + "»" : "Escribí un conjunto";
+        i++;
+        if (k.t === "ref") return { t: "ref", n: k.n };
+        if (k.t === "U" || k.t === "vacio") return { t: k.t };
+        if (k.t === "lit") {
+          var r = leerElementos(k.txt);
+          if (r.errores.length) throw r.errores.join(" · ");
+          return { t: "lit", txt: k.txt, elems: r.elems };
+        }
+        if (k.t === "partes") {
+          i++; // el "("
+          var a = expr();
+          if (!es(")")) throw "Falta cerrar el paréntesis de P(";
+          i++;
+          return { t: "partes", a: a };
+        }
+        if (k.t === "(") {
+          var e = expr();
+          if (!es(")")) throw "Falta cerrar «" + k.txt + "»";
+          var cierre = tk[i++].txt, debe = k.txt === "[" ? "]" : ")";
+          if (cierre !== debe) throw "«" + k.txt + "» se cierra con «" + debe + "»";
+          e.par = k.txt;
+          return e;
+        }
+        if (k.t === ")") throw "Sobra «" + k.txt + "» o falta algo antes";
+        throw "Falta un conjunto antes de «" + k.txt + "»";
+      };
+      var arbol = expr();
+      if (i < tk.length) throw tk[i].t === ")" ? "Sobra «" + tk[i].txt + "»" : "Falta una operación antes de «" + tk[i].txt + "»";
+      return { arbol: arbol };
+    } catch (e) {
+      if (typeof e === "string") return { error: e };
+      throw e;
+    }
+  }
+
+  function imprimirConjunto(n, conPar) {
+    var s;
+    switch (n.t) {
+      case "ref": s = n.n; break;
+      case "U": s = "U"; break;
+      case "vacio": s = "∅"; break;
+      case "lit": s = "{" + n.elems.map(function (e) { return e.t; }).join(", ") + "}"; break;
+      case "partes": s = "P(" + imprimirConjunto(n.a, false) + ")"; break;
+      case "comp":
+        s = imprimirConjunto(n.a, true);
+        if (n.a.t === "bin" && !n.a.par) s = "(" + s + ")";
+        s += "'";
+        break;
+      default: s = imprimirConjunto(n.a, true) + " " + SIM_CONJ[n.op] + " " + imprimirConjunto(n.b, true);
+    }
+    if (conPar && n.par) s = n.par + s + (n.par === "[" ? "]" : ")");
+    return s;
+  }
+
+  // condicion de pertenencia de una operacion (para ℝ, donde no se puede listar):
+  // A ∪ B' -> x ∈ A ∨ x ∉ B
+  function predicadoConjunto(n, U) {
+    function nombre(m) {
+      return m.t === "ref" ? m.n : m.t === "U" ? U.simbolo : m.t === "vacio" ? "∅" : imprimirConjunto(m, false);
+    }
+    function hijo(m, op) {
+      var p = predicadoConjunto(m, U);
+      return m.t === "bin" && m.op !== op ? "(" + p + ")" : p;
+    }
+    if (n.t === "comp") {
+      return n.a.t === "bin" ? "¬(" + predicadoConjunto(n.a, U) + ")" : n.a.t === "comp"
+        ? predicadoConjunto(n.a.a, U) : "x ∉ " + nombre(n.a);
+    }
+    if (n.t !== "bin") return "x ∈ " + nombre(n);
+    if (n.op === "dif") return hijo(n.a, "inter") + " ∧ " + hijo({ t: "comp", a: n.b }, "inter");
+    var s = { union: "∨", inter: "∧", simdif: "⊻" }[n.op];
+    if (!s) return "x ∈ " + imprimirConjunto(n, false);
+    return hijo(n.a, n.op) + " " + s + " " + hijo(n.b, n.op);
+  }
+
+  // operando de × o P( ): un conjunto escrito ahi mismo no tiene que estar en U
+  // ({1, 2} × {a, b} aunque U = ℕ)
+  function evaluarOperandoLibre(n, ctx) {
+    if (n.t !== "lit") return evaluarConjunto(n, ctx);
+    return desdeLista(n.elems, ctx.U, n.elems.every(ctx.U.contiene));
+  }
+
+  function evaluarConjunto(n, ctx) {
+    var U = ctx.U;
+    switch (n.t) {
+      case "ref": return ctx.conj[n.n];
+      case "U": return U.infinito ? { lista: null, tiene: U.contiene, deU: true } : desdeLista(U.lista, U, true);
+      case "vacio": return desdeLista([], U, true);
+      case "lit":
+        var fuera = n.elems.filter(function (e) { return !U.contiene(e); });
+        if (fuera.length) {
+          ctx.avisos.push(fuera.map(function (e) { return e.t; }).join(", ") +
+            (fuera.length > 1 ? " no están" : " no está") + " en " + U.simbolo + " (se ignora" + (fuera.length > 1 ? "n" : "") + ")");
+        }
+        return desdeLista(n.elems.filter(U.contiene), U, true);
+      case "partes":
+        var a = evaluarOperandoLibre(n.a, ctx);
+        if (!a.lista) throw "P( ) necesita un conjunto finito";
+        if (a.lista.length > 8) throw "P( ) admite conjuntos de hasta 8 elementos (256 subconjuntos)";
+        var subs = [];
+        for (var m = 0; m < 1 << a.lista.length; m++) {
+          var parte = a.lista.filter(function (e, j) { return m & (1 << j); });
+          subs.push({
+            v: parte, n: parte.length,
+            t: parte.length ? "{" + parte.map(function (e) { return e.t; }).join(", ") + "}" : "∅",
+            k: "{" + parte.map(function (e) { return e.k; }).sort().join(",") + "}",
+          });
+        }
+        subs.sort(function (x, y) { return x.n - y.n; });
+        return desdeLista(subs, U, false);
+      case "comp":
+        var c = evaluarConjunto(n.a, ctx);
+        if (!c.deU) throw "El complemento es respecto de U: no se aplica a pares ni a conjuntos de partes";
+        return {
+          lista: U.lista ? U.lista.filter(function (e) { return !c.tiene(e); }) : null,
+          tiene: function (e) { return U.contiene(e) && !c.tiene(e); }, deU: true,
+        };
+    }
+    var ev = n.op === "prod" ? evaluarOperandoLibre : evaluarConjunto;
+    var A = ev(n.a, ctx), B = ev(n.b, ctx);
+    var no =function (S) { return function (e) { return !S.tiene(e); }; };
+    switch (n.op) {
+      case "union":
+        if (A.lista && B.lista) return desdeLista(A.lista.concat(B.lista), U, A.deU && B.deU);
+        return { lista: null, tiene: function (e) { return A.tiene(e) || B.tiene(e); }, deU: A.deU && B.deU };
+      case "inter":
+        if (A.lista) return desdeLista(A.lista.filter(B.tiene), U, A.deU || B.deU);
+        if (B.lista) return desdeLista(B.lista.filter(A.tiene), U, A.deU || B.deU);
+        return { lista: null, tiene: function (e) { return A.tiene(e) && B.tiene(e); }, deU: true };
+      case "dif":
+        if (A.lista) return desdeLista(A.lista.filter(no(B)), U, A.deU);
+        return { lista: null, tiene: function (e) { return A.tiene(e) && !B.tiene(e); }, deU: A.deU };
+      case "simdif":
+        if (A.lista && B.lista) return desdeLista(A.lista.filter(no(B)).concat(B.lista.filter(no(A))), U, A.deU && B.deU);
+        return { lista: null, tiene: function (e) { return A.tiene(e) !== B.tiene(e); }, deU: A.deU && B.deU };
+      default: // producto cartesiano
+        if (!A.lista || !B.lista) throw "× necesita conjuntos finitos (con todos sus elementos conocidos)";
+        if (A.lista.length * B.lista.length > 2000) throw "× da demasiados pares (más de 2000)";
+        var pares = [];
+        A.lista.forEach(function (x) {
+          B.lista.forEach(function (y) {
+            pares.push({ v: [x.v, y.v], t: "(" + x.t + ", " + y.t + ")", k: "(" + x.k + "," + y.k + ")" });
+          });
+        });
+        return desdeLista(pares, U, false);
+    }
+  }
+
+  // Analiza el universo y todas las filas: { U, filas: [{ nombre, color, tipo,
+  // errores, conj, arbol, codigo }] }. Una fila con errores no queda definida.
+  function analizarConjuntos(op) {
+    var U = leerUniverso(op), conj = {}, filas = [];
+    op.filas.forEach(function (f, i) {
+      var nombre = String(f.nombre || "").trim() || nombreConj(i);
+      var r = { nombre: nombre, color: f.color, errores: [] };
+      filas.push(r);
+      var m = IDENT.exec(nombre);
+      if (!m || m[0] !== nombre) r.errores.push("«" + nombre + "» no sirve como nombre (usá letras)");
+      else if (nombre === "U" || nombre === "P") r.errores.push("«" + nombre + "» está reservado (U es el universo, P( ) el conjunto de partes)");
+      else if (conj[nombre]) r.errores.push("Ya hay un conjunto «" + nombre + "» más arriba");
+      var src = String(f.texto || "").trim();
+      if (!src) r.errores.push("Escribí un conjunto: {1, 2, 3}, x => x % 2 == 0 o A ∪ B");
+      if (r.errores.length) return;
+      var S;
+      if (/=>|^function\b/.test(src)) {
+        r.tipo = "comprension";
+        r.codigo = src;
+        r.previos = Object.keys(conj);
+        var c = compilarCondicion(src, conj);
+        if (c.error) { r.errores.push(c.error); return; }
+        var prueba = U.lista || (U.enumerar ? (function () {
+          var sig = U.enumerar(), l = [];
+          for (var j = 0; j < 30; j++) l.push(sig());
+          return l;
+        })() : [0, 0.5, -1, 2, Math.PI].map(function (v) { return elemNum(v); }));
+        for (var j = 0; j < prueba.length; j++) {
+          try { c.f(prueba[j].v); } catch (e) {
+            var falta = e instanceof ReferenceError && /^(\S+) is not defined/.exec(e.message);
+            r.errores.push(falta
+              ? "«" + falta[1] + "» no es un conjunto definido en una fila anterior" +
+                (r.previos.length ? " (hay: " + r.previos.join(", ") + ")" : "")
+              : "Error al calcular con " + textoCondicion(src).v + " = " + prueba[j].t + ": " + e.message);
+            return;
+          }
+        }
+        var pertenece = function (e) { try { return !!c.f(e.v); } catch (err) { return false; } };
+        S = U.lista ? desdeLista(U.lista.filter(pertenece), U, true)
+          : { lista: null, tiene: function (e) { return U.contiene(e) && pertenece(e); }, deU: true };
+      } else {
+        var a = analizarConjunto(src, Object.keys(conj));
+        if (a.error) { r.errores.push(a.error); return; }
+        r.tipo = a.arbol.t === "lit" ? "extension" : "operacion";
+        r.arbol = a.arbol;
+        var ctx = { U: U, conj: conj, avisos: [] };
+        try { S = evaluarConjunto(a.arbol, ctx); } catch (e) {
+          if (typeof e !== "string") throw e;
+          r.errores.push(e);
+          return;
+        }
+        r.avisos = ctx.avisos;
+      }
+      r.conj = S;
+      conj[nombre] = S;
+    });
+    return { U: U, filas: filas };
+  }
+
+  // Los elementos a escribir de un conjunto, hasta `L`. Devuelve { items, card }
+  // (items: textos, con "…" donde se corta) o { texto } (∅, o por comprension en ℝ).
+  //  - Si se conocen todos: los primeros L − 1, "…" y el ultimo.
+  //  - Si no (universo infinito): se recorre U buscando los primeros L; si hay
+  //    mas, "…" al final (y al principio en ℤ si siguen hacia los negativos).
+  function listarConjunto(S, U, L, comprension) {
+    if (S.lista) {
+      var l = S.lista;
+      if (!l.length) return { texto: "∅", card: 0 };
+      var ts = l.map(function (e) { return e.t; });
+      if (l.length <= L) return { items: ts, card: l.length };
+      return { items: ts.slice(0, Math.max(1, L - 1)).concat(["…", ts[ts.length - 1]]), card: l.length };
+    }
+    if (!U.enumerar) return { texto: comprension() };
+    var sig = U.enumerar(), hall = [], arriba = false, abajo = false, min = Infinity, max = -Infinity;
+    for (var n = 0; n < BUSQUEDA; n++) {
+      var e = sig();
+      if (!S.tiene(e)) continue;
+      if (hall.length < L) { hall.push(e); min = Math.min(min, e.v); max = Math.max(max, e.v); continue; }
+      if (U.tipo !== "Z") { arriba = true; break; }
+      if (e.v > max) arriba = true; else if (e.v < min) abajo = true;
+      if (arriba && abajo) break;
+    }
+    if (!hall.length) return { texto: "∅" };
+    if (U.tipo !== "Q") hall.sort(function (a, b) { return a.v - b.v; });
+    var items = hall.map(function (e) { return e.t; });
+    if (abajo) items.unshift("…");
+    if (arriba) items.push("…");
+    return { items: items };
+  }
+
+  // Dibuja el universo y una linea (o mas, si no entra) por conjunto:
+  //   U = {1, 2, ..., 10}
+  //   A = {x ∈ U / x mod 2 = 0} = {2, 4, 6, 8, 10}
+  //   C = A ∪ B = {1, 2, 3, 4, 5, 6, 8, 10}
+  // ORDEN: el universo y despues cada conjunto, de arriba abajo.
+  function generarConjuntos(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var maxW = ANCHOS_CONJ[op.ancho] || 900, alto = tam * fuente.lh + 6;
+    var an = analizarConjuntos(op), U = an.U;
+    var L = !U.infinito && op.mostrar === "todos" ? Infinity : Math.max(1, Math.min(500, Number(op.limite) || 10));
+    var y = oy;
+
+    // una linea "prefijo{a, b, c}sufijo" que se corta en varias si no entra en el ancho
+    function escribir(prefijo, lst, color, nombreCard) {
+      var suf = op.cardinal && lst.card != null ? "     |" + nombreCard + "| = " + lst.card : "";
+      if (!lst.items) {
+        agregar(texto(ox, y, prefijo + lst.texto + suf, tam, fuente, color, "left"));
+        y += alto;
+        return;
+      }
+      var linea = prefijo + "{", x = ox;
+      var sangria = Math.min(medir(linea, tam, fuente), maxW / 2);
+      lst.items.forEach(function (it, j) {
+        var pieza = it + (j < lst.items.length - 1 ? ", " : "}");
+        var conPieza = linea + pieza;
+        if (x + medir(conPieza.replace(/\s+$/, ""), tam, fuente) > ox + maxW && /[,{]\s*$/.test(linea) && linea !== prefijo + "{") {
+          agregar(texto(x, y, linea.replace(/\s+$/, ""), tam, fuente, color, "left"));
+          y += alto;
+          x = ox + sangria;
+          linea = pieza;
+        } else linea = conPieza;
+      });
+      agregar(texto(x, y, linea + suf, tam, fuente, color, "left"));
+      y += alto;
+    }
+
+    if (op.escribirU) {
+      if (U.infinito) {
+        agregar(texto(ox, y, "U = " + U.simbolo, tam, fuente, TINTA, "left"));
+        y += alto;
+      } else escribir("U = ", listarConjunto(desdeLista(U.lista, U, true), U, L), TINTA, "U");
+    }
+    an.filas.forEach(function (f) {
+      if (f.errores.length) return;
+      var def = "", comp;
+      if (f.tipo === "comprension") {
+        var tc = textoCondicion(f.codigo, f.previos);
+        def = "{" + tc.v + " ∈ " + U.simbolo + " / " + tc.cond + "}";
+        comp = function () { return def; };
+      } else {
+        if (f.tipo === "operacion") def = imprimirConjunto(f.arbol, false);
+        comp = function () { return "{x ∈ " + U.simbolo + " / " + predicadoConjunto(f.arbol, U) + "}"; };
+      }
+      var lst = listarConjunto(f.conj, U, L, comp);
+      // la definicion no se repite si es lo mismo que el resultado (comprension en ℝ)
+      var pre = f.nombre + " = " + (op.mostrarDef && def && def !== lst.texto ? def + " = " : "");
+      escribir(pre, lst, f.color, f.nombre);
+    });
+  }
+
+  function erroresConjunto(t, op, i) {
+    var f = analizarConjuntos(op).filas[i];
+    return f ? f.errores.concat(f.avisos || []) : [];
+  }
+
   // ====================================================== GENERADORES
   // Cada generador define su contenido (filas), opciones, panel y como dibujar.
   // contenido: claves que "Restablecer" no toca (lo que se grafica, no el aspecto).
@@ -1394,10 +1936,86 @@
         ui.chk("Dejar vacías las columnas a calcular (para completar)", "ocultar");
       },
     },
+
+    conjuntos: {
+      titulo: "Conjuntos",
+      dibujo: "cálculo", femenino: false,
+      clave: "pizarra-generador-conjuntos",
+      defecto: {
+        universo: "finito", universoTexto: "1, 2, ..., 10", conCero: false,
+        filas: [
+          { nombre: "A", texto: "x => x % 2 == 0", color: COLORES[0] },
+          { nombre: "B", texto: "{1, 2, 3, 4, 5}", color: COLORES[1] },
+          { nombre: "C", texto: "A ∪ B", color: COLORES[2] },
+          { nombre: "D", texto: "A ∩ B", color: COLORES[3] },
+          { nombre: "E", texto: "(A ∪ B)'", color: COLORES[4] },
+          // por comprension usando otros conjuntos (equivale a B − A)
+          { nombre: "F", texto: "x => B(x) && !A(x)", color: COLORES[5] },
+        ],
+        mostrar: "todos", limite: 10, tamTexto: "M", fuente: "normal", ancho: "medio",
+        escribirU: true, mostrarDef: true, cardinal: false,
+      },
+      contenido: ["filas", "universo", "universoTexto", "conCero"],
+      ejemplo: {
+        universo: "N", conCero: false,
+        filas: [
+          { nombre: "A", texto: "x => x % 3 == 0", color: COLORES[0] },
+          { nombre: "B", texto: "{1, 2, 3, 4, 5, 6}", color: COLORES[1] },
+          { nombre: "C", texto: "A ∩ B", color: COLORES[2] },
+          { nombre: "D", texto: "B − A", color: COLORES[3] },
+          { nombre: "E", texto: "A Δ B", color: COLORES[4] },
+          { nombre: "F", texto: "B'", color: COLORES[5] },
+          // por comprension usando otros conjuntos: x ∈ B ∨ (x ∈ A ∧ x < 20)
+          { nombre: "G", texto: "x => B(x) || A(x) && x < 20", color: "#e8590c" },
+        ],
+      },
+      textoEjemplo: "Inserta un cálculo nuevo de ejemplo en ℕ",
+      agregarFila: "+ Conjunto",
+      placeholder: "{1, 2, 3}  o  x => x > 2  o  A ∪ B",
+      nombreFila: { porDefecto: nombreConj, titulo: "Nombre del conjunto: A, B, C..." },
+      simbolos: [["∪", " ∪ ", "Unión"], ["∩", " ∩ ", "Intersección"], ["−", " − ", "Diferencia"],
+        ["Δ", " Δ ", "Diferencia simétrica"], ["A'", "'", "Complemento respecto de U (se escribe después: A')"],
+        ["×", " × ", "Producto cartesiano"], ["P( )", "P(", "Conjunto de partes"], ["∅", "∅", "Conjunto vacío"],
+        ["x =>", "x => ", "Por comprensión: x => condición"]],
+      ayuda: "Cada fila es un conjunto: por extensión {1, 2, 3} (también {1, 2, ..., 10} o {a, e, i}), " +
+        "por comprensión con una función que recibe cada elemento de U y dice si está: " +
+        "x => x % 2 == 0, x => x > 3 && x < 8 (Math sin prefijo); los conjuntos de las filas de arriba " +
+        "se usan como funciones: x => A(x) && !B(x) (x ∈ A y x ∉ B), " +
+        "o una operación con los de las filas de arriba: A ∪ B, A ∩ B, A − B, A Δ B, A' (complemento), " +
+        "A × B, P(A), (A ∪ B)'. ∩ y × se resuelven antes que ∪, − y Δ; ante la duda, paréntesis. " +
+        "En ℝ los conjuntos infinitos se escriben por comprensión. Seleccioná un cálculo ya insertado para editarlo.",
+      erroresFila: erroresConjunto,
+      posicion: function (op, cx, cy) { return { x: cx - (ANCHOS_CONJ[op.ancho] || 900) / 2, y: cy - 100 }; },
+      generar: generarConjuntos,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        var finito = !UNIVERSOS[op.universo];
+        ui.arriba(function () {
+          ui.seg("Universo", "universo", [["finito", "Finito"], ["N", "ℕ"], ["Z", "ℤ"], ["Q", "ℚ"], ["R", "ℝ"]], true);
+          if (finito) {
+            ui.campos("U =", [{ clave: "universoTexto", prefijo: "", texto: true, ancho: 220,
+              titulo: "Elementos de U separados por coma: 1, 2, ..., 10 o a, b, c, d" }],
+            function () { return leerUniverso(op).error; });
+          }
+          if (op.universo === "N") ui.chk("ℕ incluye el 0", "conCero");
+          if (finito) ui.seg("Elementos", "mostrar", [["todos", "Todos"], ["limite", "Hasta un límite"]], true);
+          if (!finito || op.mostrar === "limite") {
+            ui.campos("Mostrar", [{ clave: "limite", prefijo: "hasta", sufijo: "elementos", numero: [1, 500],
+              titulo: "Cantidad de elementos a escribir; si hay más, se ponen puntos suspensivos" }]);
+          }
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.seg("Ancho", "ancho", [["angosto", "Angosto"], ["medio", "Medio"], ["ancho", "Ancho"]]);
+        ui.chk("Escribir el universo", "escribirU");
+        ui.chk("Escribir la definición (A ∪ B = ..., {x ∈ U / ...} = ...)", "mostrarDef");
+        ui.chk("Escribir el cardinal |A| (si se conocen todos los elementos)", "cardinal");
+      },
+    },
   };
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "recta", "funcion"];
+  var ORDEN = ["tabla", "recta", "funcion", "conjuntos"];
 
   // ------------------------------------------------- insertar / reemplazar
   var vinculo = null;     // gid del dibujo que se esta editando
@@ -1529,7 +2147,7 @@
     ".pz-gen.oscuro{background:#232329;color:#e3e3e8;border-color:#3a3a43}",
     ".pz-gen .cab{display:flex;align-items:center;gap:6px 8px;margin-bottom:6px;flex-wrap:wrap}",
     ".pz-gen .cab .tipos{flex:1}",
-    ".pz-gen .cab .tipos .seg button{white-space:nowrap;padding:3px 8px}",
+    ".pz-gen .cab .tipos .seg button{white-space:nowrap;padding:3px 6px;font-size:12px}",
     ".pz-gen .cab .cerrar{order:1}.pz-gen .cab .modo{order:2}",
     ".pz-gen .modo{font-size:11px;padding:1px 7px;border-radius:9px;background:#e7f5ff;color:#1864ab;white-space:nowrap}",
     ".pz-gen.oscuro .modo{background:#1c3a57;color:#a5d8ff}",
@@ -1753,7 +2371,7 @@
         // los avisos de los extras dependen de la funcion y de los ejes, asi que
         // se revisan en cada cambio (ver cambio())
         function validar() {
-          var errores = gen.erroresFila(t.value, self.op);
+          var errores = gen.erroresFila(t.value, self.op, i);
           caja.classList.toggle("invalida", errores.length > 0);
           extras.forEach(function (x) {
             var e = x.def.errores(f, self.op, i);
@@ -1934,7 +2552,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: recta real con intervalos, gráficos de funciones y tablas de verdad";
+      b.title = "Generadores: tablas de verdad, recta real, gráficos de funciones y conjuntos";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.addEventListener("click", function () { panel.alternar(); });
