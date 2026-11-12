@@ -29,6 +29,9 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   referencia); luego, por cada conjunto, su línea en la referencia y, por cada
   intervalo, sus extremos escritos y el intervalo (signo izquierdo, rayado de
   izquierda a derecha, signo derecho); por último la operación y su resultado.
+  La recta tiene un estilo alternativo, "Líneas": cada conjunto es una línea
+  horizontal de su color por encima de la recta (una altura por conjunto), con
+  puntos llenos/vacíos en los extremos y flecha hacia ∞.
   El mismo panel tiene un segundo generador, **Funciones**: cada fila es una
   función anónima de JavaScript (`x => x**2 - 3`, con `Math` disponible sin
   prefijo) que se grafica sobre ejes cartesianos con cuadrícula, dominio y rango

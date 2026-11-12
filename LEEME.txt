@@ -78,6 +78,14 @@ RECTA REAL CON INTERVALOS (prototipo)
 - "Escribir el resultado" agrega el resultado calculado despues de un "=":
   ... = [1, 2). Si no hay elementos escribe ∅, y un solo punto como {1}.
   Destildala si queres que lo resuelvan los estudiantes.
+- "Estilo" (arriba del panel) elige como se ven los intervalos:
+  - Rayado [ ]: sobre la recta, con parentesis/corchetes y barras inclinadas.
+  - Líneas ●—○: cada conjunto es una linea de su color por encima de la
+    recta, cada uno a su altura (el primero, el mas alto). Los extremos
+    incluidos llevan un punto lleno y los excluidos uno vacio; hacia ∞ la
+    linea termina en flecha. La referencia va a la derecha de la recta, con
+    cada renglon a la altura de su linea. "Puntos y líneas" cambia el tamaño
+    de los puntos y el grosor.
 - "Incluir referencia" agrega un cuadro arriba a la derecha de la recta con
   cada conjunto escrito en su color, junto a una muestra de su rayado.
 - "Insertar en el centro" la dibuja en el medio de lo que estas viendo. Es un

@@ -311,10 +311,17 @@
       type: "arrow", startArrowhead: "arrow", endArrowhead: "arrow",
     }));
 
+    // estilo "lineas": cada conjunto es una linea horizontal de su color, a una
+    // altura propia por encima de la recta (el primero, el mas alto), con un
+    // punto lleno en los extremos incluidos y vacio en los excluidos; los
+    // infinitos terminan en flecha. Estilo "rayado": sobre la recta, con
+    // parentesis/corchetes y rayado.
+    var lineas = op.estilo === "lineas";
+
     // marcas y numeracion de la grilla (la del 0, el doble de larga).
     // La numeracion empieza debajo de los parentesis/corchetes para no taparse.
     var sg = SIGNOS[op.tamSignos] || SIGNOS.M;
-    var yGrilla = oy + Math.max(22, sg.h + 6);
+    var yGrilla = oy + (lineas ? 22 : Math.max(22, sg.h + 6));
     var paso = pasoLindo(vmax - vmin, op.soloEnteros);
     // si los numeros no entran entre marca y marca, se agranda el paso (1, 2, 5, 10...)
     if (!op.ocultarNumeros) {
@@ -344,20 +351,41 @@
       conjuntos.forEach(function (c) { anchoTxt = Math.max(anchoTxt, medir(textoConjunto(c), ref.tam, fuente)); });
       ref.ancho = ref.relleno * 2 + ref.muestra + 10 + anchoTxt;
       ref.alto = ref.relleno * 2 + ref.altoFila * conjuntos.length - 6;
-      ref.x = ox + L - ref.ancho;
-      ref.y = oy - h - 16 - ref.alto;
+    }
+
+    // alturas de las lineas (estilo "lineas"): una por conjunto, separadas
+    // como los renglones de la referencia para que queden a la par
+    var sepNivel = Math.max(30, ref ? ref.altoFila : 0);
+    function nivelY(i) { return oy - 40 - (conjuntos.length - 1 - i) * sepNivel; }
+    var radio = { S: 4, M: 5, L: 6.5, XL: 8 }[op.tamSignos] || 5;
+
+    if (ref) {
+      if (lineas) {
+        // a la derecha de la recta, con cada renglon a la altura de su linea
+        ref.x = ox + L + 16;
+        ref.y = nivelY(0) - ref.relleno - (ref.altoFila - 6) / 2;
+      } else {
+        ref.x = ox + L - ref.ancho;
+        ref.y = oy - h - 16 - ref.alto;
+      }
       agregar(base("rectangle", {
         x: ref.x, y: ref.y, width: ref.ancho, height: ref.alto, strokeWidth: 1, roundness: { type: 3 },
       }));
     }
 
-    // 2.1 linea del conjunto en la referencia: muestra rayada + texto en su color
+    // 2.1 linea del conjunto en la referencia: muestra (rayada, o una linea en
+    // el estilo "lineas") + texto en su color
     function filaReferencia(c, i) {
       var fy = ref.y + ref.relleno + i * ref.altoFila, alto = ref.altoFila - 6;
-      agregar(base("rectangle", {
-        x: ref.x + ref.relleno, y: fy + alto / 2 - 7, width: ref.muestra, height: 14,
-        strokeColor: c.color, backgroundColor: c.color, fillStyle: "hachure", strokeWidth: 1,
-      }));
+      if (lineas) {
+        agregar(linea(ref.x + ref.relleno, fy + alto / 2, [[0, 0], [ref.muestra, 0]],
+          { strokeColor: c.color, strokeWidth: sg.trazo }));
+      } else {
+        agregar(base("rectangle", {
+          x: ref.x + ref.relleno, y: fy + alto / 2 - 7, width: ref.muestra, height: 14,
+          strokeColor: c.color, backgroundColor: c.color, fillStyle: "hachure", strokeWidth: 1,
+        }));
+      }
       agregar(texto(ref.x + ref.relleno + ref.muestra + 10, fy + (alto - ref.tam * fuente.lh) / 2,
         textoConjunto(c), ref.tam, fuente, c.color, "left"));
     }
@@ -384,6 +412,31 @@
         strokeColor: c, strokeWidth: sg.trazo, roundness: car === "(" || car === ")" ? { type: 2 } : null,
       }));
     }
+    // punto del estilo "lineas": lleno si el extremo esta incluido, vacio si no
+    function punto(x, y, lleno, c) {
+      agregar(base("ellipse", {
+        x: x - radio, y: y - radio, width: 2 * radio, height: 2 * radio,
+        strokeColor: c, strokeWidth: Math.max(1.5, sg.trazo * 0.7),
+        backgroundColor: lleno ? c : "#ffffff", fillStyle: "solid",
+      }));
+    }
+    // 2.3 (estilo "lineas") punto izquierdo, linea, punto derecho. La linea
+    // arranca y termina en el borde de los puntos; hacia un infinito, flecha.
+    function intervaloLinea(r, nivel) {
+      var xa = X(r.izq.valor), xb = X(r.der.valor), c = r.color, y = nivelY(nivel);
+      var infIzq = !isFinite(r.izq.valor), infDer = !isFinite(r.der.valor);
+      if (xa === xb) { punto(xa, y, true, c); return; } // [a, a]
+      if (!infIzq) punto(xa, y, r.cizq === "[", c);
+      var a = infIzq ? xa : xa + radio, b = infDer ? xb : xb - radio;
+      if (b > a) {
+        agregar(linea(a, y, [[0, 0], [b - a, 0]], {
+          type: infIzq || infDer ? "arrow" : "line", strokeColor: c, strokeWidth: sg.trazo,
+          startArrowhead: infIzq ? "arrow" : null, endArrowhead: infDer ? "arrow" : null,
+        }));
+      }
+      if (!infDer) punto(xb, y, r.cder === "]", c);
+    }
+
     function intervalo(r) {
       var xa = X(r.izq.valor), xb = X(r.der.valor), c = r.color;
       if (xa === xb) { // [a, a] es solo el punto
@@ -403,7 +456,10 @@
 
     conjuntos.forEach(function (c, i) {
       if (ref) filaReferencia(c, i);
-      c.ints.forEach(function (r) { extremos(r); intervalo(r); });
+      c.ints.forEach(function (r) {
+        extremos(r);
+        if (lineas) intervaloLinea(r, i); else intervalo(r);
+      });
     });
 
     // 3. operacion entre los conjuntos (una fila = un conjunto). Con interseccion,
@@ -901,7 +957,7 @@
       clave: "pizarra-generador-recta",
       defecto: {
         filas: [{ texto: "(-2, 1/2]", color: COLORES[0] }, { texto: "[1, ∞)", color: COLORES[1] }],
-        operacion: "union", referencia: false, margenIzq: 10, margenDer: 10,
+        operacion: "union", estilo: "rayado", referencia: false, margenIzq: 10, margenDer: 10,
         largo: "media", tamGrilla: "S", tamExtremos: "L", tamSignos: "M", fuente: "normal", rayado: "normal",
         soloEnteros: false, ocultarNumeros: false, mostrarUnion: true, mostrarResultado: true,
       },
@@ -921,10 +977,13 @@
       },
       posicion: function (op, cx, cy) { return { x: cx - (LARGOS[op.largo] || 800) / 2, y: cy - 40 }; },
       generar: generarRecta,
-      opciones: function (ui) {
+      opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        var lineas = op.estilo === "lineas";
         ui.arriba(function () {
           ui.seg("Operación", "operacion", [["union", "Unión ∪"], ["interseccion", "Intersección ∩"]]);
+          // forma de mostrar los intervalos (cambia que otras opciones se ven)
+          ui.seg("Estilo", "estilo", [["rayado", "Rayado [ ]"], ["lineas", "Líneas ●—○"]], true);
         });
         ui.seg("Largo", "largo", [["corta", "Corta"], ["media", "Media"], ["larga", "Larga"]]);
         ui.campos("Márgenes", [
@@ -935,9 +994,9 @@
         ]);
         ui.seg("Números grilla", "tamGrilla", tam);
         ui.seg("Números extremos", "tamExtremos", tam);
-        ui.seg("( ) y [ ]", "tamSignos", tam);
+        ui.seg(lineas ? "Puntos y líneas" : "( ) y [ ]", "tamSignos", tam);
         ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
-        ui.seg("Rayado", "rayado", [["poco", "Ralo"], ["normal", "Normal"], ["denso", "Denso"]]);
+        if (!lineas) ui.seg("Rayado", "rayado", [["poco", "Ralo"], ["normal", "Normal"], ["denso", "Denso"]]);
         ui.chk("Grilla solo en enteros", "soloEnteros");
         ui.chk("Ocultar numeración (mantener el 0)", "ocultarNumeros");
         ui.chk("Escribir la operación debajo", "mostrarUnion");
