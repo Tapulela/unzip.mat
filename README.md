@@ -60,6 +60,13 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   elementos y puntos suspensivos; los universos infinitos se recorren en orden
   (ℚ por altura |p| + q, hasta 20000 elementos), y en ℝ los conjuntos que no
   se pueden listar se escriben por comprensión.
+  El quinto, **Relaciones**, define conjuntos finitos y relaciones binarias
+  `R ⊆ A × B` por extensión (`{(1, a), (2, b)}`) o por comprensión
+  (`(x, y) => x < y`, pudiendo usar conjuntos `A(x)` y relaciones `R(x, y)` de
+  filas anteriores). Cada relación se dibuja como gráfico cartesiano, diagrama
+  sagital y grafo dirigido (con lazos y flechas curvas si están los dos
+  sentidos); opcionalmente escribe dominio, imagen y propiedades (reflexiva,
+  simétrica, antisimétrica, transitiva, con contraejemplos).
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.

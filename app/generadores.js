@@ -1352,12 +1352,17 @@
   // propio ambito (solo ve los conjuntos definidos antes que ella), asi que no
   // hay referencias circulares. Un conjunto que se llame como algo de Math (E)
   // lo tapa.
-  function compilarCondicion(src, conj) {
+  // rels (opcional): relaciones de filas anteriores, usables como R(x, y)
+  function compilarCondicion(src, conj, rels) {
     if (/[^*]\^|^\^/.test(src)) return { error: "En JavaScript la potencia es ** (x**2); ^ es otra operación" };
     var ambito = {};
     Object.keys(conj).forEach(function (n) {
       var S = conj[n];
       ambito[n] = function (v) { return S.tiene(elemDeValor(v)); };
+    });
+    Object.keys(rels || {}).forEach(function (n) {
+      var R = rels[n];
+      ambito[n] = function (x, y) { return R.tiene(elemDeValor(x), elemDeValor(y)); };
     });
     try {
       /* jshint evil:true */
@@ -1370,14 +1375,21 @@
 
   // la condicion escrita "a mano": x => x % 2 === 0 && x > 3  ->  x mod 2 = 0 ∧ x > 3
   // Los conjuntos usados como funciones se escriben con ∈: A(x) -> x ∈ A, !B(x) -> x ∉ B
+  // Con dos variables ((x, y) => ...) devuelve v = "(x, y)"; R(x, y) -> (x, y) ∈ R.
   function textoCondicion(codigo, nombres) {
-    var m = /^\s*\(?\s*([a-zA-Z_$][\w$]*)\s*\)?\s*=>\s*([^{][\s\S]*)$/.exec(codigo || "");
+    var m = /^\s*(?:\(\s*([a-zA-Z_$][\w$]*(?:\s*,\s*[a-zA-Z_$][\w$]*)*)\s*\)|([a-zA-Z_$][\w$]*))\s*=>\s*([^{][\s\S]*)$/.exec(codigo || "");
     if (!m) return { v: "x", cond: String(codigo || "").trim() };
-    var c = m[2].trim().replace(/Math\./g, "");
+    var params = (m[1] || m[2]).split(/\s*,\s*/);
+    var v = params.length > 1 ? "(" + params.join(", ") + ")" : params[0];
+    var c = m[3].trim().replace(/Math\./g, "");
+    var arg = function (a) {
+      a = a.trim();
+      return a.indexOf(",") >= 0 ? "(" + a.split(/\s*,\s*/).join(", ") + ")" : a;
+    };
     (nombres || []).forEach(function (n) {
       var esc = n.replace(/[$]/g, "\\$");
-      c = c.replace(new RegExp("!\\s*" + esc + "\\s*\\(([^()]+)\\)", "g"), function (t, a) { return a.trim() + " ∉ " + n; })
-        .replace(new RegExp("(^|[^\\w$.])" + esc + "\\s*\\(([^()]+)\\)", "g"), function (t, p, a) { return p + a.trim() + " ∈ " + n; });
+      c = c.replace(new RegExp("!\\s*" + esc + "\\s*\\(([^()]+)\\)", "g"), function (t, a) { return arg(a) + " ∉ " + n; })
+        .replace(new RegExp("(^|[^\\w$.])" + esc + "\\s*\\(([^()]+)\\)", "g"), function (t, p, a) { return p + arg(a) + " ∈ " + n; });
     });
     c = c
       .replace(/\s*!==?\s*/g, " ≠ ").replace(/\s*===?\s*/g, " = ")
@@ -1385,7 +1397,7 @@
       .replace(/\s*&&\s*/g, " ∧ ").replace(/\s*\|\|\s*/g, " ∨ ").replace(/!/g, "¬")
       .replace(/\s*%\s*/g, " mod ").replace(/\*\*\s*2(?![\d.])/g, "²").replace(/\*\*\s*3(?![\d.])/g, "³")
       .replace(/\s*\*\s*/g, "·").replace(/-/g, "−").replace(/\s+/g, " ");
-    return { v: m[1], cond: c };
+    return { v: v, cond: c };
   }
 
   // expresion con conjuntos: arbol o { error }. nombres = conjuntos ya definidos
@@ -1680,6 +1692,36 @@
     return { items: items };
   }
 
+  // Escribe lineas de texto una debajo de otra desde (ox, y).
+  // lista(): "prefijo{a, b, c}sufijo", cortada en varias lineas (con sangria
+  // hasta la llave) si no entra en maxW. lst = { items } o { texto }.
+  function nuevoEscritor(ox, y, maxW, tam, fuente, agregar) {
+    var alto = tam * fuente.lh + 6, w = { y: y, alto: alto };
+    w.linea = function (str, color) {
+      agregar(texto(ox, w.y, str, tam, fuente, color, "left"));
+      w.y += alto;
+    };
+    w.lista = function (prefijo, lst, color, suf) {
+      suf = suf || "";
+      if (!lst.items) { w.linea(prefijo + lst.texto + suf, color); return; }
+      var linea = prefijo + "{", x = ox;
+      var sangria = Math.min(medir(linea, tam, fuente), maxW / 2);
+      lst.items.forEach(function (it, j) {
+        var pieza = it + (j < lst.items.length - 1 ? ", " : "}");
+        var conPieza = linea + pieza;
+        if (x + medir(conPieza.replace(/\s+$/, ""), tam, fuente) > ox + maxW && /[,{]\s*$/.test(linea) && linea !== prefijo + "{") {
+          agregar(texto(x, w.y, linea.replace(/\s+$/, ""), tam, fuente, color, "left"));
+          w.y += alto;
+          x = ox + sangria;
+          linea = pieza;
+        } else linea = conPieza;
+      });
+      agregar(texto(x, w.y, linea + suf, tam, fuente, color, "left"));
+      w.y += alto;
+    };
+    return w;
+  }
+
   // Dibuja el universo y una linea (o mas, si no entra) por conjunto:
   //   U = {1, 2, ..., 10}
   //   A = {x ∈ U / x mod 2 = 0} = {2, 4, 6, 8, 10}
@@ -1687,40 +1729,17 @@
   // ORDEN: el universo y despues cada conjunto, de arriba abajo.
   function generarConjuntos(op, ox, oy, agregar) {
     var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
-    var maxW = ANCHOS_CONJ[op.ancho] || 900, alto = tam * fuente.lh + 6;
+    var maxW = ANCHOS_CONJ[op.ancho] || 900;
     var an = analizarConjuntos(op), U = an.U;
     var L = !U.infinito && op.mostrar === "todos" ? Infinity : Math.max(1, Math.min(500, Number(op.limite) || 10));
-    var y = oy;
-
-    // una linea "prefijo{a, b, c}sufijo" que se corta en varias si no entra en el ancho
+    var esc = nuevoEscritor(ox, oy, maxW, tam, fuente, agregar);
     function escribir(prefijo, lst, color, nombreCard) {
-      var suf = op.cardinal && lst.card != null ? "     |" + nombreCard + "| = " + lst.card : "";
-      if (!lst.items) {
-        agregar(texto(ox, y, prefijo + lst.texto + suf, tam, fuente, color, "left"));
-        y += alto;
-        return;
-      }
-      var linea = prefijo + "{", x = ox;
-      var sangria = Math.min(medir(linea, tam, fuente), maxW / 2);
-      lst.items.forEach(function (it, j) {
-        var pieza = it + (j < lst.items.length - 1 ? ", " : "}");
-        var conPieza = linea + pieza;
-        if (x + medir(conPieza.replace(/\s+$/, ""), tam, fuente) > ox + maxW && /[,{]\s*$/.test(linea) && linea !== prefijo + "{") {
-          agregar(texto(x, y, linea.replace(/\s+$/, ""), tam, fuente, color, "left"));
-          y += alto;
-          x = ox + sangria;
-          linea = pieza;
-        } else linea = conPieza;
-      });
-      agregar(texto(x, y, linea + suf, tam, fuente, color, "left"));
-      y += alto;
+      esc.lista(prefijo, lst, color, op.cardinal && lst.card != null ? "     |" + nombreCard + "| = " + lst.card : "");
     }
 
     if (op.escribirU) {
-      if (U.infinito) {
-        agregar(texto(ox, y, "U = " + U.simbolo, tam, fuente, TINTA, "left"));
-        y += alto;
-      } else escribir("U = ", listarConjunto(desdeLista(U.lista, U, true), U, L), TINTA, "U");
+      if (U.infinito) esc.linea("U = " + U.simbolo, TINTA);
+      else escribir("U = ", listarConjunto(desdeLista(U.lista, U, true), U, L), TINTA, "U");
     }
     an.filas.forEach(function (f) {
       if (f.errores.length) return;
@@ -1742,6 +1761,365 @@
 
   function erroresConjunto(t, op, i) {
     var f = analizarConjuntos(op).filas[i];
+    return f ? f.errores.concat(f.avisos || []) : [];
+  }
+
+  // ======================================= GENERADOR: RELACIONES BINARIAS
+  // Filas: conjuntos finitos y relaciones. El campo "⊆" de cada fila dice de
+  // donde se toman los elementos:
+  //  - conjunto por extension u operacion: {1, 2, 3}, A ∪ B   (⊆ opcional)
+  //  - conjunto por comprension: x => x % 2 == 0              (⊆ A)
+  //  - relacion por extension: {(1, a), (2, b)}               (⊆ A × B)
+  //  - relacion por comprension: (x, y) => x < y              (⊆ A × B)
+  // Las funciones pueden usar los conjuntos (A(x)) y relaciones (R(x, y)) de
+  // las filas anteriores. Cada relacion se dibuja como grafico cartesiano,
+  // diagrama sagital y/o grafo dirigido.
+  // Relacion: { A, B (conjuntos), pares: [[a, b]], tiene(a, b) }.
+  var MAX_PARES = 2500;
+  // sin universo: los elementos escritos valen todos (los conjuntos son finitos)
+  var UNIVERSO_LIBRE = { infinito: true, simbolo: "U", lista: null, error: "", contiene: function () { return true; } };
+
+  // separa por las comas (o ;) que no estan dentro de parentesis
+  function partirPares(s) {
+    var res = [], prof = 0, ini = 0;
+    for (var i = 0; i < s.length; i++) {
+      var c = s[i];
+      if (c === "(") prof++;
+      else if (c === ")") prof--;
+      else if ((c === "," || c === ";") && prof === 0) { res.push(s.slice(ini, i)); ini = i + 1; }
+    }
+    res.push(s.slice(ini));
+    return res.map(function (p) { return p.trim(); }).filter(Boolean);
+  }
+
+  function textoPar(a, b) { return "(" + a.t + ", " + b.t + ")"; }
+
+  function nuevaRelacion(A, B, pares) {
+    var claves = {}, lista = [], posA = {}, posB = {};
+    A.lista.forEach(function (e, i) { posA[e.k] = i; });
+    B.lista.forEach(function (e, i) { posB[e.k] = i; });
+    pares.forEach(function (p) {
+      var k = p[0].k + "|" + p[1].k;
+      if (!claves[k]) { claves[k] = true; lista.push(p); }
+    });
+    lista.sort(function (p, q) { return posA[p[0].k] - posA[q[0].k] || posB[p[1].k] - posB[q[1].k]; });
+    return { A: A, B: B, pares: lista, tiene: function (x, y) { return !!claves[x.k + "|" + y.k]; } };
+  }
+
+  function analizarRelaciones(op) {
+    var conj = {}, rels = {}, filas = [];
+    op.filas.forEach(function (f, i) {
+      var nombre = String(f.nombre || "").trim() || nombreConj(i);
+      var r = { nombre: nombre, color: f.color, errores: [], avisos: [] };
+      filas.push(r);
+      var m = IDENT.exec(nombre);
+      if (!m || m[0] !== nombre) r.errores.push("«" + nombre + "» no sirve como nombre (usá letras)");
+      else if (nombre === "U" || nombre === "P") r.errores.push("«" + nombre + "» está reservado");
+      else if (conj[nombre] || rels[nombre]) r.errores.push("Ya hay un conjunto o relación «" + nombre + "» más arriba");
+      var src = String(f.texto || "").trim(), base = String(f.base || "").trim();
+      if (!src) r.errores.push("Escribí un conjunto ({1, 2, 3}) o una relación ((x, y) => x < y o {(1, 2), (2, 3)})");
+      if (r.errores.length) return;
+
+      var ctx = { U: UNIVERSO_LIBRE, conj: conj, avisos: r.avisos };
+      var finito = function (texto, que) {
+        var a = analizarConjunto(texto, Object.keys(conj));
+        if (a.error) throw que + a.error;
+        var S = evaluarConjunto(a.arbol, ctx);
+        if (!S.lista) throw (que ? que + "t" : "T") + "iene que ser un conjunto finito (acá no hay universo: en lugar del complemento usá −)";
+        return { S: S, arbol: a.arbol };
+      };
+      var previos = Object.keys(conj).concat(Object.keys(rels));
+      var errorCalculo = function (e, valor) {
+        var falta = e instanceof ReferenceError && /^(\S+) is not defined/.exec(e.message);
+        return falta ? "«" + falta[1] + "» no es un conjunto ni una relación de una fila anterior" +
+          (previos.length ? " (hay: " + previos.join(", ") + ")" : "")
+          : "Error al calcular con " + textoCondicion(src).v + " = " + valor + ": " + e.message;
+      };
+      var esFuncion = /=>|^function\b/.test(src);
+      var dosVariables = esFuncion && /^\s*(?:function\s*)?\(\s*[\w$]+\s*,/.test(src);
+      try {
+        if (dosVariables || /^\{\s*\(/.test(src)) {
+          r.clase = "relacion";
+          if (!base) throw "En «⊆» escribí el producto cartesiano donde está la relación, por ejemplo A × B o A × A";
+          var ab = analizarConjunto(base, Object.keys(conj));
+          if (ab.error) throw "«⊆»: " + ab.error;
+          if (ab.arbol.t !== "bin" || ab.arbol.op !== "prod") throw "«⊆» tiene que ser un producto cartesiano, por ejemplo A × B";
+          var A = evaluarConjunto(ab.arbol.a, ctx), B = evaluarConjunto(ab.arbol.b, ctx);
+          if (!A.lista || !B.lista) throw "Los conjuntos del producto tienen que ser finitos";
+          if (A.lista.length * B.lista.length > MAX_PARES) throw "El producto tiene demasiados pares (más de " + MAX_PARES + ")";
+          r.base = imprimirConjunto(ab.arbol, false);
+          var pares = [];
+          if (esFuncion) {
+            r.tipo = "comprension";
+            r.codigo = src;
+            r.previos = previos;
+            var c = compilarCondicion(src, conj, rels);
+            if (c.error) throw c.error;
+            A.lista.forEach(function (a) {
+              B.lista.forEach(function (b) {
+                var v;
+                try { v = c.f(a.v, b.v); } catch (e) { throw errorCalculo(e, textoPar(a, b)); }
+                if (v) pares.push([a, b]);
+              });
+            });
+          } else {
+            r.tipo = "extension";
+            if (src[src.length - 1] !== "}") throw "Falta cerrar la llave }";
+            var buscar = function (S, x) { return S.lista.filter(function (e) { return e.k === x.k; })[0]; };
+            var fuera = [];
+            partirPares(src.slice(1, -1)).forEach(function (p) {
+              var mp = /^\((.*)\)$/.exec(p);
+              if (!mp) throw "«" + p + "» tiene que ser un par (a, b)";
+              var partes = mp[1].split(mp[1].indexOf(";") >= 0 ? ";" : ",");
+              if (partes.length !== 2) throw "«" + p + "» tiene que tener dos elementos: (a, b)";
+              var x = leerElementos(partes[0]).elems[0], y = leerElementos(partes[1]).elems[0];
+              if (!x || !y) throw "«" + p + "» tiene un elemento vacío";
+              var xa = buscar(A, x), yb = buscar(B, y);
+              if (!xa || !yb) fuera.push(p); else pares.push([xa, yb]);
+            });
+            if (fuera.length) {
+              r.avisos.push(fuera.join(", ") + (fuera.length > 1 ? " no están" : " no está") + " en " + r.base +
+                " (se ignora" + (fuera.length > 1 ? "n" : "") + ")");
+            }
+          }
+          r.rel = nuevaRelacion(A, B, pares);
+          r.homogenea = A.lista.length === B.lista.length && A.lista.every(B.tiene);
+          rels[nombre] = r.rel;
+        } else {
+          r.clase = "conjunto";
+          var S;
+          if (esFuncion) {
+            r.tipo = "comprension";
+            if (!base) throw "En «⊆» escribí el conjunto de donde se toman los elementos, por ejemplo A";
+            var bs = finito(base, "«⊆»: ");
+            r.base = imprimirConjunto(bs.arbol, false);
+            r.codigo = src;
+            r.previos = previos;
+            var c2 = compilarCondicion(src, conj, rels);
+            if (c2.error) throw c2.error;
+            S = desdeLista(bs.S.lista.filter(function (e) {
+              try { return !!c2.f(e.v); } catch (err) { throw errorCalculo(err, e.t); }
+            }), UNIVERSO_LIBRE, false);
+          } else {
+            var e1 = finito(src, "");
+            r.tipo = e1.arbol.t === "lit" ? "extension" : "operacion";
+            r.arbol = e1.arbol;
+            S = e1.S;
+            if (base) {
+              var b1 = finito(base, "«⊆»: ");
+              var fuera2 = S.lista.filter(function (e) { return !b1.S.tiene(e); });
+              if (fuera2.length) {
+                r.avisos.push(fuera2.map(function (e) { return e.t; }).join(", ") +
+                  (fuera2.length > 1 ? " no están" : " no está") + " en " + base);
+              }
+            }
+          }
+          r.conj = S;
+          conj[nombre] = S;
+        }
+      } catch (e) {
+        if (typeof e !== "string") throw e;
+        r.errores.push(e);
+      }
+    });
+    return { filas: filas };
+  }
+
+  // propiedades de una relacion en A × A, con un contraejemplo si no se cumple
+  function propiedadesRelacion(f) {
+    var R = f.rel, A = R.A.lista, n = f.nombre, P = R.pares, res = [];
+    var noRef = A.filter(function (a) { return !R.tiene(a, a); })[0];
+    var noSim = P.filter(function (p) { return !R.tiene(p[1], p[0]); })[0];
+    var noAnti = P.filter(function (p) { return p[0].k !== p[1].k && R.tiene(p[1], p[0]); })[0];
+    var noTra = null;
+    P.some(function (p) {
+      return P.some(function (q) {
+        if (q[0].k !== p[1].k || R.tiene(p[0], q[1])) return false;
+        noTra = [p, q];
+        return true;
+      });
+    });
+    res.push(noRef ? n + " no es reflexiva: " + textoPar(noRef, noRef) + " ∉ " + n : n + " es reflexiva");
+    res.push(noSim ? n + " no es simétrica: " + textoPar(noSim[0], noSim[1]) + " ∈ " + n + " y " +
+      textoPar(noSim[1], noSim[0]) + " ∉ " + n : n + " es simétrica");
+    res.push(noAnti ? n + " no es antisimétrica: " + textoPar(noAnti[0], noAnti[1]) + " y " +
+      textoPar(noAnti[1], noAnti[0]) + " ∈ " + n : n + " es antisimétrica");
+    res.push(noTra ? n + " no es transitiva: " + textoPar(noTra[0][0], noTra[0][1]) + ", " +
+      textoPar(noTra[1][0], noTra[1][1]) + " ∈ " + n + " y " + textoPar(noTra[0][0], noTra[1][1]) + " ∉ " + n
+      : n + " es transitiva");
+    if (!noRef && !noSim && !noTra) res.push(n + " es una relación de equivalencia");
+    if (!noRef && !noAnti && !noTra) res.push(n + " es una relación de orden");
+    return res;
+  }
+
+  function anchoMaximo(lista, tam, fuente) {
+    return lista.reduce(function (m, e) { return Math.max(m, medir(e.t, tam, fuente)); }, 0);
+  }
+
+  // grafico cartesiano: A en el eje horizontal, B en el vertical, un punto por par
+  function dibujarCartesiano(f, tam, fuente, agregar) {
+    var A = f.rel.A.lista, B = f.rel.B.lista, lh = tam * fuente.lh;
+    var sx = Math.max(tam * 2, anchoMaximo(A, tam, fuente) + 14), sy = Math.max(tam * 1.6, lh + 8);
+    var W = (A.length + 1) * sx, H = (B.length + 1) * sy;
+    var posA = {}, posB = {};
+    A.forEach(function (e, i) { posA[e.k] = i; });
+    B.forEach(function (e, j) { posB[e.k] = j; });
+    function X(i) { return (i + 1) * sx; }
+    function Y(j) { return H - (j + 1) * sy; }
+    var nombres = f.base.split(" × ");
+    agregar(linea(0, H, [[0, 0], [W, 0]], { type: "arrow", endArrowhead: "arrow" }));
+    agregar(linea(0, H, [[0, 0], [0, -H + sy * 0.2]], { type: "arrow", endArrowhead: "arrow" }));
+    agregar(texto(W + 10, H - lh / 2, nombres[0], tam, fuente, TINTA, "left"));
+    agregar(texto(0, sy * 0.2 - lh - 8, nombres[1] || nombres[0], tam, fuente, TINTA, "center"));
+    var guia = { strokeColor: GRIS, strokeWidth: 1, strokeStyle: "dashed" };
+    A.forEach(function (e, i) { agregar(linea(X(i), H, [[0, 0], [0, -(H - sy * 0.6)]], guia)); });
+    B.forEach(function (e, j) { agregar(linea(0, Y(j), [[0, 0], [W - sx * 0.6, 0]], guia)); });
+    A.forEach(function (e, i) {
+      agregar(linea(X(i), H - 5, [[0, 0], [0, 10]], {}));
+      agregar(texto(X(i), H + 8, e.t, tam, fuente, TINTA, "center"));
+    });
+    B.forEach(function (e, j) {
+      agregar(linea(-5, Y(j), [[0, 0], [10, 0]], {}));
+      agregar(texto(-10, Y(j) - lh / 2, e.t, tam, fuente, TINTA, "right"));
+    });
+    var rad = Math.max(4.5, tam * 0.27);
+    f.rel.pares.forEach(function (p) {
+      agregar(base("ellipse", {
+        x: X(posA[p[0].k]) - rad, y: Y(posB[p[1].k]) - rad, width: 2 * rad, height: 2 * rad,
+        strokeColor: f.color, backgroundColor: f.color, fillStyle: "solid",
+      }));
+    });
+  }
+
+  // diagrama sagital: A y B en dos ovalos, una flecha por par
+  function dibujarSagital(f, tam, fuente, agregar) {
+    var A = f.rel.A.lista, B = f.rel.B.lista, lh = tam * fuente.lh, fila = lh + 12;
+    var nombres = f.base.split(" × ");
+    // el ovalo contiene al rectangulo del contenido si es √2 veces mas grande
+    function ovalo(lista) {
+      var cw = anchoMaximo(lista, tam, fuente) + 30, ch = Math.max(lista.length, 1) * fila;
+      return { cw: cw, ch: ch, w: cw * 1.42 + 16, h: ch * 1.42 + 16 };
+    }
+    var oa = ovalo(A), ob = ovalo(B), H = Math.max(oa.h, ob.h), gap = Math.max(140, tam * 7);
+    var xa = 0, xb = oa.w + gap, cy = H / 2;
+    var cxa = xa + oa.w / 2, cxb = xb + ob.w / 2;
+    agregar(base("ellipse", { x: xa, y: cy - oa.h / 2, width: oa.w, height: oa.h, strokeWidth: 2 }));
+    agregar(base("ellipse", { x: xb, y: cy - ob.h / 2, width: ob.w, height: ob.h, strokeWidth: 2 }));
+    agregar(texto(cxa, -lh - 8, nombres[0], tam, fuente, TINTA, "center"));
+    agregar(texto(cxb, -lh - 8, nombres[1] || nombres[0], tam, fuente, TINTA, "center"));
+    var pa = {}, pb = {}, r = 3.5;
+    A.forEach(function (e, i) {
+      var y = cy - oa.ch / 2 + (i + 0.5) * fila, x = cxa + oa.cw / 2 - 6;
+      pa[e.k] = [x, y];
+      agregar(texto(x - 14, y - lh / 2, e.t, tam, fuente, TINTA, "right"));
+      agregar(base("ellipse", { x: x - r, y: y - r, width: 2 * r, height: 2 * r, backgroundColor: TINTA }));
+    });
+    B.forEach(function (e, j) {
+      var y = cy - ob.ch / 2 + (j + 0.5) * fila, x = cxb - ob.cw / 2 + 6;
+      pb[e.k] = [x, y];
+      agregar(texto(x + 14, y - lh / 2, e.t, tam, fuente, TINTA, "left"));
+      agregar(base("ellipse", { x: x - r, y: y - r, width: 2 * r, height: 2 * r, backgroundColor: TINTA }));
+    });
+    f.rel.pares.forEach(function (p) {
+      var a = pa[p[0].k], b = pb[p[1].k];
+      agregar(trazo([[a[0] + 6, a[1]], [b[0] - 7, b[1]]], {
+        type: "arrow", endArrowhead: "arrow", strokeColor: f.color, strokeWidth: 1.5,
+      }));
+    });
+  }
+
+  // grafo dirigido: los elementos de A (y de B, si es otro conjunto) en un
+  // circulo; una flecha por par, un lazo si es (a, a) y flechas curvas si
+  // estan los dos sentidos
+  function dibujarGrafo(f, tam, fuente, agregar) {
+    var lh = tam * fuente.lh, nodos = f.rel.A.lista.slice();
+    f.rel.B.lista.forEach(function (e) { if (!f.rel.A.tiene(e)) nodos.push(e); });
+    var n = nodos.length, rn = Math.max(tam * 0.9, anchoMaximo(nodos, tam, fuente) / 2 + 8);
+    var R = n === 1 ? 0 : Math.max(rn * 4, n * (2 * rn + 70) / (2 * Math.PI));
+    var c = R + rn + 50, pos = {}, ang = {};
+    nodos.forEach(function (e, i) {
+      var t = -Math.PI / 2 + 2 * Math.PI * i / n;
+      pos[e.k] = [c + R * Math.cos(t), c + R * Math.sin(t)];
+      ang[e.k] = t;
+      agregar(base("ellipse", { x: pos[e.k][0] - rn, y: pos[e.k][1] - rn, width: 2 * rn, height: 2 * rn, strokeWidth: 2 }));
+      agregar(texto(pos[e.k][0], pos[e.k][1] - lh / 2, e.t, tam, fuente, TINTA, "center"));
+    });
+    var flecha = { type: "arrow", endArrowhead: "arrow", strokeColor: f.color, strokeWidth: 1.5, roundness: { type: 2 } };
+    f.rel.pares.forEach(function (p) {
+      var a = pos[p[0].k], b = pos[p[1].k];
+      if (p[0].k === p[1].k) {
+        var t = ang[p[0].k];
+        var punto = function (dt, d) { return [a[0] + d * Math.cos(t + dt), a[1] + d * Math.sin(t + dt)]; };
+        agregar(trazo([punto(-0.45, rn), punto(-0.4, rn + 36), punto(0.4, rn + 36), punto(0.45, rn + 3)], flecha));
+        return;
+      }
+      var dx = b[0] - a[0], dy = b[1] - a[1], d = Math.sqrt(dx * dx + dy * dy);
+      dx /= d; dy /= d;
+      var s = [a[0] + dx * rn, a[1] + dy * rn], e = [b[0] - dx * (rn + 3), b[1] - dy * (rn + 3)];
+      if (f.rel.tiene(p[1], p[0])) {
+        var m = [(s[0] + e[0]) / 2 - dy * 22, (s[1] + e[1]) / 2 + dx * 22];
+        agregar(trazo([s, m, e], flecha));
+      } else agregar(trazo([s, e], flecha));
+    });
+  }
+
+  // Dibuja las lineas de texto (conjuntos, relaciones por extension, dominio
+  // e imagen, propiedades) y despues, por cada relacion, sus diagramas uno al
+  // lado del otro. ORDEN: los textos de arriba abajo; despues cada relacion:
+  // su titulo y sus diagramas (cartesiano, sagital, grafo), cada uno con sus
+  // ejes/ovalos/nodos primero y los pares al final, en orden.
+  function generarRelaciones(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var an = analizarRelaciones(op);
+    var esc = nuevoEscritor(ox, oy, ANCHOS_CONJ[op.ancho] || 900, tam, fuente, agregar);
+    an.filas.forEach(function (f) {
+      if (f.errores.length) return;
+      var def = "";
+      if (f.tipo === "comprension") {
+        var tc = textoCondicion(f.codigo, f.previos);
+        def = "{" + tc.v + " ∈ " + f.base + " / " + tc.cond + "}";
+      } else if (f.tipo === "operacion") def = imprimirConjunto(f.arbol, false);
+      var pre = f.nombre + " = " + (op.mostrarDef && def ? def + " = " : "");
+      if (f.clase === "conjunto") {
+        if (op.escribir) esc.lista(pre, listarConjunto(f.conj, null, Infinity), f.color);
+        return;
+      }
+      var P = f.rel.pares;
+      if (op.escribir) {
+        esc.lista(pre, listarConjunto({ lista: P.map(function (p) { return { t: textoPar(p[0], p[1]) }; }) }, null, Infinity), f.color);
+      }
+      if (op.dominio) {
+        var dom = f.rel.A.lista.filter(function (a) { return P.some(function (p) { return p[0].k === a.k; }); });
+        var im = f.rel.B.lista.filter(function (b) { return P.some(function (p) { return p[1].k === b.k; }); });
+        esc.lista("Dom(" + f.nombre + ") = ", listarConjunto({ lista: dom }, null, Infinity), f.color);
+        esc.lista("Im(" + f.nombre + ") = ", listarConjunto({ lista: im }, null, Infinity), f.color);
+      }
+      if (op.propiedades && f.homogenea) propiedadesRelacion(f).forEach(function (t) { esc.linea(t, f.color); });
+    });
+
+    var dibujos = [op.cartesiano && dibujarCartesiano, op.sagital && dibujarSagital, op.grafo && dibujarGrafo]
+      .filter(Boolean);
+    if (!dibujos.length) return;
+    var y = esc.y + (esc.y > oy ? 30 : 0);
+    an.filas.forEach(function (f) {
+      if (f.errores.length || f.clase !== "relacion" || !f.rel.A.lista.length || !f.rel.B.lista.length) return;
+      agregar(texto(ox, y, f.nombre + " ⊆ " + f.base, tam, fuente, f.color, "left"));
+      y += tam * fuente.lh + 30;
+      var x = ox, alto = 0;
+      dibujos.forEach(function (dibujar) {
+        var tmp = [];
+        dibujar(f, tam, fuente, function (e) { tmp.push(e); });
+        var b = cajaDe(tmp);
+        tmp.forEach(function (e) { e.x += x - b.x0; e.y += y - b.y0; agregar(e); });
+        x += b.x1 - b.x0 + 90;
+        alto = Math.max(alto, b.y1 - b.y0);
+      });
+      y += alto + 60;
+    });
+  }
+
+  function erroresRelacion(t, op, i) {
+    var f = analizarRelaciones(op).filas[i];
     return f ? f.errores.concat(f.avisos || []) : [];
   }
 
@@ -2012,10 +2390,72 @@
         ui.chk("Escribir el cardinal |A| (si se conocen todos los elementos)", "cardinal");
       },
     },
+
+    relaciones: {
+      titulo: "Relaciones",
+      dibujo: "dibujo", femenino: false,
+      clave: "pizarra-generador-relaciones",
+      defecto: {
+        filas: [
+          { nombre: "A", texto: "{1, 2, 3, 4}", color: COLORES[0] },
+          { nombre: "R", texto: "(x, y) => y % x == 0", base: "A × A", color: COLORES[1] },
+        ],
+        tamTexto: "M", fuente: "normal", ancho: "medio",
+        escribir: true, mostrarDef: true, dominio: false, propiedades: true,
+        cartesiano: true, sagital: true, grafo: true,
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { nombre: "A", texto: "{1, 2, 3}", color: COLORES[0] },
+          { nombre: "B", texto: "{a, b}", color: COLORES[2] },
+          { nombre: "S", texto: "{(1, a), (2, a), (3, b)}", base: "A × B", color: COLORES[1] },
+          { nombre: "T", texto: "(x, y) => (x + y) % 2 == 0", base: "A × A", color: COLORES[3] },
+          // la inversa de S, usando S dentro de la funcion
+          { nombre: "Q", texto: "(x, y) => S(y, x)", base: "B × A", color: COLORES[4] },
+        ],
+      },
+      textoEjemplo: "Inserta un dibujo nuevo de ejemplo con tres relaciones",
+      agregarFila: "+ Conjunto o relación",
+      placeholder: "{1, 2, 3}  o  (x, y) => x < y  o  {(1, 2)}",
+      nombreFila: { porDefecto: nombreConj, titulo: "Nombre del conjunto o relación: A, B, R, S..." },
+      extrasFila: [
+        { clave: "base", etiqueta: "⊆",
+          placeholder: "A × B (relación) · A (comprensión) · vacío",
+          titulo: "De dónde se toman los elementos: el producto cartesiano de una relación (A × B, A × A) " +
+            "o el conjunto de un conjunto por comprensión (A)",
+          errores: function () { return []; } },
+      ],
+      simbolos: [["(x, y) =>", "(x, y) => ", "Relación por comprensión"], ["x =>", "x => ", "Conjunto por comprensión"],
+        ["×", " × ", "Producto cartesiano"], ["∪", " ∪ ", "Unión"], ["∩", " ∩ ", "Intersección"], ["−", " − ", "Diferencia"]],
+      ayuda: "Cada fila es un conjunto finito o una relación. Conjuntos: {1, 2, 3}, {a, b}, A ∪ B, " +
+        "o por comprensión x => x % 2 == 0 con «⊆ A». Relaciones (con «⊆ A × B»): por extensión " +
+        "{(1, a), (2, b)} o por comprensión (x, y) => x < y. Las funciones pueden usar los conjuntos " +
+        "(A(x)) y relaciones (R(x, y)) de las filas de arriba, por ejemplo la inversa: (x, y) => R(y, x) " +
+        "con «⊆ B × A». Seleccioná un dibujo ya insertado para editarlo.",
+      erroresFila: erroresRelacion,
+      posicion: function (op, cx, cy) { return { x: cx - 450, y: cy - 250 }; },
+      generar: generarRelaciones,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.chk("Gráfico cartesiano", "cartesiano");
+          ui.chk("Diagrama sagital", "sagital");
+          ui.chk("Grafo dirigido", "grafo");
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.seg("Ancho", "ancho", [["angosto", "Angosto"], ["medio", "Medio"], ["ancho", "Ancho"]]);
+        ui.chk("Escribir conjuntos y relaciones por extensión", "escribir");
+        ui.chk("Escribir la definición por comprensión", "mostrarDef");
+        ui.chk("Escribir dominio e imagen", "dominio");
+        ui.chk("Propiedades (relaciones en A × A)", "propiedades");
+      },
+    },
   };
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "recta", "funcion", "conjuntos"];
+  var ORDEN = ["tabla", "conjuntos", "relaciones", "recta", "funcion"];
 
   // ------------------------------------------------- insertar / reemplazar
   var vinculo = null;     // gid del dibujo que se esta editando
@@ -2147,7 +2587,10 @@
     ".pz-gen.oscuro{background:#232329;color:#e3e3e8;border-color:#3a3a43}",
     ".pz-gen .cab{display:flex;align-items:center;gap:6px 8px;margin-bottom:6px;flex-wrap:wrap}",
     ".pz-gen .cab .tipos{flex:1}",
-    ".pz-gen .cab .tipos .seg button{white-space:nowrap;padding:3px 6px;font-size:12px}",
+    // pestanas: botones sueltos que pasan a otra linea si no entran
+    ".pz-gen .cab .tipos .seg{border:0;display:flex;flex-wrap:wrap;gap:4px;overflow:visible}",
+    ".pz-gen .cab .tipos .seg button{white-space:nowrap;padding:3px 8px;font-size:12px;" +
+      "border:1px solid #c9c8d1;border-radius:6px}",
     ".pz-gen .cab .cerrar{order:1}.pz-gen .cab .modo{order:2}",
     ".pz-gen .modo{font-size:11px;padding:1px 7px;border-radius:9px;background:#e7f5ff;color:#1864ab;white-space:nowrap}",
     ".pz-gen.oscuro .modo{background:#1c3a57;color:#a5d8ff}",
@@ -2552,7 +2995,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: tablas de verdad, recta real, gráficos de funciones y conjuntos";
+      b.title = "Generadores: tablas de verdad, conjuntos, relaciones, recta real y gráficos de funciones";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.addEventListener("click", function () { panel.alternar(); });

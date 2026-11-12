@@ -265,6 +265,46 @@ CONJUNTOS (prototipo)
 - Ojo: igual que en Funciones, las funciones son codigo que se ejecuta en
   el navegador.
 
+RELACIONES BINARIAS (prototipo)
+- En el mismo panel, arriba, elegi "Relaciones".
+- Cada fila es un conjunto (finito) o una relacion, con su nombre y color.
+  Debajo de cada fila esta el campo "⊆", que dice de donde se toman los
+  elementos.
+- Conjuntos:
+      A = {1, 2, 3, 4}        B = {a, b}        C = A ∪ B   (∩, −, Δ, ×)
+  Por comprension, con una funcion y el conjunto de donde salen en "⊆":
+      x => x % 2 == 0     ⊆ A
+  (No hay universo, asi que no hay complemento: usa la diferencia, A − B.)
+- Relaciones: en "⊆" va el producto cartesiano, por ejemplo A × B o A × A.
+  - Por extension, los pares entre llaves:
+      {(1, a), (2, a), (3, b)}      ⊆ A × B
+    Un par que no esta en el producto se avisa y se ignora.
+  - Por comprension, una funcion de dos variables que devuelve verdadero si
+    el par esta en la relacion:
+      (x, y) => x < y               ⊆ A × A
+      (x, y) => y % x == 0          ⊆ A × A   (divide)
+  Las funciones pueden usar los conjuntos (A(x)) y las relaciones (R(x, y))
+  de las filas de arriba:
+      (x, y) => R(y, x)             ⊆ B × A   (la inversa de R ⊆ A × B)
+      (x, y) => R(x, y) && x != y
+- Arriba se elige que dibujar de cada relacion (uno al lado del otro, con el
+  titulo "R ⊆ A × B" encima):
+  - Grafico cartesiano: el primer conjunto en el eje horizontal, el segundo
+    en el vertical, un punto por par.
+  - Diagrama sagital: los dos conjuntos en ovalos, una flecha por par.
+  - Grafo dirigido: los elementos en un circulo, una flecha por par, un lazo
+    para (a, a) y flechas curvas si estan los dos sentidos.
+- Opciones: escribir conjuntos y relaciones por extension (y su definicion
+  por comprension: R = {(x, y) ∈ A × A / x < y} = {...}), dominio e imagen,
+  y propiedades de las relaciones en A × A: reflexiva, simetrica,
+  antisimetrica y transitiva, con un contraejemplo cuando no se cumple
+  ("R no es simetrica: (1, 2) ∈ R y (2, 1) ∉ R"), y si es de equivalencia
+  o de orden.
+- Hasta 2500 pares por producto cartesiano.
+- Igual que los otros: "Insertar en el centro", "Ejemplo" (tres relaciones,
+  una de equivalencia y una inversa), "Restablecer", y si seleccionas un
+  dibujo ya insertado se edita en vivo.
+
 TIPS
 - En modo zen (Alt+Z) y modo vista (Alt+R) se ocultan el zoom y el boton de
   salir del modo zen. Reaparecen si dejas el cursor en la parte inferior de la
