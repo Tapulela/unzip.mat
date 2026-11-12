@@ -1144,6 +1144,14 @@
     exprs.forEach(function (e) {
       var vs = envs.map(function (en) { return valorLogico(e.arbol, en); });
       e.clase = vs.every(Boolean) ? "Tautología" : vs.some(Boolean) ? "Contingencia" : "Contradicción";
+      // valores por "mascara": la variable j es verdadera si su bit (de izquierda a derecha) es 1
+      var porMascara = [];
+      for (var m = 0; m < nFilas; m++) {
+        var en = {};
+        vars.forEach(function (v, j) { en[v] = ((m >> (vars.length - 1 - j)) & 1) === 1; });
+        porMascara.push(valorLogico(e.arbol, en));
+      }
+      e.minima = expresionMinima(vars, porMascara, op.forma);
     });
 
     var V = op.valores === "10" ? "1" : "V", F = op.valores === "10" ? "0" : "F";
@@ -1160,13 +1168,548 @@
       V: V, F: F, anchos: anchos, altoFila: altoFila, W: W, H: H, Htotal: H + altoClases };
   }
 
+  // --------------------------------------------- simplificacion (Quine-McCluskey)
+  // Un implicante es { v: bits fijos, x: bits libres }; cubre la mascara m si
+  // coincide en todos los bits que no son libres.
+  function implicantesPrimos(unos) {
+    var grupo = unos.map(function (m) { return { v: m, x: 0 }; }), primos = [], vistos = {};
+    while (grupo.length) {
+      var usados = {}, sig = [], nuevos = {};
+      for (var i = 0; i < grupo.length; i++) {
+        for (var j = i + 1; j < grupo.length; j++) {
+          var a = grupo[i], b = grupo[j], d = a.v ^ b.v;
+          if (a.x !== b.x || !d || (d & (d - 1))) continue; // tienen que diferir en un solo bit
+          usados[i] = usados[j] = true;
+          var c = { v: a.v & ~d, x: a.x | d }, k = c.v + "/" + c.x;
+          if (!nuevos[k]) { nuevos[k] = true; sig.push(c); }
+        }
+      }
+      grupo.forEach(function (g, i) {
+        var k = g.v + "/" + g.x;
+        if (!usados[i] && !vistos[k]) { vistos[k] = true; primos.push(g); }
+      });
+      grupo = sig;
+    }
+    return primos;
+  }
+  function cubreMascara(p, m) { return (m & ~p.x) === p.v; }
+  function cantLiterales(p, n) {
+    var c = 0;
+    for (var j = 0; j < n; j++) if (!(p.x & (1 << j))) c++;
+    return c;
+  }
+
+  // cobertura con la menor cantidad de terminos (y, a igualdad, de literales):
+  // primero los implicantes esenciales y despues una busqueda por tamano
+  // creciente (si fuera demasiado larga, se completa eligiendo el que mas cubre)
+  function coberturaMinima(primos, unos, n) {
+    var elegidos = [], faltan = unos.slice(), cambio = true;
+    var cubierto = function (m) { return elegidos.some(function (p) { return cubreMascara(p, m); }); };
+    while (cambio) {
+      cambio = false;
+      faltan.forEach(function (m) {
+        var qs = primos.filter(function (p) { return cubreMascara(p, m); });
+        if (qs.length === 1 && elegidos.indexOf(qs[0]) < 0) { elegidos.push(qs[0]); cambio = true; }
+      });
+      faltan = faltan.filter(function (m) { return !cubierto(m); });
+    }
+    if (!faltan.length) return elegidos;
+    var resto = primos.filter(function (p) {
+      return elegidos.indexOf(p) < 0 && faltan.some(function (m) { return cubreMascara(p, m); });
+    });
+    var combos = 1;
+    for (var k = 1; k <= resto.length; k++) {
+      combos = combos * (resto.length - k + 1) / k;
+      if (combos > 200000) break;
+      var mejor = null, mejorLit = Infinity, sel = [];
+      (function rec(i) {
+        if (sel.length === k) {
+          if (faltan.every(function (m) { return sel.some(function (p) { return cubreMascara(p, m); }); })) {
+            var l = sel.reduce(function (s, p) { return s + cantLiterales(p, n); }, 0);
+            if (l < mejorLit) { mejorLit = l; mejor = sel.slice(); }
+          }
+          return;
+        }
+        for (var j = i; j <= resto.length - (k - sel.length); j++) { sel.push(resto[j]); rec(j + 1); sel.pop(); }
+      })(0);
+      if (mejor) return elegidos.concat(mejor);
+    }
+    while (faltan.length) { // voraz
+      var p = resto.slice().sort(function (a, b) {
+        var ca = faltan.filter(function (m) { return cubreMascara(a, m); }).length;
+        var cb = faltan.filter(function (m) { return cubreMascara(b, m); }).length;
+        return cb - ca || cantLiterales(a, n) - cantLiterales(b, n);
+      })[0];
+      elegidos.push(p);
+      faltan = faltan.filter(function (m) { return !cubreMascara(p, m); });
+    }
+    return elegidos;
+  }
+
+  // Expresion minima equivalente, como arbol. forma "fnd": disyuncion de
+  // conjunciones (a partir de las filas verdaderas); "fnc": conjuncion de
+  // disyunciones (a partir de las falsas). Tautologia -> V, contradiccion -> F.
+  // implicantes elegidos para cubrir los unos (fnc = false) o los ceros (true),
+  // en un orden estable: primero los que tienen mas variables fijas a la izquierda
+  function coberturaLogica(valores, n, fnc) {
+    var obj = [];
+    valores.forEach(function (v, m) { if (v !== fnc) obj.push(m); });
+    if (!obj.length) return [];
+    var cob = coberturaMinima(implicantesPrimos(obj), obj, n);
+    cob.sort(function (a, b) { return a.x - b.x || b.v - a.v; });
+    return cob;
+  }
+
+  function expresionMinima(vars, valores, forma) {
+    var n = vars.length;
+    if (valores.every(Boolean)) return { t: "const", v: true, txt: "V" };
+    if (!valores.some(Boolean)) return { t: "const", v: false, txt: "F" };
+    var fnc = forma === "fnc", cob = coberturaLogica(valores, n, fnc);
+    var terminos = cob.map(function (p) {
+      var lits = [];
+      vars.forEach(function (nombre, j) {
+        var bit = 1 << (n - 1 - j);
+        if (p.x & bit) return;
+        var positivo = !!(p.v & bit) !== fnc; // en la FNC cada clausula niega la fila falsa
+        lits.push(positivo ? { t: "var", n: nombre } : { t: "no", a: { t: "var", n: nombre } });
+      });
+      return lits.reduce(function (a, b) { return { t: "bin", op: fnc ? "o" : "y", a: a, b: b }; });
+    });
+    if (terminos.length > 1) terminos.forEach(function (t) { if (t.t === "bin") t.par = "("; });
+    return terminos.reduce(function (a, b) { return { t: "bin", op: fnc ? "y" : "o", a: a, b: b }; });
+  }
+
+  // ------------------------------------------------------- circuito logico
+  // El arbol de la expresion pasa a compuertas: ∧ -> AND, ∨ -> OR (las cadenas
+  // A·B·C son una sola compuerta de varias entradas), ¬ -> NOT, ⊕ -> XOR,
+  // ⊙ (↔) -> XNOR y p → q -> OR de ¬p y q. Las variables (y sus negaciones
+  // directas) son hojas que se toman de la linea de cada variable.
+  function aCircuito(n) {
+    if (n.t === "var") return { tipo: "entrada", v: n.n, neg: false };
+    if (n.t === "const") return { tipo: "const", nombre: n.v ? "1" : "0" };
+    if (n.t === "no" && n.a.t === "var") return { tipo: "entrada", v: n.a.n, neg: true };
+    if (n.t === "no") return { tipo: "not", hijos: [aCircuito(n.a)] };
+    if (n.op === "y" || n.op === "o") {
+      var hijos = [];
+      (function juntar(m) {
+        if (m.t === "bin" && m.op === n.op) { juntar(m.a); juntar(m.b); } else hijos.push(aCircuito(m));
+      })(n);
+      return { tipo: n.op === "y" ? "and" : "or", hijos: hijos };
+    }
+    if (n.op === "xo") return { tipo: "xor", hijos: [aCircuito(n.a), aCircuito(n.b)] };
+    if (n.op === "sii") return { tipo: "xnor", hijos: [aCircuito(n.a), aCircuito(n.b)] };
+    var b = aCircuito(n.b); // p → q = ¬p ∨ q
+    return { tipo: "or", hijos: [{ tipo: "not", hijos: [aCircuito(n.a)] }].concat(b.tipo === "or" ? b.hijos : [b]) };
+  }
+
+  function curvaCuadratica(p0, c, p1, pasos) {
+    var pts = [];
+    for (var i = 0; i <= pasos; i++) {
+      var t = i / pasos, u = 1 - t;
+      pts.push([u * u * p0[0] + 2 * u * t * c[0] + t * t * p1[0], u * u * p0[1] + 2 * u * t * c[1] + t * t * p1[1]]);
+    }
+    return pts;
+  }
+
+  // Dibuja una compuerta con el borde izquierdo en x y el centro vertical en yc,
+  // para k entradas. Devuelve { xSalida, pin(y) -> x donde termina el cable de entrada }.
+  function compuerta(tipo, x, yc, k, agregar) {
+    var h = Math.max(36, k * 18), y0 = yc - h / 2, trazoG = { strokeWidth: 2 }, r = 5;
+    var burbuja = function (xb) {
+      agregar(base("ellipse", { x: xb, y: yc - r, width: 2 * r, height: 2 * r, strokeWidth: 2 }));
+      return xb + 2 * r;
+    };
+    if (tipo === "not") {
+      var L = 32, hn = 28;
+      agregar(trazo([[x, yc - hn / 2], [x + L, yc], [x, yc + hn / 2], [x, yc - hn / 2]], trazoG));
+      return { xSalida: burbuja(x + L), pin: function () { return x; } };
+    }
+    if (tipo === "and") {
+      var w0 = 26, ra = h / 2, pts = [[x, y0], [x + w0, y0]];
+      for (var i = 1; i < 16; i++) {
+        var a = -Math.PI / 2 + Math.PI * i / 16;
+        pts.push([x + w0 + ra * Math.cos(a), yc + ra * Math.sin(a)]);
+      }
+      pts.push([x + w0, y0 + h], [x, y0 + h], [x, y0]);
+      agregar(trazo(pts, trazoG));
+      return { xSalida: x + w0 + ra, pin: function () { return x; } };
+    }
+    // OR, XOR y XNOR: dorso curvo hacia adentro y frente en punta
+    var ex = tipo === "or" ? 0 : 9, bx = x + ex, Lo = 34 + h * 0.4, d = h * 0.16;
+    var forma = curvaCuadratica([bx, y0], [bx + Lo * 0.55, y0], [bx + Lo, yc], 10)
+      .concat(curvaCuadratica([bx + Lo, yc], [bx + Lo * 0.55, y0 + h], [bx, y0 + h], 10).slice(1))
+      .concat(curvaCuadratica([bx, y0 + h], [bx + 2 * d, yc], [bx, y0], 10).slice(1));
+    agregar(trazo(forma, trazoG));
+    if (ex) agregar(trazo(curvaCuadratica([x, y0 + h], [x + 2 * d, yc], [x, y0], 10), trazoG));
+    var salida = bx + Lo;
+    if (tipo === "xnor") salida = burbuja(salida);
+    return {
+      xSalida: salida,
+      // x del dorso a la altura y (la curva es lineal en y)
+      pin: function (y) { var t = (y0 + h - y) / h; return x + 4 * d * t * (1 - t); },
+    };
+  }
+
+  // Circuito de una expresion con una sola entrada por variable:
+  //  - Cada variable usada tiene una linea vertical (con su nombre arriba). Si
+  //    se usa negada, desde arriba sale una rama a una compuerta NOT y de ahi
+  //    baja otra linea vertical (la de A').
+  //  - Las compuertas van a la derecha, por niveles. Cada vez que una compuerta
+  //    usa una variable, el cable sale de su linea (con un punto en la
+  //    bifurcacion) y va hacia la derecha.
+  //  - Si un cable cruza a otro sin estar unido, el horizontal hace un salto.
+  // ORDEN: nombres y lineas de las variables (con sus NOT); despues las
+  // compuertas de izquierda a derecha, cada una con los cables que le llegan;
+  // la salida al final.
+  // negar(v): como se escribe la variable negada (A' o ¬A)
+  function dibujarCircuito(arbol, vars, etiqueta, color, tam, fuente, agregar, negar) {
+    var raiz = aCircuito(arbol), lh = tam * fuente.lh;
+    var SLOT = Math.max(38, tam * 1.9), COL = 150, R_SALTO = 6, R_PUNTO = 3.5, Y_NOT = 26;
+    var cable = { strokeWidth: 1.5 };
+
+    // hojas y niveles
+    var hojas = [], porNivel = [];
+    (function medir2(nd) {
+      if (nd.tipo === "entrada" || nd.tipo === "const") { nd.nivel = 0; nd.alto = SLOT; return; }
+      nd.hijos.forEach(medir2);
+      nd.nivel = 1 + Math.max.apply(null, nd.hijos.map(function (h) { return h.nivel; }));
+      nd.alto = nd.hijos.reduce(function (s, h) { return s + h.alto; }, 0);
+    })(raiz);
+    var Y0 = Y_NOT + 40;
+    (function ubicar(nd, y) {
+      if (nd.nivel === 0) { nd.y = y + nd.alto / 2; hojas.push(nd); return; }
+      var yy = y;
+      nd.hijos.forEach(function (h) { ubicar(h, yy); yy += h.alto; });
+      nd.y = nd.hijos.length === 1 ? nd.hijos[0].y : (nd.hijos[0].y + nd.hijos[nd.hijos.length - 1].y) / 2;
+      (porNivel[nd.nivel] = porNivel[nd.nivel] || []).push(nd);
+    })(raiz, Y0);
+
+    // lineas de las variables, en el orden de la tabla
+    var lineas = {}, x = 0, ordenLineas = [];
+    vars.forEach(function (v) {
+      var pos = hojas.some(function (h) { return h.v === v && !h.neg; });
+      var neg = hojas.some(function (h) { return h.v === v && h.neg; });
+      if (!pos && !neg) return;
+      var lp = { v: v, x: x, top: 0, taps: [], neg: false };
+      lineas[v + "+"] = lp;
+      ordenLineas.push(lp);
+      if (neg) {
+        var ln = { v: v, x: x + 74, top: Y_NOT, taps: [], neg: true };
+        lineas[v + "-"] = ln;
+        ordenLineas.push(ln);
+        lp.taps.push(Y_NOT); // la rama hacia el NOT
+        x += 74;
+      }
+      x += 46;
+    });
+    var XB = x - 46 + 50; // las compuertas empiezan a la derecha de las lineas
+
+    // segmentos de cable: { pts: [[x, y]...], color }. Se arman todos antes de
+    // dibujar, para encontrar los cruces.
+    var cables = [];
+    hojas.forEach(function (h) {
+      if (h.tipo === "const") { h.xSalida = XB - 20; return; }
+      var l = lineas[h.v + (h.neg ? "-" : "+")];
+      l.taps.push(h.y);
+      h.xSalida = l.x;
+      h.linea = l;
+    });
+    var gates = [];
+    for (var nv = 1; nv < porNivel.length; nv++) {
+      (porNivel[nv] || []).forEach(function (nd) {
+        var gx = XB + 30 + (nv - 1) * COL, k = nd.hijos.length;
+        var h = Math.max(36, k * 18), sp = h / k;
+        var forma = [], g = compuerta(nd.tipo, gx, nd.y, k, function (e) { forma.push(e); });
+        var propios = [];
+        nd.hijos.forEach(function (hj, i) {
+          var py = nd.tipo === "not" ? nd.y : nd.y - h / 2 + sp * (i + 0.5), px = g.pin(py);
+          var pts = Math.abs(hj.y - py) < 0.5 ? [[hj.xSalida, hj.y], [px, py]] : (function () {
+            var xm = gx - 14 - (k > 1 ? Math.abs(i - (k - 1) / 2) * 7 : 0);
+            return [[hj.xSalida, hj.y], [xm, hj.y], [xm, py], [px, py]];
+          })();
+          var c = { pts: pts, desde: hj };
+          cables.push(c);
+          propios.push(c);
+        });
+        nd.xSalida = g.xSalida;
+        gates.push({ forma: forma, cables: propios });
+      });
+    }
+    var xs = raiz.xSalida;
+    var salida = { pts: [[xs, raiz.y], [xs + 36, raiz.y]], color: color, desde: raiz };
+    if (raiz.nivel === 0) salida.pts[1][0] = Math.max(xs + 36, XB + 30); // F = A: un solo cable
+    cables.push(salida);
+
+    // tramos verticales (lineas de variables y codos de los cables), para los saltos
+    ordenLineas.forEach(function (l) { l.bottom = Math.max.apply(null, l.taps.concat([l.top])); });
+    var verticales = ordenLineas.map(function (l) { return { x: l.x, y0: l.top, y1: l.bottom }; });
+    cables.forEach(function (c) {
+      for (var i = 1; i < c.pts.length; i++) {
+        var a = c.pts[i - 1], b = c.pts[i];
+        if (Math.abs(a[0] - b[0]) < 0.5) verticales.push({ x: a[0], y0: Math.min(a[1], b[1]), y1: Math.max(a[1], b[1]) });
+      }
+    });
+    // un tramo horizontal con un salto (semicirculo hacia arriba) en cada cruce
+    function conSaltos(pts) {
+      var res = [pts[0]];
+      for (var i = 1; i < pts.length; i++) {
+        var a = pts[i - 1], b = pts[i];
+        if (Math.abs(a[1] - b[1]) < 0.5 && Math.abs(a[0] - b[0]) > 0.5) {
+          var dir = b[0] > a[0] ? 1 : -1, y = a[1];
+          var xsCruce = verticales.filter(function (v) {
+            return v.x > Math.min(a[0], b[0]) + R_SALTO + 1 && v.x < Math.max(a[0], b[0]) - R_SALTO - 1 &&
+              y > v.y0 + 1 && y < v.y1 - 1;
+          }).map(function (v) { return v.x; }).sort(function (p, q) { return (p - q) * dir; });
+          xsCruce.forEach(function (xc) {
+            for (var k = 0; k <= 8; k++) {
+              var t = Math.PI * k / 8;
+              res.push([xc - dir * R_SALTO * Math.cos(t), y - R_SALTO * Math.sin(t)]);
+            }
+          });
+        }
+        res.push(b);
+      }
+      return res;
+    }
+    function dibujarCable(c) { agregar(trazo(conSaltos(c.pts), { strokeWidth: 1.5, strokeColor: c.color || TINTA })); }
+    function punto(px, py) {
+      agregar(base("ellipse", { x: px - R_PUNTO, y: py - R_PUNTO, width: 2 * R_PUNTO, height: 2 * R_PUNTO, backgroundColor: TINTA }));
+    }
+
+    // 1. variables: nombre, linea (y su NOT con la linea negada)
+    ordenLineas.forEach(function (l) {
+      if (!l.neg) {
+        agregar(texto(l.x, l.top - lh - 6, l.v, tam, fuente, TINTA, "center"));
+        agregar(linea(l.x, l.top, [[0, 0], [0, l.bottom - l.top]], cable));
+        return;
+      }
+      // rama al NOT: sale de la linea positiva a la altura Y_NOT
+      var lp = lineas[l.v + "+"], gx = lp.x + 14;
+      var forma = [], g = compuerta("not", gx, Y_NOT, 1, function (e) { forma.push(e); });
+      agregar(trazo([[lp.x, Y_NOT], [gx, Y_NOT]], cable));
+      if (lp.bottom > Y_NOT + 0.5) punto(lp.x, Y_NOT);
+      forma.forEach(agregar);
+      agregar(trazo([[g.xSalida, Y_NOT], [l.x, Y_NOT], [l.x, l.bottom]], cable));
+      agregar(texto(l.x + 6, Y_NOT - lh - 2, (negar || function (v) { return v + "'"; })(l.v), tam * 0.8, fuente, GUIA, "left"));
+    });
+
+    // 2. compuertas, cada una con sus cables (los que salen de una linea de
+    //    variable llevan un punto si la linea sigue mas abajo)
+    hojas.forEach(function (h) {
+      if (h.tipo === "const") agregar(texto(h.xSalida - 6, h.y - lh / 2, h.nombre, tam, fuente, TINTA, "right"));
+    });
+    gates.forEach(function (gt) {
+      gt.cables.forEach(function (c) {
+        dibujarCable(c);
+        var hj = c.desde;
+        if (hj.linea && hj.y < hj.linea.bottom - 0.5) punto(hj.linea.x, hj.y);
+      });
+      gt.forma.forEach(agregar);
+    });
+
+    // 3. salida
+    dibujarCable(salida);
+    if (raiz.linea && raiz.y < raiz.linea.bottom - 0.5) punto(raiz.linea.x, raiz.y);
+    var xf = salida.pts[1][0];
+    agregar(texto(xf + 8, raiz.y - lh / 2, etiqueta, tam, fuente, color, "left"));
+  }
+
   // Dibuja la tabla. (ox, oy) = esquina superior izquierda.
   // ORDEN: marco, linea bajo los encabezados, lineas verticales, lineas entre
   // filas; los encabezados de izquierda a derecha; despues los valores columna
-  // por columna (de arriba abajo, en el orden en que se resuelve) y al final la
-  // clasificacion de cada expresion.
+  // por columna (de arriba abajo, en el orden en que se resuelve); la
+  // clasificacion y la simplificacion de cada expresion.
   function generarTabla(op, ox, oy, agregar) {
     var t = armarTabla(op), fuente = t.fuente, tam = t.tam, af = t.altoFila;
+    var y = oy, alto = tam * fuente.lh + 4;
+    if (op.mostrarTabla !== false) {
+      dibujarCuerpoTabla(t, op, ox, oy, agregar);
+      y = oy + t.H + 14;
+    }
+    if (op.clasificar) {
+      t.exprs.forEach(function (e) {
+        agregar(texto(ox, y, e.texto + ": " + e.clase, tam, fuente, e.color, "left"));
+        y += alto;
+      });
+    }
+    if (op.simplificar) {
+      t.exprs.forEach(function (e) {
+        var m = imprimirLogica(e.minima, false);
+        agregar(texto(ox, y, e.texto + " ≡ " + m + (m === e.texto ? "   (ya es mínima)" : ""), tam, fuente, e.color, "left"));
+        y += alto;
+      });
+    }
+    if (op.interruptores) {
+      y += 24;
+      t.exprs.forEach(function (e) {
+        var cuales = op.circuitoDe === "simple" ? [e.minima] : op.circuitoDe === "ambas" ? [e.arbol, e.minima] : [e.arbol];
+        if (cuales.length === 2 && imprimirLogica(cuales[1], false) === e.texto) cuales.pop();
+        cuales.forEach(function (arbol) {
+          var tmp = [];
+          dibujarInterruptores(arbol, imprimirLogica(arbol, false), e.color, op.diseno, tam, fuente, function (el) { tmp.push(el); });
+          var b = cajaDe(tmp);
+          tmp.forEach(function (el) { el.x += ox - b.x0; el.y += y - b.y0; agregar(el); });
+          y += b.y1 - b.y0 + 36;
+        });
+      });
+    }
+  }
+
+  // ------------------------------------------------ circuito de interruptores
+  // La expresion pasa a una red serie-paralelo: ∧ en serie, ∨ en paralelo y
+  // en las hojas un interruptor por variable (negada o no). Lo demas se
+  // reescribe antes: p → q = ¬p ∨ q; p ↔ q = (p ∧ q) ∨ (¬p ∧ ¬q);
+  // p ⊻ q = (p ∧ ¬q) ∨ (¬p ∧ q); y la negacion de algo compuesto se lleva
+  // hasta las variables con De Morgan. V es un cable y F un corte.
+  function aSerieParalelo(n, neg) {
+    var S = function (h) { return { tipo: "serie", hijos: h }; };
+    var P = function (h) { return { tipo: "paralelo", hijos: h }; };
+    var r = aSerieParalelo;
+    if (n.t === "var") return { tipo: "lit", v: n.n, neg: neg };
+    if (n.t === "const") return { tipo: "const", v: n.v !== neg };
+    if (n.t === "no") return r(n.a, !neg);
+    var a = n.a, b = n.b;
+    switch (n.op) {
+      case "y": return neg ? P([r(a, true), r(b, true)]) : S([r(a, false), r(b, false)]);
+      case "o": return neg ? S([r(a, true), r(b, true)]) : P([r(a, false), r(b, false)]);
+      case "entonces": return neg ? S([r(a, false), r(b, true)]) : P([r(a, true), r(b, false)]);
+    }
+    // ⊻ y ↔ (uno es la negacion del otro)
+    var distintos = (n.op === "xo") !== neg;
+    return distintos ? P([S([r(a, false), r(b, true)]), S([r(a, true), r(b, false)])])
+      : P([S([r(a, false), r(b, false)]), S([r(a, true), r(b, true)])]);
+  }
+
+  // junta las series dentro de series y los paralelos dentro de paralelos
+  function aplanarSP(nd) {
+    if (nd.tipo !== "serie" && nd.tipo !== "paralelo") return nd;
+    var hijos = [];
+    nd.hijos.map(aplanarSP).forEach(function (h) {
+      if (h.tipo === nd.tipo) hijos = hijos.concat(h.hijos); else hijos.push(h);
+    });
+    return { tipo: nd.tipo, hijos: hijos };
+  }
+
+  // Medidas: w (ancho), asc / desc (alto por encima / debajo del cable).
+  function medirSP(nd, d) {
+    if (nd.tipo === "lit") {
+      var txt = d.diseno === "casilla" && nd.neg ? "¬" + nd.v : nd.v;
+      nd.txt = txt;
+      if (d.diseno === "casilla") {
+        nd.w = Math.max(76, medir(txt, d.tam, d.fuente) + 52);
+        nd.asc = nd.desc = d.caja / 2 + 4;
+      } else {
+        nd.w = Math.max(76, medir(txt, d.tam, d.fuente) + 40);
+        nd.asc = d.lh + 0.45 * (nd.w - 28) + 8;
+        nd.desc = 10;
+      }
+      return;
+    }
+    if (nd.tipo === "const") { nd.w = 56; nd.asc = nd.desc = 10; return; }
+    nd.hijos.forEach(function (h) { medirSP(h, d); });
+    if (nd.tipo === "serie") {
+      nd.w = nd.hijos.reduce(function (s, h) { return s + h.w; }, 0);
+      nd.asc = Math.max.apply(null, nd.hijos.map(function (h) { return h.asc; }));
+      nd.desc = Math.max.apply(null, nd.hijos.map(function (h) { return h.desc; }));
+      return;
+    }
+    // paralelo: ramas una debajo de otra; ys relativas al borde de arriba
+    var y = 0, ys = [];
+    nd.hijos.forEach(function (h, i) {
+      if (i) y += d.sep;
+      y += h.asc;
+      ys.push(y);
+      y += h.desc;
+    });
+    var c = (ys[0] + ys[ys.length - 1]) / 2;
+    nd.ys = ys.map(function (v) { return v - c; }); // relativas al cable de entrada
+    nd.asc = c;
+    nd.desc = y - c;
+    nd.w = Math.max.apply(null, nd.hijos.map(function (h) { return h.w; })) + 2 * d.margen;
+  }
+
+  function dibujarSP(nd, x, cy, d, agregar) {
+    var cable = { strokeWidth: 2 };
+    var punto = function (px, py) {
+      agregar(base("ellipse", { x: px - 3.5, y: py - 3.5, width: 7, height: 7, backgroundColor: TINTA }));
+    };
+    if (nd.tipo === "lit") {
+      if (d.diseno === "casilla") {
+        // un casillero en blanco con la variable (y ¬ si esta negada)
+        var bx = x + 16, bw = nd.w - 32;
+        agregar(linea(x, cy, [[0, 0], [bx - x, 0]], cable));
+        agregar(base("rectangle", { x: bx, y: cy - d.caja / 2, width: bw, height: d.caja, strokeWidth: 2 }));
+        agregar(texto(bx + bw / 2, cy - d.lh / 2, nd.txt, d.tam, d.fuente, d.color, "center"));
+        agregar(linea(bx + bw, cy, [[0, 0], [x + nd.w - bx - bw, 0]], cable));
+        return;
+      }
+      // contactos y palanca: cerrada si la variable va sin negar, abierta si va negada
+      var c1 = x + 14, c2 = x + nd.w - 14, r = 3.5;
+      agregar(linea(x, cy, [[0, 0], [c1 - r - x, 0]], cable));
+      agregar(base("ellipse", { x: c1 - r, y: cy - r, width: 2 * r, height: 2 * r, strokeWidth: 2 }));
+      agregar(base("ellipse", { x: c2 - r, y: cy - r, width: 2 * r, height: 2 * r, strokeWidth: 2 }));
+      var largo = c2 - c1;
+      agregar(nd.neg
+        ? linea(c1 + 2, cy - 2, [[0, 0], [largo * 0.9, -largo * 0.45]], { strokeWidth: 2.5, strokeColor: d.color })
+        : linea(c1 + 2, cy - 2, [[0, 0], [largo - 4, 0]], { strokeWidth: 2.5, strokeColor: d.color }));
+      agregar(linea(c2 + r, cy, [[0, 0], [x + nd.w - c2 - r, 0]], cable));
+      agregar(texto(x + nd.w / 2, cy - nd.asc + 2, nd.txt, d.tam, d.fuente, d.color, "center"));
+      return;
+    }
+    if (nd.tipo === "const") { // V: cable; F: cable cortado
+      if (nd.v) agregar(linea(x, cy, [[0, 0], [nd.w, 0]], cable));
+      else {
+        agregar(linea(x, cy, [[0, 0], [nd.w * 0.35, 0]], cable));
+        agregar(linea(x + nd.w * 0.65, cy, [[0, 0], [nd.w * 0.35, 0]], cable));
+      }
+      return;
+    }
+    if (nd.tipo === "serie") {
+      var cx = x;
+      nd.hijos.forEach(function (h) { dibujarSP(h, cx, cy, d, agregar); cx += h.w; });
+      return;
+    }
+    // paralelo: barra a cada lado y una rama por hijo
+    var x2 = x + nd.w, y1 = cy + nd.ys[0], y2 = cy + nd.ys[nd.ys.length - 1];
+    agregar(linea(x, y1, [[0, 0], [0, y2 - y1]], cable));
+    agregar(linea(x2, y1, [[0, 0], [0, y2 - y1]], cable));
+    punto(x, cy);
+    punto(x2, cy);
+    nd.hijos.forEach(function (h, i) {
+      var yi = cy + nd.ys[i];
+      if (i > 0 && i < nd.hijos.length - 1 && Math.abs(yi - cy) > 1) { punto(x, yi); punto(x2, yi); }
+      agregar(linea(x, yi, [[0, 0], [d.margen, 0]], cable));
+      dibujarSP(h, x + d.margen, yi, d, agregar);
+      var fin = x + d.margen + h.w;
+      if (x2 - fin > 0.5) agregar(linea(fin, yi, [[0, 0], [x2 - fin, 0]], cable));
+    });
+  }
+
+  // Circuito de interruptores de una expresion, entre dos bornes, con la
+  // expresion escrita arriba. diseno: "abierto" (interruptor cerrado = variable,
+  // abierto = variable negada; solo se escribe la letra) o "casilla" (casilleros
+  // en blanco con la variable, con ¬ si esta negada).
+  // ORDEN: titulo, borne de entrada y de izquierda a derecha los interruptores
+  // (en un paralelo, rama por rama de arriba abajo); el borne de salida al final.
+  function dibujarInterruptores(arbol, etiqueta, color, diseno, tam, fuente, agregar) {
+    var lh = tam * fuente.lh;
+    var d = { diseno: diseno === "casilla" ? "casilla" : "abierto", tam: tam, fuente: fuente, lh: lh,
+      caja: Math.round(lh + 14), sep: Math.max(16, tam), margen: 24, color: color };
+    var nd = aplanarSP(aSerieParalelo(arbol, false));
+    medirSP(nd, d);
+    var cy = lh + 16 + nd.asc, borne = 6, x0 = 0, lead = 34;
+    agregar(texto(0, 0, etiqueta, tam, fuente, color, "left"));
+    agregar(base("ellipse", { x: x0, y: cy - borne, width: 2 * borne, height: 2 * borne, strokeWidth: 2 }));
+    agregar(linea(x0 + 2 * borne, cy, [[0, 0], [lead, 0]], { strokeWidth: 2 }));
+    var xi = x0 + 2 * borne + lead;
+    dibujarSP(nd, xi, cy, d, agregar);
+    var xf = xi + nd.w;
+    agregar(linea(xf, cy, [[0, 0], [lead, 0]], { strokeWidth: 2 }));
+    agregar(base("ellipse", { x: xf + lead, y: cy - borne, width: 2 * borne, height: 2 * borne, strokeWidth: 2 }));
+  }
+
+  function dibujarCuerpoTabla(t, op, ox, oy, agregar) {
+    var fuente = t.fuente, tam = t.tam, af = t.altoFila;
     agregar(base("rectangle", { x: ox, y: oy, width: t.W, height: t.H, strokeWidth: 2 }));
     agregar(linea(ox, oy + af, [[0, 0], [t.W, 0]], { strokeWidth: 2 }));
     var xs = [ox];
@@ -1189,17 +1732,395 @@
         agregar(texto((xs[j] + xs[j + 1]) / 2, oy + af * (r + 1) + dy, v ? t.V : t.F, tam, fuente, c.color, "center"));
       });
     });
-    if (op.clasificar) {
-      var y = oy + t.H + 14;
-      t.exprs.forEach(function (e) {
-        agregar(texto(ox, y, e.texto + ": " + e.clase, tam, fuente, e.color, "left"));
-        y += tam * fuente.lh + 4;
-      });
-    }
   }
 
   function erroresLogica(t, op) {
     var r = analizarLogica(t, leerVariables(op).vars);
+    return r.error ? [r.error] : [];
+  }
+
+  // ========================================== GENERADOR: ALGEBRA DE BOOLE
+  // Mismas variables que la tabla de verdad, en notacion de Boole:
+  //   suma (O): +  ∨  |      producto (Y): AB  A·B  A*B  ∧  &
+  //   negacion: A'  (A + B)'  ¬A  ~A  !A      O exclusivo: ⊕    equivalencia: ⊙
+  //   constantes 0 y 1. Si todas las variables son de una letra, AB es A·B.
+  // Una funcion tambien se puede dar por sus indices: m(1, 3, 5) (o Σm(...))
+  // son los minitérminos; M(0, 2) (o ΠM(...)), los maxitérminos.
+  // El indice de una fila es el numero binario de sus valores, con la primera
+  // variable como bit mas significativo (con A, B, C: m5 = AB'C).
+  var NOMBRES_BOOLE = ["F", "G", "H", "K", "L", "Q"];
+  function nombreBoole(i) { return NOMBRES_BOOLE[i % NOMBRES_BOOLE.length]; }
+  var SIMBOLOS_BOOLE = [
+    ["⊕", "xo"], ["⊙", "sii"], ["'", "prima"], ["’", "prima"], ["′", "prima"],
+    ["¬", "no"], ["~", "no"], ["!", "no"], ["+", "o"], ["∨", "o"], ["|", "o"],
+    ["·", "y"], ["⋅", "y"], ["*", "y"], ["∧", "y"], ["&", "y"], [".", "y"],
+    ["(", "("], ["[", "("], [")", ")"], ["]", ")"],
+  ];
+
+  // { arbol, valores } o { indices: "m" | "M", lista, valores } o { error }.
+  // valores[m] = valor de la funcion en la fila de indice m.
+  function analizarBoole(texto, vars) {
+    var s = String(texto || "").trim(), n = vars.length, total = 1 << n;
+    if (!s) return { error: "Escribí una expresión (AB + A'C) o los minitérminos m(1, 3, 5)" };
+    var mi = /^(?:[Σ∑Π∏]\s*)?(m|M)\s*\(([\d\s,;]*)\)$/.exec(s);
+    if (mi) {
+      var nums = mi[2].split(/[,;]/).map(function (x) { return x.trim(); }).filter(Boolean).map(Number);
+      var malos = nums.filter(function (x) { return !(x >= 0 && x < total); });
+      if (malos.length) {
+        return { error: "No existe " + mi[1] + "(" + malos.join(", ") + ") con " + n +
+          (n > 1 ? " variables" : " variable") + ": van de 0 a " + (total - 1) };
+      }
+      var en = {};
+      nums.forEach(function (x) { en[x] = true; });
+      var valores = [];
+      for (var m = 0; m < total; m++) valores.push(mi[1] === "m" ? !!en[m] : !en[m]);
+      return { indices: mi[1], lista: Object.keys(en).map(Number).sort(function (a, b) { return a - b; }), valores: valores };
+    }
+    var simple = vars.every(function (v) { return v.length === 1; });
+    try {
+      var tk = [], i = 0;
+      while (i < s.length) {
+        if (/\s/.test(s[i])) { i++; continue; }
+        var sim = null;
+        for (var k = 0; k < SIMBOLOS_BOOLE.length && !sim; k++) if (s.indexOf(SIMBOLOS_BOOLE[k][0], i) === i) sim = SIMBOLOS_BOOLE[k];
+        if (sim) { tk.push({ t: sim[1], txt: sim[0] }); i += sim[0].length; continue; }
+        if (s[i] === "0" || s[i] === "1") { tk.push({ t: "const", v: s[i] === "1", txt: s[i] }); i++; continue; }
+        var mm = IDENT.exec(s.slice(i));
+        if (!mm) throw "No se entiende «" + s[i] + "»";
+        var w = simple ? s[i] : mm[0];
+        if (vars.indexOf(w) < 0) {
+          throw "«" + w + "» no es una variable (las variables son " + vars.join(", ") + ")";
+        }
+        tk.push({ t: "var", n: w, txt: w });
+        i += w.length;
+      }
+      i = 0;
+      var es = function (t) { return tk[i] && tk[i].t === t; };
+      var empieza = function () { return tk[i] && /^(var|const|\(|no)$/.test(tk[i].t); };
+      var expr = function () {
+        var a = term();
+        while (es("o") || es("xo") || es("sii")) { var o = tk[i++].t; a = { t: "bin", op: o, a: a, b: term() }; }
+        return a;
+      };
+      var term = function () {
+        var a = factor();
+        for (;;) {
+          if (es("y")) { i++; a = { t: "bin", op: "y", a: a, b: factor() }; }
+          else if (empieza()) a = { t: "bin", op: "y", a: a, b: factor() }; // AB = A·B
+          else return a;
+        }
+      };
+      var factor = function () {
+        if (es("no")) { i++; return { t: "no", a: factor() }; }
+        var a = atomo();
+        while (es("prima")) { i++; a = { t: "no", a: a }; }
+        return a;
+      };
+      var atomo = function () {
+        var k2 = tk[i];
+        if (!k2) throw i ? "Falta algo después de «" + tk[i - 1].txt + "»" : "Expresión vacía";
+        i++;
+        if (k2.t === "var") return { t: "var", n: k2.n };
+        if (k2.t === "const") return { t: "const", v: k2.v, txt: k2.txt };
+        if (k2.t === "(") {
+          var e = expr();
+          if (!es(")")) throw "Falta cerrar «" + k2.txt + "»";
+          i++;
+          return e;
+        }
+        if (k2.t === ")") throw "Sobra «" + k2.txt + "» o falta algo antes";
+        if (k2.t === "prima") throw "La ' va después de una variable o de un paréntesis: A' o (A + B)'";
+        throw "Falta algo antes de «" + k2.txt + "»";
+      };
+      var arbol = expr();
+      if (i < tk.length) throw tk[i].t === ")" ? "Sobra «" + tk[i].txt + "»" : "No se entiende «" + tk[i].txt + "»";
+      var vals = [];
+      for (var m2 = 0; m2 < total; m2++) {
+        var env = {};
+        vars.forEach(function (v, j) { env[v] = ((m2 >> (n - 1 - j)) & 1) === 1; });
+        vals.push(valorLogico(arbol, env));
+      }
+      return { arbol: arbol, valores: vals };
+    } catch (e) {
+      if (typeof e === "string") return { error: e };
+      throw e;
+    }
+  }
+
+  // formato de escritura: prima (A') o barra (¬A); junto (AB) o con punto (A·B)
+  function formatoBoole(op, vars) {
+    var prima = op.negacion !== "barra";
+    var f = { prima: prima, junto: prima && op.producto !== "punto" && vars.every(function (v) { return v.length === 1; }) };
+    f.neg = function (v) { return prima ? v + "'" : "¬" + v; };
+    f.por = f.junto ? "" : "·";
+    return f;
+  }
+
+  // expresion en notacion de Boole, con los parentesis justos
+  function imprimirBoole(n, fmt) {
+    function cadena(m, op, res) {
+      if (m.t === "bin" && m.op === op) { cadena(m.a, op, res); cadena(m.b, op, res); } else res.push(m);
+      return res;
+    }
+    function rec(m) {
+      if (m.t === "var") return m.n;
+      if (m.t === "const") return m.v ? "1" : "0";
+      if (m.t === "no") {
+        if (m.a.t === "var" || m.a.t === "const") return fmt.neg(rec(m.a));
+        return fmt.prima ? "(" + rec(m.a) + ")'" : "¬(" + rec(m.a) + ")";
+      }
+      if (m.op === "y") {
+        return cadena(m, "y", []).map(function (h) { return h.t === "bin" ? "(" + rec(h) + ")" : rec(h); }).join(fmt.por);
+      }
+      if (m.op === "o") {
+        return cadena(m, "o", []).map(function (h) { return h.t === "bin" && h.op !== "y" ? "(" + rec(h) + ")" : rec(h); }).join(" + ");
+      }
+      var s = m.op === "xo" ? " ⊕ " : " ⊙ ";
+      var lado = function (h) { return h.t === "bin" && h.op !== "y" ? "(" + rec(h) + ")" : rec(h); };
+      return lado(m.a) + s + lado(m.b);
+    }
+    return rec(n);
+  }
+
+  // literales de un implicante (bits fijos): en la suma de productos la
+  // variable va tal cual si su bit es 1; en el producto de sumas, si es 0
+  function literalesImplicante(p, vars, fnc, fmt) {
+    var n = vars.length, lits = [];
+    vars.forEach(function (v, j) {
+      var bit = 1 << (n - 1 - j);
+      if (p.x & bit) return;
+      lits.push(!!(p.v & bit) !== fnc ? v : fmt.neg(v));
+    });
+    return lits;
+  }
+  function textoImplicante(p, vars, fnc, fmt, conParentesis) {
+    var lits = literalesImplicante(p, vars, fnc, fmt);
+    if (!lits.length) return fnc ? "0" : "1";
+    if (!fnc) return lits.join(fmt.por);
+    return conParentesis && lits.length > 1 ? "(" + lits.join(" + ") + ")" : lits.join(" + ");
+  }
+
+  // arbol de una suma de productos (fnc = false) o producto de sumas (true)
+  function arbolDeCobertura(cob, vars, fnc) {
+    var n = vars.length;
+    if (!cob.length) return { t: "const", v: fnc, txt: fnc ? "1" : "0" };
+    return cob.map(function (p) {
+      var lits = [];
+      vars.forEach(function (v, j) {
+        var bit = 1 << (n - 1 - j);
+        if (p.x & bit) return;
+        lits.push(!!(p.v & bit) !== fnc ? { t: "var", n: v } : { t: "no", a: { t: "var", n: v } });
+      });
+      if (!lits.length) return { t: "const", v: !fnc, txt: fnc ? "0" : "1" };
+      return lits.reduce(function (a, b) { return { t: "bin", op: fnc ? "o" : "y", a: a, b: b }; });
+    }).reduce(function (a, b) { return { t: "bin", op: fnc ? "y" : "o", a: a, b: b }; });
+  }
+
+  // Escribe piezas de texto de colores en una linea que se corta (antes de una
+  // pieza con corte: true) si no entra en maxW; las lineas siguientes van con
+  // sangria hasta el final de la primera pieza. Devuelve la y siguiente.
+  function escribirPiezas(x0, y0, piezas, maxW, tam, fuente, agregar) {
+    var alto = tam * fuente.lh + 6, y = y0, run = null, xFin = x0, sangria = 0;
+    var ancho = function (t) { return medir(t, tam, fuente); };
+    function emitir() {
+      if (run && run.t.trim()) agregar(texto(run.x, y, run.t, tam, fuente, run.color, "left"));
+      if (run) xFin = run.x + ancho(run.t);
+    }
+    piezas.forEach(function (p, i) {
+      var fin = run ? run.x + ancho(run.t) : xFin;
+      var t = p.t;
+      if (i > 0 && p.corte && fin + ancho(t.replace(/\s+$/, "")) > x0 + maxW && fin > x0 + sangria + 1) {
+        emitir();
+        y += alto;
+        run = null;
+        xFin = x0 + sangria;
+        fin = xFin;
+        t = t.replace(/^\s+/, "");
+      }
+      if (run && run.color === p.color) run.t += t;
+      else { emitir(); run = { x: fin, t: t, color: p.color }; }
+      if (i === 0) sangria = Math.min(ancho(t), maxW / 2);
+    });
+    emitir();
+    return y + alto;
+  }
+
+  // tabla de verdad compacta: indice, variables y la funcion (con 0 y 1)
+  function dibujarTablaBoole(vars, valores, nombre, color, tam, fuente, agregar) {
+    var lh = tam * fuente.lh, af = Math.round(lh + tam * 0.5), pad = Math.round(tam * 0.55);
+    var cols = [{ t: "m", color: GUIA }].concat(vars.map(function (v) { return { t: v, color: TINTA }; }), [{ t: nombre, color: color }]);
+    var anchos = cols.map(function (c) { return Math.max(medir(c.t, tam, fuente), medir(String(valores.length - 1), tam, fuente), tam) + 2 * pad; });
+    var xs = [0];
+    anchos.forEach(function (a, j) { xs.push(xs[j] + a); });
+    var W = xs[xs.length - 1], H = af * (valores.length + 1), dy = (af - lh) / 2;
+    agregar(base("rectangle", { x: 0, y: 0, width: W, height: H, strokeWidth: 2 }));
+    agregar(linea(0, af, [[0, 0], [W, 0]], { strokeWidth: 2 }));
+    for (var j = 1; j < cols.length; j++) {
+      agregar(linea(xs[j], 0, [[0, 0], [0, H]], { strokeWidth: j === 1 || j === cols.length - 1 ? 2 : 1 }));
+    }
+    cols.forEach(function (c, j) { agregar(texto((xs[j] + xs[j + 1]) / 2, dy, c.t, tam, fuente, c.color, "center")); });
+    var n = vars.length;
+    valores.forEach(function (v, m) {
+      var y = af * (m + 1) + dy;
+      agregar(texto(xs[0] + anchos[0] / 2, y, String(m), tam, fuente, GUIA, "center"));
+      vars.forEach(function (x, j) {
+        agregar(texto((xs[j + 1] + xs[j + 2]) / 2, y, String((m >> (n - 1 - j)) & 1), tam, fuente, TINTA, "center"));
+      });
+      agregar(texto((xs[n + 1] + xs[n + 2]) / 2, y, v ? "1" : "0", tam, fuente, color, "center"));
+    });
+  }
+
+  // Mapa de Karnaugh (1 a 4 variables): filas con las primeras variables y
+  // columnas con las ultimas, en codigo Gray (00, 01, 11, 10). Cada grupo de
+  // la cobertura es un rectangulo de color (partido si da la vuelta por el borde).
+  function dibujarKarnaugh(vars, valores, cob, fnc, fmt, indices, tam, fuente, agregar) {
+    var n = vars.length, nr = n >> 1, nc = n - nr, lh = tam * fuente.lh;
+    var gray = function (k) { return k === 0 ? [0] : k === 1 ? [0, 1] : [0, 1, 3, 2]; };
+    var R = gray(nr), C = gray(nc), s = Math.max(tam * 2.4, 46);
+    var bits = function (v, k) { var t = v.toString(2); while (t.length < k) t = "0" + t; return t; };
+    var sep = fmt.junto ? "" : ",";
+    var esquina = (nr ? vars.slice(0, nr).join(sep) + " \\ " : "") + vars.slice(nr).join(sep);
+    var anchoFilas = R.reduce(function (m, r) { return Math.max(m, medir(bits(r, nr), tam, fuente)); }, 0);
+    var gx = Math.max(anchoFilas + 16, medir(esquina, tam, fuente) + 12), gy = lh + 12;
+    var W = C.length * s, H = R.length * s;
+    agregar(base("rectangle", { x: gx, y: gy, width: W, height: H, strokeWidth: 2 }));
+    for (var c = 1; c < C.length; c++) agregar(linea(gx + c * s, gy, [[0, 0], [0, H]], { strokeWidth: 1 }));
+    for (var r = 1; r < R.length; r++) agregar(linea(gx, gy + r * s, [[0, 0], [W, 0]], { strokeWidth: 1 }));
+    agregar(texto(gx - 8, 0, esquina, tam, fuente, TINTA, "right"));
+    C.forEach(function (cv, ci) { agregar(texto(gx + (ci + 0.5) * s, 0, bits(cv, nc), tam, fuente, TINTA, "center")); });
+    if (nr) R.forEach(function (rv, ri) { agregar(texto(gx - 8, gy + (ri + 0.5) * s - lh / 2, bits(rv, nr), tam, fuente, TINTA, "right")); });
+    var chico = Math.max(10, Math.round(tam * 0.55));
+    R.forEach(function (rv, ri) {
+      C.forEach(function (cv, ci) {
+        var m = (rv << nc) | cv, x = gx + ci * s, y = gy + ri * s;
+        if (indices) agregar(texto(x + 4, y + 2, String(m), chico, fuente, GUIA, "left"));
+        agregar(texto(x + s / 2, y + (s - lh) / 2, valores[m] ? "1" : "0", tam, fuente, valores[m] ? TINTA : GUIA, "center"));
+      });
+    });
+    var filasFijas = ((1 << nr) - 1) << nc, colsFijas = (1 << nc) - 1;
+    var tramos = function (ok) {
+      var res = [], ini = -1;
+      ok.forEach(function (v, i) {
+        if (v && ini < 0) ini = i;
+        if (!v && ini >= 0) { res.push([ini, i - 1]); ini = -1; }
+      });
+      if (ini >= 0) res.push([ini, ok.length - 1]);
+      return res;
+    };
+    cob.forEach(function (p, g) {
+      var fr = ~p.x & filasFijas, fc = ~p.x & colsFijas;
+      var filas = tramos(R.map(function (rv) { return ((rv << nc) & fr) === (p.v & fr); }));
+      var columnas = tramos(C.map(function (cv) { return (cv & fc) === (p.v & fc); }));
+      var inset = 5 + (g % 4) * 3, colorG = COLORES[g % COLORES.length];
+      filas.forEach(function (fr2) {
+        columnas.forEach(function (cr) {
+          agregar(base("rectangle", {
+            x: gx + cr[0] * s + inset, y: gy + fr2[0] * s + inset,
+            width: (cr[1] - cr[0] + 1) * s - 2 * inset, height: (fr2[1] - fr2[0] + 1) * s - 2 * inset,
+            strokeColor: colorG, strokeWidth: 2, roundness: { type: 3 },
+          }));
+        });
+      });
+    });
+  }
+
+  // Por cada funcion, de arriba abajo: su definicion; la tabla y el mapa de
+  // Karnaugh (uno al lado del otro); las formas canonicas; la simplificada
+  // (con cada termino del color de su grupo en el mapa) y los circuitos.
+  function generarBoole(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var vars = leerVariables(op).vars, n = vars.length, fmt = formatoBoole(op, vars);
+    var fnc = op.agrupar === "max", maxW = 1000, y = oy;
+    var escribir = function (piezas) { y = escribirPiezas(ox, y, piezas, maxW, tam, fuente, agregar); };
+    // una lista de terminos como piezas: "F = t1 + t2 + ..."
+    var terminos = function (prefijo, color, lista, sep) {
+      var piezas = [{ t: prefijo, color: color }];
+      lista.forEach(function (t, j) {
+        if (j) piezas.push({ t: sep, color: TINTA });
+        piezas.push({ t: t.t, color: t.color || color, corte: j > 0 });
+      });
+      return piezas;
+    };
+    var colocar = function (dibujar, x, yTop) {
+      var tmp = [];
+      dibujar(function (e) { tmp.push(e); });
+      var b = cajaDe(tmp);
+      tmp.forEach(function (e) { e.x += x - b.x0; e.y += yTop - b.y0; agregar(e); });
+      return { w: b.x1 - b.x0, h: b.y1 - b.y0 };
+    };
+
+    op.filas.forEach(function (f, i) {
+      var nombre = String(f.nombre || "").trim() || nombreBoole(i);
+      var r = analizarBoole(f.texto, vars);
+      if (r.error) return;
+      var color = f.color, valores = r.valores;
+      var unos = [], ceros = [];
+      valores.forEach(function (v, m) { (v ? unos : ceros).push(m); });
+      var def = r.indices ? (r.indices === "m" ? "Σm(" : "ΠM(") + r.lista.join(", ") + ")" : imprimirBoole(r.arbol, fmt);
+      escribir([{ t: nombre + " = " + def, color: color }]);
+      y += 10;
+
+      // tabla y mapa
+      var cob = coberturaLogica(valores, n, fnc), conMapa = op.karnaugh && n <= 4;
+      var x = ox, alto = 0;
+      if (op.tabla) {
+        var tb = colocar(function (ag) { dibujarTablaBoole(vars, valores, nombre, color, tam, fuente, ag); }, x, y);
+        x += tb.w + 60;
+        alto = Math.max(alto, tb.h);
+      }
+      if (conMapa) {
+        var km = colocar(function (ag) { dibujarKarnaugh(vars, valores, cob, fnc, fmt, op.indices, tam, fuente, ag); }, x, y);
+        alto = Math.max(alto, km.h);
+      }
+      if (alto) y += alto + 20;
+      if (op.karnaugh && n > 4) escribir([{ t: "(El mapa de Karnaugh se dibuja hasta 4 variables)", color: GUIA }]);
+
+      // formas canonicas
+      if (op.minterminos) {
+        escribir([{ t: nombre + " = Σm(" + unos.join(", ") + ")", color: color }]);
+        escribir(terminos(nombre + " = ", color, unos.length ? unos.map(function (m) {
+          return { t: textoImplicante({ v: m, x: 0 }, vars, false, fmt) };
+        }) : [{ t: "0" }], " + "));
+      }
+      if (op.maxiterminos) {
+        escribir([{ t: nombre + " = ΠM(" + ceros.join(", ") + ")", color: color }]);
+        escribir(terminos(nombre + " = ", color, ceros.length ? ceros.map(function (m) {
+          return { t: textoImplicante({ v: m, x: 0 }, vars, true, fmt, ceros.length > 1) };
+        }) : [{ t: "1" }], fmt.por));
+      }
+
+      // simplificada (con el color de cada grupo si se dibuja el mapa)
+      var simple = arbolDeCobertura(cob, vars, fnc);
+      if (op.simplificar) {
+        var lista = cob.length ? cob.map(function (p, g) {
+          return { t: textoImplicante(p, vars, fnc, fmt, cob.length > 1), color: conMapa ? COLORES[g % COLORES.length] : color };
+        }) : [{ t: fnc ? "1" : "0" }];
+        var piezas = terminos(nombre + " = ", color, lista, fnc ? fmt.por : " + ");
+        piezas.unshift({ t: "Simplificada (" + (fnc ? "maxitérminos" : "minitérminos") + "): ", color: GUIA });
+        escribir(piezas);
+      }
+
+      // circuitos
+      if (op.circuito) {
+        var escrita = r.arbol || arbolDeCobertura((r.indices === "m" ? unos : ceros).map(function (m) {
+          return { v: m, x: 0 };
+        }), vars, r.indices === "M");
+        var cuales = op.circuitoDe === "simple" ? [simple] : op.circuitoDe === "escrita" ? [escrita] : [escrita, simple];
+        if (cuales.length === 2 && imprimirBoole(cuales[0], fmt) === imprimirBoole(cuales[1], fmt)) cuales.pop();
+        y += 20;
+        cuales.forEach(function (arbol) {
+          var c = colocar(function (ag) {
+            dibujarCircuito(arbol, vars, nombre + " = " + imprimirBoole(arbol, fmt), color, tam, fuente, ag, fmt.neg);
+          }, ox, y);
+          y += c.h + 40;
+        });
+      }
+      y += 40;
+    });
+  }
+
+  function erroresBoole(t, op) {
+    var r = analizarBoole(t, leerVariables(op).vars);
     return r.error ? [r.error] : [];
   }
 
@@ -2275,6 +3196,8 @@
         nVars: 2, nombres: "p, q, r, s, t", valores: "VF", primero: "V",
         tamTexto: "M", fuente: "normal", intermedias: true, lineasFilas: true,
         colorResultado: true, clasificar: false, ocultar: false,
+        mostrarTabla: true, simplificar: false, forma: "fnd",
+        interruptores: false, diseno: "abierto", circuitoDe: "original",
       },
       contenido: ["filas", "nVars", "nombres"],
       ejemplo: { filas: [{ texto: "[(p → q) ∧ p] → q", color: COLORES[0] }], nVars: 2 },
@@ -2312,6 +3235,79 @@
         ui.chk("Resultado en el color de la expresión", "colorResultado");
         ui.chk("Escribir si es tautología, contradicción o contingencia", "clasificar");
         ui.chk("Dejar vacías las columnas a calcular (para completar)", "ocultar");
+        ui.chk("Dibujar la tabla", "mostrarTabla");
+        ui.chk("Escribir la expresión simplificada", "simplificar", true);
+        ui.chk("Circuito de interruptores", "interruptores", true);
+        if (op.interruptores) {
+          ui.seg("Diseño", "diseno", [["abierto", "Abierto / cerrado"], ["casilla", "Casilleros"]]);
+          ui.seg("Circuito de", "circuitoDe", [["original", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]], true);
+        }
+        if (op.simplificar || (op.interruptores && op.circuitoDe !== "original")) {
+          ui.seg("Simplificar como", "forma", [["fnd", "∨ de ∧ (FND)"], ["fnc", "∧ de ∨ (FNC)"]]);
+        }
+      },
+    },
+
+    boole: {
+      titulo: "Álgebra de Boole",
+      dibujo: "dibujo", femenino: false,
+      clave: "pizarra-generador-boole",
+      defecto: {
+        filas: [{ nombre: "F", texto: "AB + A'C + BC", color: COLORES[0] }],
+        nVars: 3, nombres: "A, B, C, D, E",
+        tabla: true, minterminos: true, maxiterminos: false, karnaugh: true, agrupar: "min",
+        simplificar: true, indices: true, circuito: true, circuitoDe: "ambas",
+        negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal",
+      },
+      contenido: ["filas", "nVars", "nombres"],
+      ejemplo: {
+        nVars: 4,
+        filas: [
+          { nombre: "F", texto: "m(0, 2, 5, 7, 8, 10, 13, 15)", color: COLORES[0] },
+          { nombre: "G", texto: "(A + B)(A + C' + D)", color: COLORES[1] },
+        ],
+      },
+      textoEjemplo: "Inserta un dibujo nuevo de ejemplo con 4 variables",
+      agregarFila: "+ Función",
+      placeholder: "AB + A'C  o  m(1, 3, 5)  o  M(0, 2)",
+      nombreFila: { porDefecto: nombreBoole, titulo: "Nombre de la función: F, G, H..." },
+      simbolos: [["'", "'", "Negación: A' o (A + B)'"], ["+", " + ", "O (suma)"],
+        ["·", "·", "Y (producto); con variables de una letra también vale AB"],
+        ["⊕", " ⊕ ", "O exclusivo (XOR)"], ["⊙", " ⊙ ", "Equivalencia (XNOR)"],
+        ["Σm( )", "m(", "Por minitérminos: m(1, 3, 5)"], ["ΠM( )", "M(", "Por maxitérminos: M(0, 2)"]],
+      ayuda: "Cada fila es una función de las variables de arriba: una expresión (AB + A'C, (A + B)C', " +
+        "A ⊕ B; con variables de una letra AB es A·B) o sus índices: m(1, 3, 5) son los minitérminos " +
+        "(filas donde vale 1) y M(0, 2) los maxitérminos (filas donde vale 0). El índice de una fila es " +
+        "su número en binario, con la primera variable como bit más significativo. " +
+        "Seleccioná un dibujo ya insertado para editarlo.",
+      erroresFila: erroresBoole,
+      posicion: function (op, cx, cy) { return { x: cx - 400, y: cy - 250 }; },
+      generar: generarBoole,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          var n = [];
+          for (var i = 1; i <= MAX_VARIABLES; i++) n.push([i, String(i)]);
+          ui.seg("Variables", "nVars", n);
+          ui.campos("Nombres", [{ clave: "nombres", prefijo: "", texto: true, ancho: 150,
+            titulo: "Nombres de las variables, en orden, separados por coma" }],
+          function () { return leerVariables(op).error; });
+          ui.seg("Simplificar con", "agrupar", [["min", "Unos (Σm)"], ["max", "Ceros (ΠM)"]]);
+        });
+        ui.chk("Tabla de verdad", "tabla");
+        ui.chk("Forma canónica con minitérminos (Σm)", "minterminos");
+        ui.chk("Forma canónica con maxitérminos (ΠM)", "maxiterminos");
+        ui.chk("Mapa de Karnaugh (hasta 4 variables)", "karnaugh", true);
+        if (op.karnaugh) ui.chk("Número de cada celda en el mapa", "indices");
+        ui.chk("Escribir la simplificada", "simplificar");
+        ui.chk("Circuito lógico", "circuito", true);
+        if (op.circuito) {
+          ui.seg("Circuito de", "circuitoDe", [["escrita", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]]);
+        }
+        ui.seg("Negación", "negacion", [["prima", "A'"], ["barra", "¬A"]]);
+        ui.seg("Producto", "producto", [["junto", "AB"], ["punto", "A·B"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
       },
     },
 
@@ -2455,7 +3451,7 @@
   };
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "conjuntos", "relaciones", "recta", "funcion"];
+  var ORDEN = ["tabla", "boole", "conjuntos", "relaciones", "recta", "funcion"];
 
   // ------------------------------------------------- insertar / reemplazar
   var vinculo = null;     // gid del dibujo que se esta editando
@@ -2871,14 +3867,14 @@
           });
           destino.appendChild(s);
         },
-        chk: function (txt, clave) {
+        chk: function (txt, clave, repintar) {
           var l = document.createElement("label");
           l.className = "chk";
           l.innerHTML = '<input type="checkbox"> ';
           l.appendChild(document.createTextNode(txt));
           var c = l.querySelector("input");
           c.checked = !!op[clave];
-          c.onchange = function () { op[clave] = c.checked; self.cambio(); };
+          c.onchange = function () { op[clave] = c.checked; self.cambio(); if (repintar) self.pintarOpciones(); };
           destino.appendChild(l);
         },
         // campos cortos en una fila. numero: [min, max] (se limita); texto: libre.
@@ -2995,7 +3991,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: tablas de verdad, conjuntos, relaciones, recta real y gráficos de funciones";
+      b.title = "Generadores: tablas de verdad, álgebra de Boole, conjuntos, relaciones, recta real y gráficos de funciones";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.addEventListener("click", function () { panel.alternar(); });

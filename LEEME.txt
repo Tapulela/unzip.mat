@@ -193,10 +193,92 @@ TABLAS DE VERDAD (prototipo)
   de la tabla, una linea por expresion.
 - "Dejar vacias las columnas a calcular" escribe solo los valores de las
   variables, para que los completen los estudiantes.
+- "Escribir la expresion simplificada": debajo de la tabla escribe una
+  expresion equivalente lo mas corta posible, calculada a partir de la
+  tabla (metodo de Quine-McCluskey):
+      (p ∨ q) ∧ ¬p ≡ ¬p ∧ q
+      (p ∧ q) ∨ (p ∧ ¬q) ∨ (¬p ∧ r) ≡ p ∨ r
+      [(p → q) ∧ p] → q ≡ V        (tautologia)
+  "Simplificar como" elige la forma: ∨ de ∧ (forma normal disyuntiva:
+  p ↔ q ≡ (p ∧ q) ∨ (¬p ∧ ¬q)) o ∧ de ∨ (forma normal conjuntiva:
+  p ↔ q ≡ (¬p ∨ q) ∧ (p ∨ ¬q)). Es la minima con esa forma (menos terminos y
+  menos letras); a veces otra forma, con → o ↔, es mas corta.
+- "Dibujar la tabla": destildala para dejar solo la simplificacion.
+- "Circuito de interruptores": dibuja la expresion como un circuito entre
+  dos bornes, debajo de la tabla. La conjuncion (∧) es un circuito en serie
+  y la disyuncion (∨) uno en paralelo. "Circuito de" elige el de la
+  expresion escrita, el de la simplificada o los dos.
+  "Diseño":
+  - Abierto / cerrado: un interruptor cerrado es una variable sin negar y
+    uno abierto, la variable negada. Sobre cada interruptor se escribe solo
+    la letra, sin ¬ (la negacion se ve porque esta abierto).
+  - Casilleros: cada interruptor es un casillero en blanco con la variable
+    escrita, con ¬ si esta negada.
+  Con interruptores solo hay ∧, ∨ y variables negadas, asi que lo demas se
+  reescribe antes de dibujar:
+      p → q  =  ¬p ∨ q
+      p ↔ q  =  (p ∧ q) ∨ (¬p ∧ ¬q)
+      p ⊻ q  =  (p ∧ ¬q) ∨ (¬p ∧ q)
+      ¬(p ∧ q) = ¬p ∨ ¬q   y   ¬(p ∨ q) = ¬p ∧ ¬q   (De Morgan)
+  V se dibuja como un cable y F como un cable cortado.
+  Al animar, aparecen el titulo, el borne de entrada y los interruptores de
+  izquierda a derecha (en un paralelo, rama por rama de arriba abajo).
+- El circuito con compuertas logicas esta en "Algebra de Boole" (ver abajo).
 - Igual que los otros: "Insertar en el centro", "Ejemplo" (modus ponens),
   "Restablecer", y si seleccionas una tabla ya insertada se edita en vivo.
 - Al animar, aparece en este orden: el marco y las lineas, los encabezados
   y despues los valores columna por columna, de izquierda a derecha.
+
+ALGEBRA DE BOOLE (prototipo)
+- En el mismo panel, arriba, elegi "Algebra de Boole".
+- "Variables" y "Nombres" como en la tabla de verdad (A, B, C, D, E por
+  defecto). Cada fila es una funcion (F, G, H...), escrita de dos formas:
+  1. Como expresion de Boole:
+         +  suma (O)          tambien ∨  |
+         AB producto (Y)      tambien A·B  A*B  ∧  &   (AB solo si todas
+                              las variables son de una letra)
+         A' negacion          tambien (A + B)'  ¬A  ~A  !A
+         ⊕  o exclusivo (XOR)       ⊙  equivalencia (XNOR)
+         0 y 1 constantes
+     Sin parentesis, primero la negacion, despues el producto y por ultimo
+     la suma (⊕ y ⊙ como la suma). Ejemplo: AB + A'C + BC.
+  2. Por sus indices: m(1, 3, 5) (o Σm(1, 3, 5)) son los miniterminos, las
+     filas donde vale 1; M(0, 2) (o ΠM(0, 2)) son los maxiterminos, las
+     filas donde vale 0.
+  El indice de cada fila es su numero en binario con la primera variable
+  como bit mas significativo: con A, B, C, m5 es la fila 101 = AB'C.
+- Opciones (cada una se puede activar o no):
+  - Tabla de verdad: indice m, las variables y la funcion, con 0 y 1.
+  - Forma canonica con miniterminos: F = Σm(1, 3, 6, 7) y su desarrollo
+    F = A'B'C + A'BC + ABC' + ABC.
+  - Forma canonica con maxiterminos: F = ΠM(0, 2, 4, 5) y su desarrollo
+    F = (A + B + C)(A + B' + C)...
+  - Mapa de Karnaugh (de 1 a 4 variables), al lado de la tabla: filas con
+    las primeras variables y columnas con las ultimas, en orden Gray
+    (00, 01, 11, 10). Opcionalmente, el numero de cada celda.
+    "Simplificar con" (arriba) elige si se agrupan los unos (miniterminos,
+    da una suma de productos) o los ceros (maxiterminos, da un producto de
+    sumas). Cada grupo es un rectangulo de color; si da la vuelta por un
+    borde se dibuja partido (en las 4 esquinas, en cuatro partes).
+  - Escribir la simplificada: la expresion minima, con cada termino del
+    color de su grupo en el mapa. Por ejemplo AB + A'C + BC = AB + A'C.
+  - Circuito logico, de la expresion escrita, de la simplificada o de las
+    dos (si son iguales, uno solo). En una funcion dada por indices, la
+    "escrita" es su forma canonica.
+    - Cada variable aparece una sola vez: arriba su nombre y una linea
+      vertical. Si se usa negada, de su linea sale una rama a una compuerta
+      NOT y de ahi baja la linea de A'.
+    - Cada compuerta toma lo que necesita de esas lineas: el cable se
+      bifurca (con un punto) y va hacia la derecha.
+    - Cuando un cable cruza a otro sin estar unido, hace un pequeño salto
+      (semicirculo). Donde estan unidos hay un punto.
+    - Compuertas: AND, OR (de varias entradas), NOT, XOR y XNOR.
+    - Al animar: primero las variables y sus NOT, despues las compuertas de
+      izquierda a derecha con sus cables, y la salida.
+  - Negacion: A' o ¬A. Producto: AB o A·B.
+- Igual que los otros: "Insertar en el centro", "Ejemplo" (4 variables, una
+  funcion por miniterminos y otra como producto de sumas), "Restablecer", y
+  si seleccionas un dibujo ya insertado se edita en vivo.
 
 CONJUNTOS (prototipo)
 - En el mismo panel, arriba, elegi "Conjuntos".

@@ -50,6 +50,19 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   como `~ & | -> <->`). Agrega columnas intermedias en el orden en que se
   resuelve, puede clasificar cada expresión (tautología, contradicción,
   contingencia) o dejar vacías las columnas calculadas para completar.
+  También simplifica cada expresión (Quine-McCluskey sobre la tabla: forma
+  normal disyuntiva o conjuntiva mínima) y dibuja su circuito de
+  interruptores (∧ en serie, ∨ en paralelo; →, ↔, ⊻ y las negaciones de
+  expresiones compuestas se reescriben antes, con De Morgan), con interruptores
+  abiertos/cerrados o con casilleros con la variable escrita.
+  **Álgebra de Boole** usa las mismas variables en notación de Boole
+  (`AB + A'C`, `⊕`, `⊙`) o por índices (`m(1, 3, 5)`, `M(0, 2)`): tabla de
+  verdad, formas canónicas Σm y ΠM, mapa de Karnaugh (hasta 4 variables,
+  agrupando unos o ceros, con los grupos de colores, partidos si dan la vuelta)
+  y la simplificada. Dibuja el circuito lógico de la expresión escrita y/o de
+  la simplificada con una sola entrada por variable: una línea vertical por
+  variable (y por su negada, que sale de un NOT), puntos en las bifurcaciones
+  y saltos donde dos cables se cruzan sin unirse.
   El cuarto, **Conjuntos**, hace cálculos de teoría de conjuntos sobre un
   universo finito (por extensión) o ℕ, ℤ, ℚ, ℝ. Cada fila es un conjunto por
   extensión (`{1, 2, ..., 10}`), por comprensión (una función de JavaScript
