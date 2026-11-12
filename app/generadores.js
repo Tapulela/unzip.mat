@@ -1635,10 +1635,9 @@
     };
     if (nd.tipo === "lit") {
       if (d.diseno === "casilla") {
-        // un casillero en blanco con la variable (y ¬ si esta negada)
+        // un espacio en blanco en el cable con la variable escrita (y ¬ si esta negada)
         var bx = x + 16, bw = nd.w - 32;
         agregar(linea(x, cy, [[0, 0], [bx - x, 0]], cable));
-        agregar(base("rectangle", { x: bx, y: cy - d.caja / 2, width: bw, height: d.caja, strokeWidth: 2 }));
         agregar(texto(bx + bw / 2, cy - d.lh / 2, nd.txt, d.tam, d.fuente, d.color, "center"));
         agregar(linea(bx + bw, cy, [[0, 0], [x + nd.w - bx - bw, 0]], cable));
         return;
@@ -1687,7 +1686,7 @@
 
   // Circuito de interruptores de una expresion, entre dos bornes, con la
   // expresion escrita arriba. diseno: "abierto" (interruptor cerrado = variable,
-  // abierto = variable negada; solo se escribe la letra) o "casilla" (casilleros
+  // abierto = variable negada; solo se escribe la letra) o "casilla" (espacios
   // en blanco con la variable, con ¬ si esta negada).
   // ORDEN: titulo, borne de entrada y de izquierda a derecha los interruptores
   // (en un paralelo, rama por rama de arriba abajo); el borne de salida al final.
@@ -3239,7 +3238,7 @@
         ui.chk("Escribir la expresión simplificada", "simplificar", true);
         ui.chk("Circuito de interruptores", "interruptores", true);
         if (op.interruptores) {
-          ui.seg("Diseño", "diseno", [["abierto", "Abierto / cerrado"], ["casilla", "Casilleros"]]);
+          ui.seg("Diseño", "diseno", [["abierto", "Abierto / cerrado"], ["casilla", "Espacios"]]);
           ui.seg("Circuito de", "circuitoDe", [["original", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]], true);
         }
         if (op.simplificar || (op.interruptores && op.circuitoDe !== "original")) {

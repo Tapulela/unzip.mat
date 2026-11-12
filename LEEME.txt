@@ -212,8 +212,8 @@ TABLAS DE VERDAD (prototipo)
   - Abierto / cerrado: un interruptor cerrado es una variable sin negar y
     uno abierto, la variable negada. Sobre cada interruptor se escribe solo
     la letra, sin ¬ (la negacion se ve porque esta abierto).
-  - Casilleros: cada interruptor es un casillero en blanco con la variable
-    escrita, con ¬ si esta negada.
+  - Espacios: cada interruptor es un espacio en blanco en el cable, sin
+    recuadro, con la variable escrita (con ¬ si esta negada).
   Con interruptores solo hay ∧, ∨ y variables negadas, asi que lo demas se
   reescribe antes de dibujar:
       p → q  =  ¬p ∨ q

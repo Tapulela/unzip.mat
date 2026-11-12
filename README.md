@@ -54,7 +54,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   normal disyuntiva o conjuntiva mínima) y dibuja su circuito de
   interruptores (∧ en serie, ∨ en paralelo; →, ↔, ⊻ y las negaciones de
   expresiones compuestas se reescriben antes, con De Morgan), con interruptores
-  abiertos/cerrados o con casilleros con la variable escrita.
+  abiertos/cerrados o con espacios en blanco con la variable escrita.
   **Álgebra de Boole** usa las mismas variables en notación de Boole
   (`AB + A'C`, `⊕`, `⊙`) o por índices (`m(1, 3, 5)`, `M(0, 2)`): tabla de
   verdad, formas canónicas Σm y ΠM, mapa de Karnaugh (hasta 4 variables,
