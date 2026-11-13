@@ -3076,6 +3076,494 @@
     return f ? f.errores.concat(f.avisos || []) : [];
   }
 
+  // ====================================================== PLANTILLAS
+  // Definiciones fijas de uso frecuente. Se marcan las que se quieren y se
+  // insertan una debajo de otra: el nombre a la izquierda y la formula
+  // alineada a su derecha. La pertenencia a R se escribe segun la
+  // notacion elegida: (x, y) ∈ R o x R y (enR).
+  function enR(a, b, n, no) {
+    return n === "infija" ? (no ? "¬(" + a + " R " + b + ")" : a + " R " + b) : "(" + a + ", " + b + ") " + (no ? "∉" : "∈") + " R";
+  }
+  var PLANTILLAS = [
+    { grupo: "Relaciones binarias (R ⊆ A × A)", items: [
+      ["reflexiva", "Reflexiva", function (n) { return "∀x: x ∈ A → " + enR("x", "x", n); }],
+      ["simetrica", "Simétrica", function (n) { return "∀x, y ∈ A: " + enR("x", "y", n) + " → " + enR("y", "x", n); }],
+      ["transitiva", "Transitiva", function (n) {
+        return "∀x, y, z ∈ A: " + enR("x", "y", n) + " ∧ " + enR("y", "z", n) + " → " + enR("x", "z", n); }],
+      ["antisimetrica", "Antisimétrica", function (n) {
+        return "∀x, y ∈ A: " + enR("x", "y", n) + " ∧ " + enR("y", "x", n) + " → x = y"; }],
+      ["arreflexiva", "Arreflexiva", function (n) { return "∀x ∈ A: " + enR("x", "x", n, true); }],
+      ["asimetrica", "Asimétrica", function (n) { return "∀x, y ∈ A: " + enR("x", "y", n) + " → " + enR("y", "x", n, true); }],
+      ["atransitiva", "Atransitiva", function (n) {
+        return "∀x, y, z ∈ A: " + enR("x", "y", n) + " ∧ " + enR("y", "z", n) + " → " + enR("x", "z", n, true); }],
+    ] },
+    // `*` y `+` se reemplazan por los operadores elegidos (op1 y op2)
+    { grupo: "Estructuras algebraicas", items: [
+      ["lci", "L.C.I.", "∀x, y: x ∈ A ∧ y ∈ A → x * y ∈ A"],
+      ["asociativa", "Asociativa", "∀x, y, z ∈ A: x * (y * z) = (x * y) * z"],
+      ["neutro", "Elemento neutro", "∃e ∈ A / ∀x ∈ A: x * e = e * x = x"],
+      ["inverso", "Elemento inverso", "∀x ∈ A, ∃x' ∈ A / x * x' = x' * x = e"],
+      ["conmutativa", "Conmutativa", "∀x, y ∈ A: x * y = y * x"],
+      ["distributiva", "Distributiva de * sobre +", "∀x, y, z ∈ A: x * (y + z) = (x * y) + (x * z)"],
+    ].map(function (it) {
+      var conOps = function (t, op) {
+        var a = String(op.op1 || "").trim() || "*", b = String(op.op2 || "").trim() || "+";
+        return t.replace(/[*+]/g, function (c) { return c === "*" ? a : b; });
+      };
+      return [it[0], function (op) { return conOps(it[1], op); }, function (n, op) { return conOps(it[2], op); }];
+    }) },
+    { grupo: "Funciones (f: A → B)", items: [
+      ["inyectiva", "Inyectiva", "∀a, b ∈ A: f(a) = f(b) → a = b"],
+      ["sobreyectiva", "Sobreyectiva", "∀y ∈ B, ∃x ∈ A / f(x) = y"],
+      ["biyectiva", "Biyectiva", "f es inyectiva ∧ f es sobreyectiva"],
+      ["creciente", "Creciente", "∀a, b ∈ A: a < b → f(a) ≤ f(b)"],
+      ["decreciente", "Decreciente", "∀a, b ∈ A: a < b → f(a) ≥ f(b)"],
+    ] },
+  ];
+  PLANTILLAS.forEach(function (g) {
+    g.items = g.items.map(function (it) { return { clave: "pl_" + it[0], nombre: it[1], formula: it[2] }; });
+  });
+  var CLAVES_PLANTILLAS = [];
+  PLANTILLAS.forEach(function (g) { g.items.forEach(function (it) { CLAVES_PLANTILLAS.push(it.clave); }); });
+  function marcarPlantillas(lista) {
+    var d = {};
+    CLAVES_PLANTILLAS.forEach(function (k) { d[k] = lista.indexOf(k) >= 0; });
+    return d;
+  }
+
+  function generarPlantillas(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var lh = tam * fuente.lh, sep = op.espaciado ? lh * 0.9 : lh * 0.35;
+    var lineas = [];
+    PLANTILLAS.forEach(function (g) {
+      g.items.forEach(function (it) {
+        if (!op[it.clave]) return;
+        var f = typeof it.formula === "function" ? it.formula(op.notacion, op) : it.formula;
+        var nom = typeof it.nombre === "function" ? it.nombre(op) : it.nombre;
+        lineas.push({ nombre: nom + ":", formula: f });
+      });
+    });
+    var anchoNombre = 0;
+    if (op.nombres) lineas.forEach(function (l) { anchoNombre = Math.max(anchoNombre, medir(l.nombre, tam, fuente)); });
+    var xf = ox + (op.nombres ? anchoNombre + tam * 0.8 : 0), y = oy;
+    lineas.forEach(function (l) {
+      if (op.nombres) agregar(texto(ox, y, l.nombre, tam, fuente, op.colorNombre ? COLORES[0] : TINTA, "left"));
+      agregar(texto(xf, y, l.formula, tam, fuente, TINTA, "left"));
+      y += lh + sep;
+    });
+  }
+
+  // ============================================ ESTRUCTURAS ALGEBRAICAS
+  // Cada fila define una operacion binaria con su formula: "x * y = x + y - 3"
+  // (el simbolo de la operacion es lo que esta entre las dos variables). Para
+  // cada propiedad se escribe su titulo, su definicion general y despues los
+  // reemplazos con la definicion, sin resolver nada: en cada paso se
+  // reemplazan todas las operaciones cuyos dos operandos ya no tienen la
+  // operacion (las de mas adentro), hasta que no queda ninguna.
+  var LETRAS_EST = "A-Za-zα-ωΑ-Ω";
+  var IDENT_EST = "[" + LETRAS_EST + "](?:'+|[₀-₉]+)?";
+  var FUNCIONES_TXT = { sin: 1, sen: 1, cos: 1, tan: 1, tg: 1, ln: 1, log: 1, sqrt: 1, exp: 1,
+    max: 1, min: 1, mod: 1, abs: 1, mcd: 1, mcm: 1 };
+  var SUPER = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹" };
+
+  function esAtomo(s) { return new RegExp("^(" + IDENT_EST + "|\\d+(?:[.,]\\d+)?)$").test(s); }
+
+  function leerOperacion(txt) {
+    var t = String(txt || "").trim();
+    if (!t) return { error: "Escribí la operación, por ejemplo: x * y = x + y − 3" };
+    var i = t.indexOf("=");
+    if (i < 0) return { error: "Falta el «=»: x * y = x + y − 3" };
+    var izq = t.slice(0, i), der = t.slice(i + 1).trim();
+    var m = new RegExp("^\\s*(" + IDENT_EST + ")\\s*(\\S+?)\\s*(" + IDENT_EST + ")\\s*$").exec(izq);
+    if (!m) return { error: "A la izquierda del «=» van dos variables y el símbolo: x * y" };
+    if (m[1] === m[3]) return { error: "Las dos variables tienen que ser distintas: x * y" };
+    if (!der) return { error: "Falta la definición a la derecha del «=»" };
+    var nivel = 0;
+    for (var k = 0; k < der.length; k++) {
+      if (der[k] === "(") nivel++;
+      if (der[k] === ")" && --nivel < 0) break;
+    }
+    if (nivel !== 0) return { error: "Los paréntesis no están balanceados" };
+    // forma de escribir: − en vez de -, · para el producto, potencias numericas en superindice
+    der = der.replace(/-/g, "−").replace(/\*/g, "·")
+      .replace(/\^(\d+)/g, function (_, d) { return d.split("").map(function (c) { return SUPER[c]; }).join(""); });
+    return { a: m[1], op: m[2], b: m[3], der: der };
+  }
+
+  // reemplaza en la definicion las dos variables por los operandos (los
+  // compuestos van entre parentesis). Las letras pegadas (2xy) son variables
+  // sueltas, salvo los nombres de funciones conocidas (sin, ln...).
+  function reemplazar(def, a, b) {
+    var envolver = function (s) { return esAtomo(s) ? s : "(" + s + ")"; };
+    return def.der.replace(new RegExp("[" + LETRAS_EST + "]+(?:'+|[₀-₉]+)*", "g"), function (run) {
+      if (FUNCIONES_TXT[run.toLowerCase()]) return run;
+      return run.replace(new RegExp(IDENT_EST, "g"), function (v) {
+        return v === def.a ? envolver(a) : v === def.b ? envolver(b) : v;
+      });
+    });
+  }
+
+  // arboles: { v: "x" } variable; { txt } ya reemplazado; { k, a, b } operacion k
+  function esOp(n) { return n.k !== undefined; }
+  function imprimirEstructura(n, defs, arriba) {
+    if (n.v) return n.v;
+    if (n.txt !== undefined) return arriba || esAtomo(n.txt) ? n.txt : "(" + n.txt + ")";
+    var s = imprimirEstructura(n.a, defs) + " " + defs[n.k].op + " " + imprimirEstructura(n.b, defs);
+    return arriba ? s : "(" + s + ")";
+  }
+  function pasoEstructura(n, defs) {
+    if (!esOp(n)) return n;
+    if (!esOp(n.a) && !esOp(n.b)) {
+      var t = function (h) { return h.v || h.txt; };
+      return { txt: reemplazar(defs[n.k], t(n.a), t(n.b)) };
+    }
+    return { k: n.k, a: pasoEstructura(n.a, defs), b: pasoEstructura(n.b, defs) };
+  }
+
+  var PROPIEDADES_EST = [
+    { clave: "lci", titulo: "Ley de composición interna", lados: function (o) { return [o(0, "x", "y")]; },
+      pre: function (S) { return "∀x, y: x ∈ " + S + " ∧ y ∈ " + S + " → "; }, suf: function (S) { return " ∈ " + S; } },
+    { clave: "asociativa", titulo: "Asociatividad",
+      lados: function (o) { return [o(0, "x", o(0, "y", "z")), o(0, o(0, "x", "y"), "z")]; },
+      pre: function (S) { return "∀x, y, z ∈ " + S + ": "; } },
+    { clave: "conmutativa", titulo: "Conmutatividad", lados: function (o) { return [o(0, "x", "y"), o(0, "y", "x")]; },
+      pre: function (S) { return "∀x, y ∈ " + S + ": "; } },
+    { clave: "neutro", titulo: "Existencia de elemento neutro",
+      lados: function (o) { return [o(0, "x", "e"), o(0, "e", "x"), { v: "x" }]; },
+      pre: function (S) { return "∃e ∈ " + S + " / ∀x ∈ " + S + ": "; } },
+    { clave: "inverso", titulo: "Existencia de elemento inverso",
+      lados: function (o) { return [o(0, "x", "x'"), o(0, "x'", "x"), { v: "e" }]; },
+      pre: function (S) { return "∀x ∈ " + S + ", ∃x' ∈ " + S + " / "; } },
+  ];
+  var DISTRIBUTIVA = {
+    clave: "distributiva", titulo: "Distributividad",
+    lados: function (o) { return [o(0, "x", o(1, "y", "z")), o(1, o(0, "x", "y"), o(0, "x", "z"))]; },
+    pre: function (S) { return "∀x, y, z ∈ " + S + ": "; },
+  };
+
+  // titulo, definicion general y pasos de una propiedad (lineas de texto)
+  function desarrollarPropiedad(p, defs, S, op) {
+    var o = function (k, a, b) {
+      var h = function (x) { return typeof x === "string" ? { v: x } : x; };
+      return { k: k, a: h(a), b: h(b) };
+    };
+    var lados = p.lados(o), pre = p.pre(S), suf = p.suf ? p.suf(S) : "";
+    var ecuacion = function () { return lados.map(function (n) { return imprimirEstructura(n, defs, true); }).join(" = "); };
+    // el primer paso es la expresion original, sin cuantificadores
+    var res = { general: pre + ecuacion() + suf, pasos: [ecuacion() + suf] };
+    for (var vuelta = 0; vuelta < 20 && lados.some(esOp); vuelta++) {
+      lados = lados.map(function (n) { return pasoEstructura(n, defs); });
+      res.pasos.push(ecuacion() + suf);
+    }
+    return res;
+  }
+
+  function generarEstructuras(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var lh = tam * fuente.lh, sangria = Math.round(tam * 1.5), y = oy;
+    var filas = op.filas.map(function (f) {
+      return { f: f, d: leerOperacion(f.texto), S: String(f.conjunto || "").trim() || "A" };
+    }).filter(function (x) { return !x.d.error; });
+    function bloque(p, defs, S, color) {
+      var r = desarrollarPropiedad(p, defs, S, op);
+      var titulo = p === DISTRIBUTIVA ? "Distributividad de " + defs[0].op + " sobre " + defs[1].op : p.titulo;
+      if (op.titulos) { agregar(texto(ox, y, titulo, tam, fuente, color, "left")); y += lh + 6; }
+      var x = ox + (op.titulos ? sangria : 0);
+      if (op.general) { agregar(texto(x, y, r.general, tam, fuente, TINTA, "left")); y += lh + 6; }
+      r.pasos.forEach(function (s) {
+        agregar(texto(x + (op.general ? sangria : 0), y, s, tam, fuente, TINTA, "left"));
+        y += lh + 6;
+      });
+      y += lh * 0.8;
+    }
+    filas.forEach(function (x) {
+      if (op.escribirOperacion) {
+        agregar(texto(ox, y, x.d.a + " " + x.d.op + " " + x.d.b + " = " + x.d.der + ",  con " +
+          x.d.a + ", " + x.d.b + " ∈ " + x.S, tam, fuente, x.f.color, "left"));
+        y += lh + lh * 0.8;
+      }
+      PROPIEDADES_EST.forEach(function (p) { if (op[p.clave]) bloque(p, [x.d], x.S, x.f.color); });
+    });
+    if (op.distributiva && filas.length >= 2) bloque(DISTRIBUTIVA, [filas[0].d, filas[1].d], filas[0].S, filas[0].f.color);
+  }
+
+  // ====================================================== COMBINATORIA
+  // Cada fila es un calculo: "6 V 2", "5 C 3", "P 4", "3 VR 2", "4 CR 2",
+  // "PR 6; 3, 2" (o V(6, 2), C6,2, 6!...). Se escribe la formula general, el
+  // reemplazo en la formula con factoriales y la resolucion paso a paso:
+  // simplificando (6 · 5 · 4! / 4!, tachando lo que se cancela) o desarrollando
+  // todos los factoriales. Los calculos se hacen con BigInt.
+  var MAX_COMB = 30;
+  var SUB = { 0: "₀", 1: "₁", 2: "₂", 3: "₃", 4: "₄", 5: "₅", 6: "₆", 7: "₇", 8: "₈", 9: "₉", n: "ₙ", k: "ₖ", ",": "," };
+  var SUP = { 0: "⁰", 1: "¹", 2: "²", 3: "³", 4: "⁴", 5: "⁵", 6: "⁶", 7: "⁷", 8: "⁸", 9: "⁹", k: "ᵏ" };
+  var NOMBRES_COMB = {
+    P: "Permutaciones", V: "Variaciones simples", C: "Combinaciones simples",
+    VR: "Variaciones con repetición", CR: "Combinaciones con repetición", PR: "Permutaciones con repetición",
+  };
+  function subindice(s) { return String(s).split("").map(function (c) { return SUB[c] || c; }).join(""); }
+  function superindice(s) { return String(s).split("").map(function (c) { return SUP[c] || c; }).join(""); }
+  function miles(b) { return b.toString().replace(/\B(?=(\d{3})+(?!\d))/g, "."); }
+  function factorialBig(n) { var r = 1n; for (var i = 2; i <= n; i++) r *= BigInt(i); return r; }
+
+  function leerCombinatoria(txt) {
+    var s = String(txt || "").trim().replace(/[’´`′]/g, "'").replace(/[₀-₉]/g, function (c) { return "₀₁₂₃₄₅₆₇₈₉".indexOf(c); });
+    if (!s) return { error: "Escribí un cálculo, por ejemplo: 6 V 2" };
+    var T = "(VR|CR|PR|V'|C'|P'|V|C|P)", N = "(\\d+)", m, r = null;
+    var tipo = function (t) { t = t.toUpperCase(); return t.length === 2 && t[1] === "'" ? t[0] + "R" : t; };
+    var lista = function (l) { return l.split(",").map(function (x) { return parseInt(x, 10); }); };
+    if ((m = /^(\d+)\s*!$/.exec(s))) r = { tipo: "P", n: +m[1] };
+    else if ((m = new RegExp("^" + N + "\\s*" + T + "\\s*" + N + "$", "i").exec(s))) {
+      r = { tipo: tipo(m[2]), n: +m[1], k: +m[3] };
+      if (r.tipo === "P") r.tipo = "V"; // nPr de las calculadoras
+      if (r.tipo === "PR") r = { tipo: "PR", n: r.n, reps: [r.k] };
+    }
+    else if ((m = new RegExp("^" + T + "\\s*\\(?\\s*" + N + "\\s*[,;]\\s*" + N + "\\s*\\)?$", "i").exec(s)) && !/^P/i.test(m[1]))
+      r = { tipo: tipo(m[1]), n: +m[2], k: +m[3] };
+    else if ((m = /^(?:P|PR|P')\s*\(?\s*(\d+)\s*\)?$/i.exec(s)) || (m = /^(\d+)\s*P$/i.exec(s))) {
+      if (/^P(R|')/i.test(s)) return { error: "Faltan las repeticiones: PR 6; 3, 2" };
+      r = { tipo: "P", n: +m[1] };
+    }
+    else if ((m = /^(?:PR|P')\s*\(?\s*(\d+)\s*[;:]\s*(\d+(?:\s*,\s*\d+)*)\s*\)?$/i.exec(s)) ||
+      (m = /^(\d+)\s*(?:PR|P')\s*(\d+(?:\s*,\s*\d+)*)$/i.exec(s)))
+      r = { tipo: "PR", n: +m[1], reps: lista(m[2]) };
+    else if ((m = /^(?:PR|P')\s*\(\s*(\d+(?:\s*,\s*\d+)+)\s*\)$/i.exec(s))) {
+      var l = lista(m[1]);
+      r = { tipo: "PR", n: l.reduce(function (a, b) { return a + b; }, 0), reps: l };
+    }
+    if (!r) return { error: "No entiendo el cálculo. Ejemplos: 6 V 2, 5 C 3, P 4, 3 VR 2, 4 CR 2, PR 6; 3, 2" };
+    var tope = r.tipo === "CR" ? r.n + r.k - 1 : r.tipo === "VR" ? 0 : r.n;
+    if (tope > MAX_COMB || r.n > MAX_COMB) return { error: "Hasta " + MAX_COMB + "! como máximo" };
+    if ((r.tipo === "V" || r.tipo === "C") && r.k > r.n) return { error: "k no puede ser mayor que n (" + r.k + " > " + r.n + ")" };
+    if (r.tipo === "CR" && r.n < 1) return { error: "En CR, n tiene que ser al menos 1" };
+    if (r.tipo === "VR" && r.k > 60) return { error: "El exponente es demasiado grande" };
+    if (r.tipo === "PR") {
+      var suma = r.reps.reduce(function (a, b) { return a + b; }, 0);
+      if (suma > r.n) return { error: "Las repeticiones suman " + suma + ", más que n = " + r.n };
+    }
+    return r;
+  }
+
+  // simbolo del calculo: V₆,₂ / V(6, 2); PR₆(3, 2) / PR(6; 3, 2)
+  function simboloComb(c, op, letras) {
+    var nom = c.tipo[0] + (c.tipo.length > 1 ? (op.repeticion === "prima" ? "'" : "R") : "");
+    var n = letras ? "n" : c.n, k = letras ? "k" : c.k;
+    var reps = letras ? "a, b, c" : (c.reps || []).join(", ");
+    if (op.notacion === "paren") {
+      if (c.tipo === "P") return nom + "(" + n + ")";
+      if (c.tipo === "PR") return nom + "(" + n + "; " + reps + ")";
+      return nom + "(" + n + ", " + k + ")";
+    }
+    if (c.tipo === "P") return nom + subindice(n);
+    if (c.tipo === "PR") return nom + subindice(n) + "(" + reps + ")";
+    return nom + subindice(n) + subindice(",") + subindice(k);
+  }
+
+  // un renglon es { num: [segmentos], den: [segmentos] | null }; segmento { t, tachar }
+  function sg(t, tachar) { return { t: t, tachar: !!tachar }; }
+  function plano(t) { return { num: [sg(t)], den: null }; }
+  function fraccion(num, den) {
+    return { num: typeof num === "string" ? [sg(num)] : num, den: typeof den === "string" ? [sg(den)] : den };
+  }
+  function producto(desde, hasta) { // desde · (desde − 1) · ... · hasta
+    var p = [];
+    for (var i = desde; i >= hasta; i--) p.push(i);
+    return p.length ? p.join(" · ") : "1";
+  }
+  function factorialDesarrollado(d) { return d <= 1 ? "1" : producto(d, 1); }
+  function unir(lista) { return lista.join(" · "); }
+  function paren(s, muchos) { return muchos && / /.test(s) ? "(" + s + ")" : s; }
+
+  // pasos de N! / (d1! · d2! · ...) despues del reemplazo
+  function resolverFactoriales(N, ds, modo, tachar) {
+    var lineas = [], valor = factorialBig(N);
+    ds.forEach(function (d) { valor /= factorialBig(d); });
+    var denFact = function (lst) { return unir(lst.map(function (d) { return d + "!"; })); };
+    if (!ds.length) {
+      if (N >= 2) lineas.push(plano(producto(N, 1)));
+      lineas.push(plano(miles(valor)));
+      return lineas;
+    }
+    var expDen = function (lst) {
+      return unir(lst.map(function (d) { return paren(factorialDesarrollado(d), lst.length > 1); }));
+    };
+    var valDen = function (lst) { return lst.reduce(function (a, d) { return a * factorialBig(d); }, 1n); };
+    var numFact = [], resto = ds.slice();
+    if (modo === "completo") {
+      lineas.push(fraccion(factorialDesarrollado(N), expDen(resto)));
+      numFact = N >= 2 ? null : [];
+    } else {
+      var d = Math.max.apply(null, ds), i = ds.indexOf(d);
+      if (d >= 2) {
+        // N! = N · ... · (d + 1) · d!, y d! se cancela con el del denominador
+        var num = d < N ? [sg(producto(N, d + 1) + " · "), sg(d + "!", tachar)] : [sg(N + "!", tachar)];
+        var den = [];
+        ds.forEach(function (x, j) {
+          if (j) den.push(sg(" · "));
+          den.push(sg(x + "!", tachar && j === i));
+        });
+        lineas.push(fraccion(num, den));
+        resto.splice(i, 1);
+        for (var x = N; x > d; x--) numFact.push(x);
+        if (resto.length) lineas.push(fraccion(numFact.length ? unir(numFact) : "1", denFact(resto)));
+        else lineas.push(plano(numFact.length ? unir(numFact) : "1"));
+      } else {
+        numFact = null; // nada para cancelar: se desarrolla N!
+      }
+      if (resto.length) {
+        var numTxt = numFact === null ? factorialDesarrollado(N) : numFact.length ? unir(numFact) : "1";
+        lineas.push(fraccion(numTxt, expDen(resto)));
+      }
+    }
+    var numVal = numFact === null ? factorialBig(N) : numFact.reduce(function (a, x) { return a * BigInt(x); }, 1n);
+    if (resto.length) {
+      var dv = resto.map(function (x) { return factorialBig(x); });
+      if (dv.length > 1 && dv.some(function (v) { return v > 1n; })) {
+        lineas.push(fraccion(miles(numVal), unir(dv.map(miles))));
+      }
+      if (valDen(resto) !== 1n) lineas.push(fraccion(miles(numVal), miles(valDen(resto))));
+    }
+    lineas.push(plano(miles(valor)));
+    return lineas;
+  }
+
+  // formula general, reemplazo y pasos de un calculo
+  function desarrollarComb(c, op) {
+    var res = { nombre: NOMBRES_COMB[c.tipo], simboloGral: simboloComb(c, op, true), simbolo: simboloComb(c, op) };
+    var den = function (l) { return unir(l); };
+    if (c.tipo === "P") {
+      res.general = plano("n!");
+      res.pasos = [plano(c.n + "!")].concat(resolverFactoriales(c.n, [], op.desarrollo, op.tachar));
+    } else if (c.tipo === "V") {
+      res.general = fraccion("n!", "(n − k)!");
+      res.pasos = [fraccion(c.n + "!", "(" + c.n + " − " + c.k + ")!"), fraccion(c.n + "!", (c.n - c.k) + "!")]
+        .concat(resolverFactoriales(c.n, [c.n - c.k], op.desarrollo, op.tachar));
+    } else if (c.tipo === "C") {
+      res.general = fraccion("n!", "k! · (n − k)!");
+      res.pasos = [fraccion(c.n + "!", c.k + "! · (" + c.n + " − " + c.k + ")!"),
+        fraccion(c.n + "!", den([c.k + "!", (c.n - c.k) + "!"]))]
+        .concat(resolverFactoriales(c.n, [c.k, c.n - c.k], op.desarrollo, op.tachar));
+    } else if (c.tipo === "CR") {
+      var N = c.n + c.k - 1;
+      res.general = fraccion("(n + k − 1)!", "k! · (n − 1)!");
+      res.pasos = [fraccion("(" + c.n + " + " + c.k + " − 1)!", c.k + "! · (" + c.n + " − 1)!"),
+        fraccion(N + "!", den([c.k + "!", (c.n - 1) + "!"]))]
+        .concat(resolverFactoriales(N, [c.k, c.n - 1], op.desarrollo, op.tachar));
+    } else if (c.tipo === "PR") {
+      res.general = fraccion("n!", "a! · b! · c! ···");
+      res.pasos = [fraccion(c.n + "!", den(c.reps.map(function (r) { return r + "!"; })))]
+        .concat(resolverFactoriales(c.n, c.reps, op.desarrollo, op.tachar));
+    } else { // VR
+      res.general = plano("n" + SUP.k);
+      var v = BigInt(c.n) ** BigInt(c.k);
+      res.pasos = [plano(c.n + superindice(c.k))];
+      if (c.k >= 2 && c.k <= 12) res.pasos.push(plano(unir(Array(c.k).fill(c.n))));
+      res.pasos.push(plano(miles(v)));
+    }
+    // sin renglones repetidos seguidos
+    var vistos = "";
+    res.pasos = res.pasos.filter(function (l) {
+      var k = JSON.stringify([l.num.map(function (s) { return s.t; }), l.den && l.den.map(function (s) { return s.t; })]);
+      if (k === vistos) return false;
+      vistos = k;
+      return true;
+    });
+    return res;
+  }
+
+  function generarCombinatoria(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var lh = tam * fuente.lh, y = oy, barra = op.fracciones !== "linea", sangria = Math.round(tam * 1.5);
+    var ancho = function (segs) { return medir(segs.map(function (s) { return s.t; }).join(""), tam, fuente); };
+
+    // escribe los segmentos desde (x, y), tachando los marcados
+    function segmentos(segs, x, yy, color) {
+      var txt = segs.map(function (s) { return s.t; }).join("");
+      agregar(texto(x, yy, txt, tam, fuente, color, "left"));
+      var pre = "";
+      segs.forEach(function (s) {
+        if (s.tachar) {
+          var x0 = x + medir(pre, tam, fuente), x1 = x0 + medir(s.t, tam, fuente);
+          agregar(trazo([[x0 - 2, yy + lh * 0.85], [x1 + 2, yy + lh * 0.15]], { strokeColor: COLORES[1] }));
+        }
+        pre += s.t;
+      });
+    }
+    // un renglon: devuelve { w, h, medio } (medio = altura del "=")
+    function medidas(l) {
+      if (!l.den) return { w: ancho(l.num), h: lh, medio: lh / 2 };
+      if (barra) return { w: Math.max(ancho(l.num), ancho(l.den)) + tam * 0.6, h: lh * 2 + 10, medio: lh + 5 };
+      return { w: ancho(enLinea(l)), h: lh, medio: lh / 2 };
+    }
+    function enLinea(l) {
+      var muchos = function (segs) { return / /.test(segs.map(function (s) { return s.t; }).join("")); };
+      var n = l.num.slice(), d = l.den.slice();
+      if (muchos(n)) { n.unshift(sg("(")); n.push(sg(")")); }
+      if (muchos(d)) { d.unshift(sg("(")); d.push(sg(")")); }
+      return n.concat([sg(" / ")], d);
+    }
+    function renglon(l, x, yy, color) {
+      var m = medidas(l);
+      if (!l.den) segmentos(l.num, x, yy, color);
+      else if (!barra) segmentos(enLinea(l), x, yy, color);
+      else {
+        var wn = ancho(l.num), wd = ancho(l.den);
+        segmentos(l.num, x + (m.w - wn) / 2, yy, color);
+        agregar(trazo([[x, yy + lh + 5], [x + m.w, yy + lh + 5]], { strokeColor: color }));
+        segmentos(l.den, x + (m.w - wd) / 2, yy + lh + 10, color);
+      }
+      return m;
+    }
+    // "simbolo = renglon" y debajo "= renglon" con los "=" alineados
+    function recuadrar(x, yy, m, color) {
+      var p = tam * 0.3;
+      agregar(base("rectangle", {
+        x: x - p, y: yy - p * 0.6, width: m.w + 2 * p, height: m.h + p * 1.2,
+        strokeColor: color, strokeWidth: 2, roundness: { type: 3 },
+      }));
+    }
+    function igualdad(simbolo, lineas, x, color, colorFinal) {
+      var wSim = medir(simbolo + " ", tam, fuente), wIg = medir("= ", tam, fuente);
+      if (op.disposicion === "derecha") {
+        // todo en un renglon, con los "=" a la altura de las barras de fraccion
+        var ms = lineas.map(medidas);
+        var arriba = Math.max.apply(null, ms.map(function (m) { return m.medio; }));
+        var abajo = Math.max.apply(null, ms.map(function (m) { return m.h - m.medio; }));
+        var xx = x + wSim;
+        agregar(texto(x, y + arriba - lh / 2, simbolo, tam, fuente, color, "left"));
+        lineas.forEach(function (l, i) {
+          var m = ms[i], ultimo = i === lineas.length - 1 && colorFinal, yy = y + arriba - m.medio;
+          agregar(texto(xx, y + arriba - lh / 2, "=", tam, fuente, color, "left"));
+          xx += wIg + (ultimo && op.recuadro ? tam * 0.3 : 0);
+          renglon(l, xx, yy, ultimo ? colorFinal : color);
+          if (ultimo && op.recuadro) recuadrar(xx, yy, m, colorFinal);
+          xx += m.w + wIg * 0.6;
+        });
+        y += arriba + abajo + 8;
+        return;
+      }
+      lineas.forEach(function (l, i) {
+        var m = medidas(l), yy = y, ultimo = i === lineas.length - 1 && colorFinal;
+        var c = ultimo ? colorFinal : color, xr = x + wSim + wIg + (ultimo && op.recuadro ? tam * 0.3 : 0);
+        if (!i) agregar(texto(x, y + m.medio - lh / 2, simbolo, tam, fuente, color, "left"));
+        agregar(texto(x + wSim, y + m.medio - lh / 2, "=", tam, fuente, color, "left"));
+        renglon(l, xr, yy, c);
+        if (ultimo && op.recuadro) recuadrar(xr, yy, m, colorFinal);
+        y += m.h + (l.den && barra ? 12 : 6);
+      });
+    }
+
+    op.filas.forEach(function (f) {
+      var c = leerCombinatoria(f.texto);
+      if (c.error) return;
+      var r = desarrollarComb(c, op);
+      if (op.titulos) { agregar(texto(ox, y, r.nombre, tam, fuente, f.color, "left")); y += lh + 8; }
+      var x = ox + (op.titulos ? sangria : 0);
+      if (op.formula) { igualdad(r.simboloGral, [r.general], x, TINTA); y += lh * 0.4; }
+      igualdad(r.simbolo, r.pasos, x, TINTA, op.colorResultado ? f.color : null);
+      y += lh * 1.2;
+    });
+  }
+
   // ====================================================== GENERADORES
   // Cada generador define su contenido (filas), opciones, panel y como dibujar.
   // contenido: claves que "Restablecer" no toca (lo que se grafica, no el aspecto).
@@ -3492,10 +3980,156 @@
         ui.chk("Títulos de los diagramas («Diagrama sagital»...)", "titulos");
       },
     },
+
+    estructuras: {
+      titulo: "Estructuras",
+      dibujo: "desarrollo", femenino: false,
+      clave: "pizarra-generador-estructuras",
+      defecto: {
+        filas: [{ texto: "x * y = x + y - 3", conjunto: "ℤ", color: COLORES[0] }],
+        lci: true, asociativa: true, conmutativa: false, neutro: true, inverso: true, distributiva: true,
+        tamTexto: "M", fuente: "normal", titulos: true, general: true, escribirOperacion: true,
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { texto: "x * y = 2xy", conjunto: "ℝ", color: COLORES[0] },
+          { texto: "x ∘ y = x + y", conjunto: "ℝ", color: COLORES[1] },
+        ],
+      },
+      textoEjemplo: "Inserta un desarrollo de ejemplo con dos operaciones (incluye la distributiva)",
+      agregarFila: "+ Operación",
+      placeholder: "Ej: x * y = x + y - 3",
+      extrasFila: [
+        { clave: "conjunto", etiqueta: "en", placeholder: "ℤ, ℝ, A... (vacío = A)",
+          titulo: "Conjunto donde está definida la operación",
+          errores: function () { return []; } },
+      ],
+      simbolos: [["∘", " ∘ ", "Escribe ∘"], ["△", " △ ", "Escribe △"], ["⊕", " ⊕ ", "Escribe ⊕"],
+        ["·", "·", "Producto"], ["ℕ", "ℕ", "Naturales"], ["ℤ", "ℤ", "Enteros"], ["ℚ", "ℚ", "Racionales"], ["ℝ", "ℝ", "Reales"]],
+      ayuda: "Cada fila es una operación: x * y = x + y - 3, x ∘ y = 2xy, a △ b = (a + b)/2. " +
+        "El símbolo es lo que está entre las dos variables. Para cada propiedad se escribe su definición " +
+        "y los reemplazos con la definición de la operación, paso a paso, sin resolver. " +
+        "La distributiva es de la primera operación sobre la segunda. Seleccioná un desarrollo ya insertado para editarlo.",
+      erroresFila: function (t) { var d = leerOperacion(t); return d.error ? [d.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 200 }; },
+      generar: generarEstructuras,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.chk("Ley de composición interna", "lci");
+          ui.chk("Asociatividad", "asociativa");
+          ui.chk("Conmutatividad", "conmutativa");
+          ui.chk("Existencia de elemento neutro", "neutro");
+          ui.chk("Existencia de elemento inverso", "inverso");
+          ui.chk("Distributividad de la 1.ª operación sobre la 2.ª (con dos filas)", "distributiva");
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Escribir la operación", "escribirOperacion");
+        ui.chk("Títulos de las propiedades", "titulos");
+        ui.chk("Escribir la definición general", "general");
+      },
+    },
+
+    combinatoria: {
+      titulo: "Combinatoria",
+      dibujo: "cálculo", femenino: false,
+      clave: "pizarra-generador-combinatoria",
+      defecto: {
+        filas: [{ texto: "6 V 2", color: COLORES[0] }],
+        desarrollo: "simplificar", fracciones: "barra", disposicion: "abajo", notacion: "sub", repeticion: "R",
+        tamTexto: "M", fuente: "normal", titulos: true, formula: true, tachar: true,
+        colorResultado: true, recuadro: false,
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { texto: "P 4", color: COLORES[0] },
+          { texto: "6 V 2", color: COLORES[1] },
+          { texto: "6 C 2", color: COLORES[2] },
+          { texto: "3 VR 2", color: COLORES[3] },
+          { texto: "4 CR 2", color: COLORES[4] },
+          { texto: "PR 6; 3, 2", color: COLORES[5] },
+        ],
+      },
+      textoEjemplo: "Inserta un cálculo nuevo de ejemplo con los seis tipos",
+      agregarFila: "+ Cálculo",
+      placeholder: "Ej: 6 V 2  ·  5 C 3  ·  P 4",
+      simbolos: [["P", "P ", "Permutaciones: P 5"], ["V", " V ", "Variaciones: 6 V 2"], ["C", " C ", "Combinaciones: 6 C 2"],
+        ["VR", " VR ", "Variaciones con repetición: 3 VR 2"], ["CR", " CR ", "Combinaciones con repetición: 4 CR 2"],
+        ["PR", "PR ", "Permutaciones con repetición: PR 6; 3, 2"], ["!", "!", "Factorial: 5!"]],
+      ayuda: "Cada fila es un cálculo: 6 V 2 (variaciones), 6 C 2 (combinaciones), P 5 o 5! (permutaciones), " +
+        "3 VR 2 y 4 CR 2 (con repetición, también V' y C'), PR 6; 3, 2 (permutaciones con repetición: " +
+        "n y cuántas veces se repite cada elemento). También V(6, 2), C6,2 o 6 P 2 (nPr de la calculadora). " +
+        "Se escribe la fórmula, el reemplazo con factoriales y la resolución paso a paso. " +
+        "Seleccioná un cálculo ya insertado para editarlo.",
+      erroresFila: function (t) { var c = leerCombinatoria(t); return c.error ? [c.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 200, y: cy - 150 }; },
+      generar: generarCombinatoria,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.seg("Desarrollo", "desarrollo", [["simplificar", "Simplificando"], ["completo", "Factoriales completos"]]);
+          ui.seg("Fracciones", "fracciones", [["barra", "Con barra"], ["linea", "En una línea"]]);
+          ui.seg("Pasos", "disposicion", [["abajo", "Uno debajo de otro"], ["derecha", "En un renglón"]]);
+        });
+        ui.seg("Notación", "notacion", [["sub", "V₆,₂"], ["paren", "V(6, 2)"]]);
+        ui.seg("Con repetición", "repeticion", [["R", "VR, CR, PR"], ["prima", "V', C', P'"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Nombre («Variaciones simples»...)", "titulos");
+        ui.chk("Escribir la fórmula general", "formula");
+        ui.chk("Tachar lo que se simplifica", "tachar");
+        ui.chk("Resultado en el color de la fila", "colorResultado");
+        ui.chk("Recuadrar el resultado", "recuadro");
+      },
+    },
+
+    // sin filas: se marcan las definiciones a insertar
+    plantillas: {
+      titulo: "Plantillas",
+      dibujo: "plantillas", femenino: true, plural: true, sinFilas: true,
+      clave: "pizarra-generador-plantillas",
+      defecto: Object.assign({
+        filas: [], tamTexto: "M", fuente: "normal", nombres: true, colorNombre: true,
+        notacion: "par", espaciado: false, op1: "*", op2: "+",
+      }, marcarPlantillas(["pl_reflexiva", "pl_simetrica", "pl_transitiva"])),
+      contenido: CLAVES_PLANTILLAS.concat(["filas", "op1", "op2"]),
+      ejemplo: marcarPlantillas(["pl_lci", "pl_asociativa", "pl_neutro", "pl_inverso", "pl_conmutativa"]),
+      textoEjemplo: "Inserta las definiciones de grupo abeliano (L.C.I., asociativa, neutro, inverso, conmutativa)",
+      agregarFila: "", placeholder: "", simbolos: [],
+      ayuda: "Marcá las definiciones y tocá «Insertar en el centro»: se escriben una debajo de otra, " +
+        "como texto editable. Seleccioná unas plantillas ya insertadas para cambiarlas.",
+      erroresFila: function () { return []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 100 }; },
+      generar: generarPlantillas,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          PLANTILLAS.forEach(function (g) {
+            ui.grupo(g.grupo, g.items.map(function (it) { return it.clave; }));
+            g.items.forEach(function (it) {
+              ui.chk(typeof it.nombre === "function" ? it.nombre({}) : it.nombre, it.clave);
+            });
+          });
+        });
+        ui.campos("Operadores", [
+          { clave: "op1", prefijo: "1.º", ancho: 44, titulo: "Primer operador de las estructuras algebraicas (por defecto *)" },
+          { clave: "op2", prefijo: "2.º", ancho: 44, titulo: "Segundo operador, el de la distributiva (por defecto +)" },
+        ]);
+        ui.seg("Notación de R", "notacion", [["par", "(x, y) ∈ R"], ["infija", "x R y"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Escribir el nombre de cada propiedad", "nombres");
+        ui.chk("Nombres en color", "colorNombre");
+        ui.chk("Más espacio entre renglones", "espaciado");
+      },
+    },
   };
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "boole", "conjuntos", "relaciones", "recta", "funcion"];
+  var ORDEN = ["tabla", "boole", "conjuntos", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "plantillas"];
 
   // ------------------------------------------------- insertar / reemplazar
   var vinculo = null;     // gid del dibujo que se esta editando
@@ -3662,6 +4296,10 @@
     ".pz-gen .campos input{width:56px;padding:3px 5px;border:1px solid #c9c8d1;border-radius:6px;",
     "background:transparent;color:inherit;font:inherit;flex:none}",
     ".pz-gen label.chk{display:flex;gap:6px;align-items:center;grid-column:1/3;cursor:pointer}",
+    ".pz-gen .grupo{grid-column:1/3;display:flex;gap:8px;align-items:baseline;margin-top:6px}",
+    ".pz-gen .grupo:first-child{margin-top:0}",
+    ".pz-gen .grupo .enlace{border:0;background:none;color:#6965db;cursor:pointer;padding:0;font:inherit;font-size:12px}",
+    ".pz-gen .grupo .enlace:hover{text-decoration:underline}",
     ".pz-gen .ayuda{font-size:12px;opacity:.7;margin-top:10px}",
   ].join("");
 
@@ -3787,6 +4425,8 @@
       this.el.querySelector(".restablecer").title =
         "Vuelve el aspecto a los valores predeterminados (lo que se grafica se mantiene)";
       this.el.querySelector(".ayuda").textContent = gen.ayuda;
+      this.el.querySelector(".filas").style.display = gen.sinFilas ? "none" : "";
+      sim.style.display = gen.sinFilas ? "none" : "";
       this.pintarFilas();
       this.pintarOpciones();
       this.modo();
@@ -3911,6 +4551,26 @@
           });
           destino.appendChild(s);
         },
+        // encabezado de un grupo de casillas, con "todas" y "ninguna"
+        grupo: function (txt, claves) {
+          var d = document.createElement("div");
+          d.className = "grupo";
+          var t = document.createElement("strong");
+          t.textContent = txt;
+          d.appendChild(t);
+          [["todas", true], ["ninguna", false]].forEach(function (q) {
+            var b = document.createElement("button");
+            b.className = "enlace";
+            b.textContent = q[0];
+            b.onclick = function () {
+              claves.forEach(function (k) { op[k] = q[1]; });
+              self.cambio();
+              self.pintarOpciones();
+            };
+            d.appendChild(b);
+          });
+          destino.appendChild(d);
+        },
         chk: function (txt, clave, repintar) {
           var l = document.createElement("label");
           l.className = "chk";
@@ -3983,12 +4643,13 @@
 
     modo: function () {
       if (!this.el) return;
-      var gen = this.gen(), fem = !!gen.femenino, dibujo = gen.dibujo || "gráfico";
-      this.el.querySelector(".modo").textContent = vinculo ? "editando " + (fem ? "la" : "el") +
-        " seleccionad" + (fem ? "a" : "o") : "nuevo";
+      var gen = this.gen(), fem = !!gen.femenino, dibujo = gen.dibujo || "gráfico", pl = gen.plural ? "s" : "";
+      this.el.querySelector(".modo").textContent = vinculo ? "editando " + (fem ? "la" : "el") + pl +
+        " seleccionad" + (fem ? "a" : "o") + pl : "nuevo";
       this.el.querySelector(".insertar").textContent = vinculo ? "Redibujar" : "Insertar en el centro";
       this.el.querySelector(".copia").style.display = vinculo ? "" : "none";
-      this.el.querySelector(".copia").title = "Inserta otr" + (fem ? "a " : "o ") + dibujo + " igual";
+      this.el.querySelector(".copia").title = gen.plural ? "Inserta una copia" :
+        "Inserta otr" + (fem ? "a " : "o ") + dibujo + " igual";
     },
 
     alternar: function (abrir) {
@@ -4035,7 +4696,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: tablas de verdad, álgebra de Boole, conjuntos, relaciones, recta real y gráficos de funciones";
+      b.title = "Generadores: tablas de verdad, álgebra de Boole, conjuntos, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria y plantillas";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.addEventListener("click", function () { panel.alternar(); });

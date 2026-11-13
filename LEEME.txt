@@ -387,6 +387,72 @@ RELACIONES BINARIAS (prototipo)
   una de equivalencia y una inversa), "Restablecer", y si seleccionas un
   dibujo ya insertado se edita en vivo.
 
+ESTRUCTURAS ALGEBRAICAS (prototipo)
+- En el mismo panel, arriba, elegi "Estructuras".
+- Cada fila es una operacion: dos variables, el simbolo y su definicion:
+      x * y = x + y - 3          en ℤ
+      a ⊕ b = (a + b)/2 - a^2    en ℝ
+      x ∘ y = 2xy
+  En "en" va el conjunto (vacio = A). Las letras pegadas (2xy) son
+  variables sueltas; sin, ln, sqrt, etc. se respetan.
+- Para cada propiedad marcada escribe su titulo, la definicion general y los
+  reemplazos con la definicion de la operacion, SIN resolver: en cada paso
+  reemplaza todas las operaciones de mas adentro (los operandos compuestos
+  van entre parentesis), hasta que no queda ninguna. Por ejemplo:
+      ∀x, y, z ∈ ℤ: x * (y * z) = (x * y) * z     (definicion general)
+          x * (y * z) = (x * y) * z               (expresion original)
+          x * (y + z − 3) = (x + y − 3) * z
+          x + (y + z − 3) − 3 = (x + y − 3) + z − 3
+- Propiedades: ley de composicion interna, asociatividad, conmutatividad,
+  existencia de neutro (x * e = e * x = x), de inverso
+  (x * x' = x' * x = e) y, con dos filas, distributividad de la primera
+  operacion sobre la segunda.
+- Opciones: escribir la operacion, los titulos y la definicion general;
+  tamaño de texto y fuente.
+- Igual que los otros: "Ejemplo" (dos operaciones), "Restablecer", y si
+  seleccionas un desarrollo ya insertado se edita en vivo.
+
+COMBINATORIA (prototipo)
+- En el mismo panel, arriba, elegi "Combinatoria".
+- Cada fila es un calculo:
+      6 V 2        variaciones simples          (tambien V(6, 2), V6,2, 6 P 2)
+      6 C 2        combinaciones simples        (tambien C(6, 2), C6,2)
+      P 5   o 5!   permutaciones
+      3 VR 2       variaciones con repeticion   (tambien 3 V' 2)
+      4 CR 2       combinaciones con repeticion (tambien 4 C' 2)
+      PR 6; 3, 2   permutaciones con repeticion: n y cuantas veces se
+                   repite cada elemento (o PR(3, 2, 1), con n = la suma)
+  Hasta 30! como maximo; los resultados son exactos.
+- Escribe el nombre, la formula general, el reemplazo en la formula con
+  factoriales y la resolucion paso a paso. Por ejemplo, 6 V 2:
+      V6,2 = 6! / (6 − 2)! = 6! / 4! = 6 · 5 · 4! / 4! = 6 · 5 = 30
+- Opciones: desarrollo "Simplificando" (se escribe el factorial mas grande
+  del numerador hasta el del denominador y se tacha) o "Factoriales
+  completos" (720 / 24); fracciones con barra o en una linea; pasos uno
+  debajo de otro o en un renglon; notacion V₆,₂ o V(6, 2); VR o V';
+  resultado en color y recuadrado; tamaño de texto y fuente.
+- Igual que los otros: "Ejemplo" (los seis tipos), "Restablecer", y si
+  seleccionas un calculo ya insertado se edita en vivo.
+
+PLANTILLAS
+- En el mismo panel, arriba, elegi "Plantillas".
+- Son definiciones fijas (no se cambian): marca las que quieras y toca
+  "Insertar en el centro". Se escriben una debajo de otra, como texto
+  editable, con el nombre a la izquierda y la formula alineada.
+  - Relaciones binarias: reflexiva, simetrica, transitiva, antisimetrica,
+    arreflexiva, asimetrica y atransitiva.
+  - Estructuras algebraicas: L.C.I., asociativa, elemento neutro, elemento
+    inverso, conmutativa y distributiva de * sobre +.
+  - Funciones: inyectiva, sobreyectiva, biyectiva, creciente y decreciente.
+- Cada grupo tiene "todas" y "ninguna" para marcar o desmarcar rapido.
+- Los dos operadores de las estructuras algebraicas se eligen en
+  "Operadores" (por defecto * y +), por ejemplo ∘ y △.
+- Opciones: notacion de R ("(x, y) ∈ R" o "x R y"), tamaño de texto,
+  fuente, escribir o no el nombre de la propiedad (y si va en color) y mas
+  espacio entre renglones.
+- "Ejemplo" inserta las definiciones de grupo abeliano. Si seleccionas unas
+  plantillas ya insertadas, se editan en vivo.
+
 TITULOS DE LOS GRAFICOS
 - Cada grafico que se inserta lleva su titulo arriba a la izquierda, un
   tamaño mas grande que su texto:

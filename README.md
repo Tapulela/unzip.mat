@@ -80,6 +80,29 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   sagital y grafo dirigido (con lazos y flechas curvas si están los dos
   sentidos); opcionalmente escribe dominio, imagen y propiedades (reflexiva,
   simétrica, antisimétrica, transitiva, con contraejemplos).
+  **Estructuras** define operaciones binarias por fila (`x * y = x + y - 3`,
+  con el conjunto en «en»; el símbolo es lo que está entre las dos variables)
+  y desarrolla ley de composición interna, asociatividad, conmutatividad,
+  neutro, inverso y la distributividad de la primera sobre la segunda: título,
+  definición general, la expresión original (sin cuantificadores) y los
+  reemplazos con la definición, sin resolver. En
+  cada paso se reemplazan todas las operaciones de más adentro (operandos
+  compuestos entre paréntesis), hasta que no queda ninguna.
+  **Combinatoria** resuelve un cálculo por fila (`6 V 2`, `6 C 2`, `P 5`,
+  `3 VR 2`, `4 CR 2`, `PR 6; 3, 2`): nombre, fórmula general, reemplazo con
+  factoriales y resolución paso a paso, simplificando
+  (`6 · 5 · 4! / 4!`, tachando lo que se cancela) o desarrollando los
+  factoriales completos; fracciones con barra o en una línea, pasos uno
+  debajo de otro o en un renglón (cálculos exactos con BigInt, hasta 30!).
+  **Plantillas** no se parametriza: se marcan definiciones fijas de
+  uso frecuente (relaciones binarias: reflexiva, simétrica, transitiva,
+  antisimétrica, arreflexiva, asimétrica, atransitiva; estructuras
+  algebraicas: L.C.I., asociativa, neutro, inverso, conmutativa,
+  distributiva; funciones: inyectiva, sobreyectiva, biyectiva, creciente,
+  decreciente) y se insertan como texto, una debajo de otra, con el nombre a
+  la izquierda y la fórmula alineada. La pertenencia a R se puede escribir
+  `(x, y) ∈ R` o `x R y`, y los dos operadores de las estructuras
+  algebraicas se eligen (por defecto `*` y `+`).
   Todos los gráficos llevan un título (opción «Títulos», activada por
   defecto): «Tabla de verdad», «Circuito de interruptores», «Mapa de
   Karnaugh», «Circuito lógico», «Gráfico cartesiano», «Diagrama sagital»,
