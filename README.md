@@ -19,8 +19,16 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   Requiere que el bundle exponga la API como `window.__pizarraAPI` (una línea agregada
   antes de `editorLifecycleEvents.emit("editor:mount", …)` en `App.tsx`).
 - Generadores (`app/generadores.js`, prototipo): botón al final de la barra de
-  herramientas que abre un panel para generar una recta real con intervalos
-  (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
+  herramientas que abre un menú desplegable (con las clases del menú «Más
+  herramientas», así hereda el estilo y el tema) con un ítem por generador,
+  ordenados en secciones con la unidad del programa de la materia
+  (`MENU_ORDEN`): Plantillas suelta; «Lógica proposicional (Unidad 1)»
+  (Tablas de verdad, Simplificación paso a paso); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Relaciones
+  binarias, Estructuras algebraicas, Simplificación paso a paso); «Álgebra de
+  Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, MCM y
+  MCD, Ecuaciones con valor absoluto); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
+  (Unidad 7)» (Formas y operaciones). Al elegir uno se abre el panel
+  con ese generador. Uno de ellos genera una recta real con intervalos (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
   (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
   con la sala y se puede editar. Las opciones quedan en `customData` del grupo:
   al seleccionar la recta con el panel abierto, se regenera en vivo.
@@ -44,7 +52,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (x, f(x)), simulando el graficado manual con tabla de valores. El código de las
   funciones se ejecuta en la página y viaja dentro del dibujo (`customData`) a
   las otras ventanas de la sala.
-  Un tercer generador, **Tabla de verdad**, arma tablas de verdad de expresiones
+  Un tercer generador, **Lógica proposicional**, arma tablas de verdad de expresiones
   de lógica proposicional: se elige la cantidad de variables (1 a 5) y sus
   nombres, y cada fila es una expresión (¬ ∧ ∨ ⊻ → ↔, con equivalentes en ASCII
   como `~ & | -> <->`). Agrega columnas intermedias en el orden en que se
@@ -94,19 +102,57 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (`6 · 5 · 4! / 4!`, tachando lo que se cancela) o desarrollando los
   factoriales completos; fracciones con barra o en una línea, pasos uno
   debajo de otro o en un renglón (cálculos exactos con BigInt, hasta 30!).
+  **MCM y MCD** toma una lista de números por fila (`12, 18, 30`), los
+  descompone en factores primos con la tabla de divisiones sucesivas, escribe
+  cada factorización y calcula el MCD (comunes con el menor exponente) y el
+  MCM (comunes y no comunes con el mayor exponente).
+  **Números complejos** define un número por fila en forma binómica
+  (`3 + 4i`), par ordenado (`(3, 4)`), polar (`[5; 53,13°]`, `5∠30°`) o
+  trigonométrica (`5(cos 30° + i sen 30°)`), u operaciones entre filas
+  (`z₁ · z₂`). Escribe el pasaje a las formas elegidas paso a paso (módulo con
+  `√(a² + b²)`, argumento con `arctg(b/a)` y el ajuste según el cuadrante,
+  `a = ρ · cos φ`...) y las operaciones en forma binómica (distributiva,
+  conjugado) y/o polar. Opcionalmente grafica el plano complejo: cada número
+  como vector desde el origen, el arco de su argumento φ (con la lista de
+  ángulos debajo, y φ₃ = φ₁ ± φ₂ en productos y cocientes) y el paralelogramo
+  de sumas y restas.
+  **Simplificación paso a paso** (en Lógica proposicional, Teoría de conjuntos
+  y Álgebra de Boole, cada una con su notación) usa un mismo motor de leyes:
+  definiciones (→, ↔, ⊕, −, Δ), doble negación, De Morgan, dominación,
+  identidad, idempotencia, complemento, absorción, factor común, consenso y
+  distributiva, en ese orden de preferencia. Cada renglón es la expresión
+  actual con la ley que se le aplica a la derecha, en un color; en el renglón
+  siguiente, lo que cambió va en ese color (el motor marca el subárbol que
+  reemplaza cada ley y la escritura sale en tramos marcados o no). Nombres de
+  las leyes: «Ley de De Morgan», «Ley de involución», «Inversa distributiva
+  (factor común)», «Ley de complemento», «Ley de identidad», etc. Cada paso se verifica con la tabla de verdad. Aclara que es solo un
+  ejemplo y que puede haber simplificaciones más cortas. El consenso se aplica
+  solo si acorta (quita un término o agrega uno que absorbe a otro) y se
+  escribe en un paso o desarrollado con leyes básicas (identidad,
+  complemento, distributiva, absorción); eso se elige en «Configuración
+  avanzada», una sección plegable del panel (`ui.avanzado`).
   **Plantillas** no se parametriza: se marcan definiciones fijas de
   uso frecuente (relaciones binarias: reflexiva, simétrica, transitiva,
   antisimétrica, arreflexiva, asimétrica, atransitiva; estructuras
   algebraicas: L.C.I., asociativa, neutro, inverso, conmutativa,
   distributiva; funciones: inyectiva, sobreyectiva, biyectiva, creciente,
-  decreciente) y se insertan como texto, una debajo de otra, con el nombre a
+  decreciente, las que nombran A o B como doble implicación
+  `f: A → B es ... ↔ ...`; sucesiones aritméticas y geométricas: definición,
+  término general, término n conociendo aₖ, suma de los n primeros, distancia
+  y razón (una fórmula escrita como `r = √[n−1](aₙ / a₁)` se dibuja con la
+  raíz como línea, el índice como texto aparte y el radicando como fracción);
+  combinatoria: las fórmulas de permutaciones, variaciones y
+  combinaciones, simples y con repetición) y se insertan como texto, una debajo de otra, con el nombre a
   la izquierda y la fórmula alineada. La pertenencia a R se puede escribir
   `(x, y) ∈ R` o `x R y`, y los dos operadores de las estructuras
-  algebraicas se eligen (por defecto `*` y `+`).
+  algebraicas se eligen (por defecto `*` y `+`); las de combinatoria con
+  repetición se escriben `VR` o `V'`.
   Todos los gráficos llevan un título (opción «Títulos», activada por
   defecto): «Tabla de verdad», «Circuito de interruptores», «Mapa de
   Karnaugh», «Circuito lógico», «Gráfico cartesiano», «Diagrama sagital»,
-  «Grafo dirigido», «Recta real» y «Gráfico de funciones».
+  «Grafo dirigido», «Recta real» y «Gráfico de funciones». Los circuitos de
+  la expresión simplificada lo aclaran: «Circuito de interruptores
+  (simplificado)», «Circuito lógico (simplificado)».
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.

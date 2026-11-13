@@ -63,7 +63,28 @@ SI ACTUALIZAS A UNA VERSION NUEVA
 
 RECTA REAL CON INTERVALOS (prototipo)
 - Boton de la recta con corchetes, al final de la barra de herramientas:
-  abre un panel a la derecha.
+  abre un menu desplegable (como el de los puntos suspensivos) con todos los
+  generadores, ordenados por secciones con la unidad del programa de la
+  materia:
+      Plantillas
+      Logica proposicional (Unidad 1):  Tablas de verdad, Simplificacion
+                                        paso a paso
+      Teoria de conjuntos (Unidad 2):   Conjuntos, Relaciones binarias,
+                                        Estructuras algebraicas,
+                                        Simplificacion paso a paso
+      Algebra de Boole (Unidad 3):      Funciones booleanas, Simplificacion
+                                        paso a paso
+      Sistemas numericos (Unidad 5):    Recta real, Combinatoria, MCM y MCD,
+                                        Ecuaciones con valor absoluto
+      Funciones (Unidad 6):             Grafico de funciones
+      Numeros complejos (Unidad 7):     Formas y operaciones
+  Al elegir uno se abre el panel a la derecha con ese generador (su nombre
+  queda arriba del panel; en las secciones de un solo generador, el de la
+  seccion: "Logica proposicional", "Algebra de Boole", "Numeros
+  complejos"). Para cambiar de
+  generador, volve a tocar el boton y elegi otro. Se cierra con Escape o
+  tocando afuera; tambien se puede recorrer con las flechas.
+- Para la recta, elegi "Recta real" (en "Sistemas numericos") en el menu.
 - Escribi un intervalo por fila, por ejemplo (-2, 1/2] o [1, ∞). Acepta
   fracciones, π, √ y potencias: (π/2, √2+1]. Para ∞ podes escribir inf o
   usar el boton ∞. Varios en una fila: (1,2) ∪ [3,4]. Si usas decimales con
@@ -108,7 +129,7 @@ RECTA REAL CON INTERVALOS (prototipo)
   intervalos que escribiste.
 
 GRAFICOS DE FUNCIONES (prototipo)
-- En el mismo panel, arriba, elegi "Funciones" (en vez de "Recta real").
+- En el menu del boton, en "Funciones", elegi "Grafico de funciones".
 - Cada fila es una funcion anonima de JavaScript, con su color:
       x => x**2 - 3
       x => sqrt(x)
@@ -154,7 +175,7 @@ GRAFICOS DE FUNCIONES (prototipo)
   derecha con f(x) = ..., g(x) = ... en el color de cada curva).
 - Igual que la recta: "Insertar en el centro", "Ejemplo", "Restablecer", y si
   seleccionas un grafico ya insertado con el panel abierto, se edita en vivo.
-  El panel cambia solo a "Recta real" o "Funciones" segun lo que selecciones.
+  El panel cambia solo al generador de lo que selecciones.
 - Al animar, aparece en este orden: los dos ejes, la cuadricula, la
   numeracion, y despues cada funcion (su linea en la referencia, sus puntos
   marcados en el orden en que los escribiste y su curva de izquierda a
@@ -163,8 +184,8 @@ GRAFICOS DE FUNCIONES (prototipo)
   Una funcion que no termina nunca (por ejemplo un while infinito) cuelga la
   pestaña.
 
-TABLAS DE VERDAD (prototipo)
-- En el mismo panel, arriba, elegi "Tabla de verdad".
+LOGICA PROPOSICIONAL: TABLAS DE VERDAD (prototipo)
+- En el menu del boton, en "Logica proposicional", elegi "Tablas de verdad".
 - "Variables": cuantas variables tiene la tabla (1 a 5). "Nombres": como se
   llaman, en orden (p, q, r, s, t por defecto). Si escribis menos nombres que
   variables, se completan con p, q, r...
@@ -230,7 +251,7 @@ TABLAS DE VERDAD (prototipo)
   y despues los valores columna por columna, de izquierda a derecha.
 
 ALGEBRA DE BOOLE (prototipo)
-- En el mismo panel, arriba, elegi "Algebra de Boole".
+- En el menu del boton, en "Algebra de Boole", elegi "Funciones booleanas".
 - "Variables" y "Nombres" como en la tabla de verdad (A, B, C, D, E por
   defecto). Cada fila es una funcion (F, G, H...), escrita de dos formas:
   1. Como expresion de Boole:
@@ -281,7 +302,7 @@ ALGEBRA DE BOOLE (prototipo)
   si seleccionas un dibujo ya insertado se edita en vivo.
 
 CONJUNTOS (prototipo)
-- En el mismo panel, arriba, elegi "Conjuntos".
+- En el menu del boton, en "Teoria de conjuntos", elegi "Conjuntos".
 - "Universo": Finito (escribis sus elementos en "U =") o ℕ, ℤ, ℚ, ℝ.
   Un universo finito se escribe como un conjunto por extension, con o sin
   llaves: 1, 2, ..., 10 / 1..100 / a, e, i, o, u / 2, 4, ..., 20.
@@ -348,7 +369,7 @@ CONJUNTOS (prototipo)
   el navegador.
 
 RELACIONES BINARIAS (prototipo)
-- En el mismo panel, arriba, elegi "Relaciones".
+- En el menu del boton, en "Teoria de conjuntos", elegi "Relaciones binarias".
 - Cada fila es un conjunto (finito) o una relacion, con su nombre y color.
   Debajo de cada fila esta el campo "⊆", que dice de donde se toman los
   elementos.
@@ -388,7 +409,8 @@ RELACIONES BINARIAS (prototipo)
   dibujo ya insertado se edita en vivo.
 
 ESTRUCTURAS ALGEBRAICAS (prototipo)
-- En el mismo panel, arriba, elegi "Estructuras".
+- En el menu del boton, en "Teoria de conjuntos", elegi "Estructuras
+  algebraicas".
 - Cada fila es una operacion: dos variables, el simbolo y su definicion:
       x * y = x + y - 3          en ℤ
       a ⊕ b = (a + b)/2 - a^2    en ℝ
@@ -413,7 +435,7 @@ ESTRUCTURAS ALGEBRAICAS (prototipo)
   seleccionas un desarrollo ya insertado se edita en vivo.
 
 COMBINATORIA (prototipo)
-- En el mismo panel, arriba, elegi "Combinatoria".
+- En el menu del boton, en "Sistemas numericos", elegi "Combinatoria".
 - Cada fila es un calculo:
       6 V 2        variaciones simples          (tambien V(6, 2), V6,2, 6 P 2)
       6 C 2        combinaciones simples        (tambien C(6, 2), C6,2)
@@ -434,8 +456,153 @@ COMBINATORIA (prototipo)
 - Igual que los otros: "Ejemplo" (los seis tipos), "Restablecer", y si
   seleccionas un calculo ya insertado se edita en vivo.
 
+MCM Y MCD (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "MCM y MCD".
+- Cada fila es una lista de 2 a 6 numeros naturales separados por coma:
+      12, 18, 30
+- Escribe la tabla de divisiones sucesivas de cada numero (el numero a la
+  izquierda de la linea y el primo por el que se divide a la derecha), la
+  factorizacion de cada uno (12 = 2² · 3) y despues:
+      MCD(12, 18, 30) = 2 · 3 = 6            comunes con el menor exponente
+      MCM(12, 18, 30) = 2² · 3² · 5 = 180    comunes y no comunes con el
+                                             mayor exponente
+  Si no hay factores primos comunes, lo dice y el MCD es 1.
+- Opciones: calcular el MCM, el MCD o los dos; tablas de divisiones;
+  notacion MCM / MCD o m.c.m. / m.c.d.; producto 2 · 3 o 2 × 3; escribir la
+  regla; titulo; resultado en color y recuadrado; tamaño de texto y fuente.
+- Igual que los otros: "Ejemplo" (tres listas), "Restablecer", y si
+  seleccionas un calculo ya insertado se edita en vivo.
+
+ECUACIONES CON VALOR ABSOLUTO (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Ecuaciones con
+  valor absoluto".
+- No resuelve la ecuacion: arma la plantilla para resolverla en clase.
+  Cada fila es una ecuacion (o inecuacion) con valor absoluto:
+      |x + 7/4| = 9/4
+  Se escribe la ecuacion con una llave debajo; de la llave baja una linea
+  que se abre en los dos casos del valor absoluto de MAS A LA IZQUIERDA,
+  cada uno con una flecha hasta la ecuacion de ese caso:
+      x + 7/4 ≥ 0  ---->  x + 7/4 = 9/4
+      x + 7/4 < 0  ---->  −(x + 7/4) = 9/4
+  Debajo de cada caso queda espacio en blanco para resolverlo paso a paso
+  ("Espacio para resolver": renglones por caso, 4 por defecto). Los "=" de
+  los dos casos quedan alineados.
+- Si hay otros valores absolutos, quedan como estan en los dos casos
+  (|x − 1| = |2x + 3| se abre solo en |x − 1|).
+- Se agregan parentesis cuando hacen falta: 2|x − 1| = 4 queda 2(x − 1) = 4
+  y 2[−(x − 1)] = 4.
+- "Casos": E ≥ 0 y E < 0 (por defecto) o E > 0 y E ≤ 0.
+- Se puede escribir - o −, * o ·, <= y >=, x^2.
+- Opciones: tamaño de texto, fuente y llave y flechas en el color de la
+  fila (o en negro).
+- Igual que los otros: "Ejemplo", "Restablecer", y si seleccionas una
+  plantilla ya insertada se edita en vivo.
+
+NUMEROS COMPLEJOS (prototipo)
+- En el menu del boton, en "Numeros complejos", elegi "Formas y operaciones".
+- Cada fila tiene un nombre (z₁, z₂...) y un numero complejo en cualquier
+  forma:
+      binomica         3 + 4i     -2i     1/2 + √3/2 i
+      par ordenado     (3, 4)     con decimales con coma: (0,5; 2)
+      polar            [5; 53,13°]    [2; π/4]    5∠30°
+      trigonometrica   5(cos 30° + i sen 30°)    2(cos(π/4) + i sin(π/4))
+  Los angulos con ° van en grados; sin °, en radianes (admiten π).
+- O una operacion entre filas de arriba: z₁ + z₂, z₁ − z₂, z₁ · z₂, z₁ / z₂
+  (tambien se puede escribir z1 en vez de z₁).
+- Para cada numero escribe el pasaje a las formas marcadas, paso a paso,
+  con un paso por renglon y los "=" alineados:
+      ρ = |z| = √(a² + b²)
+              = √((−3)² + 4²)
+              = √(9 + 16)
+              = √25
+              = 5
+      El numero complejo z₁ esta en el 2.º cuadrante porque a < 0 y b > 0,
+      por lo tanto, su angulo es: φ = arctg(b/a) + 180°
+      φ = arctg(4/(−3)) + 180°
+        = arctg(−4/3) + 180°
+        ≈ −53,13° + 180°
+        ≈ 126,87°
+  Y al reves: a = ρ · cos φ = 2 · cos 60° = 2 · 0,5 = 1 (tambien un paso
+  por renglon). Sobre los ejes (a = 0 o b = 0) explica en cual esta y da el
+  angulo directamente, sin arctg. Usa ≈ cuando hay redondeo.
+- Las operaciones se escriben en varios renglones con los "=" alineados:
+  suma y resta en forma binomica; producto y cociente en binomica (con la
+  distributiva e i² = −1, o multiplicando por el conjugado), en polar
+  ([ρ₁ · ρ₂; φ₁ + φ₂]) o en las dos. El resultado se puede pasar a las otras
+  formas.
+- "Graficar en el plano complejo" (activado por defecto) dibuja, a la
+  derecha o abajo, los ejes Re e Im con su cuadricula y cada numero como un
+  vector desde el origen en el color de su fila, con su valor en la punta
+  (z₁ = −3 + 4i) y el arco de su angulo desde el semieje real positivo
+  (φ₁). Debajo del grafico va la lista de los angulos con su valor
+  (φ₁ ≈ 126,87°); en productos y cocientes dice como se obtiene
+  (φ₃ = φ₁ + φ₂ ≈ 180°). En sumas y restas dibuja el paralelogramo con
+  lineas de trazos (en las restas, tambien el vector −z₂). Opciones del
+  grafico: angulos, paralelogramo, cuadricula, tamaño, ubicacion y "Solo el
+  grafico" (sin los pasos).
+- Opciones: formas a escribir (binomica, par ordenado, polar,
+  trigonometrica), producto y cociente en binomica / polar / ambas, angulos
+  en grados o radianes, argumento entre 0 y 360° o entre −180° y 180°,
+  decimales (2 a 4), notacion polar [ρ; φ] o ρ∠φ, titulos de los pasos,
+  resultado en color, tamaño de texto y fuente.
+- Igual que los otros: "Ejemplo", "Restablecer", y si seleccionas un
+  calculo ya insertado se edita en vivo.
+
+SIMPLIFICACION PASO A PASO (prototipo)
+- Esta en tres secciones del menu, cada una con su notacion: "Logica
+  proposicional" (p, q, r con ¬ ∧ ∨ → ↔ ⊻, constantes V y F), "Teoria de
+  conjuntos" (A, B, C con ∪ ∩ − Δ y complemento A'; U universal, ∅ vacio)
+  y "Algebra de Boole" (A, B, C con +, AB o A·B, A', ⊕, constantes 0 y 1;
+  cada funcion con su nombre F, G...).
+- Cada fila es una expresion. Cada renglon es la expresion actual y, a la
+  derecha, la ley que se le aplica para llegar al renglon siguiente:
+      ¬(p → q) ∨ (p ∧ q)         Definicion del condicional
+      ≡ ¬(¬p ∨ q) ∨ (p ∧ q)      Ley de De Morgan
+      ≡ (¬¬p ∧ ¬q) ∨ (p ∧ q)     Ley de involucion
+      ≡ (p ∧ ¬q) ∨ (p ∧ q)       Inversa distributiva (factor comun)
+      ≡ p ∧ (¬q ∨ q)             Ley de complemento
+      ≡ p ∧ V                    Ley de identidad
+      ≡ p
+- Colores: cada ley va en un color (se repiten si hay muchos pasos) y, en
+  el renglon siguiente, la parte que esa ley cambio va en el mismo color;
+  el resto queda en el color predeterminado. Si la ley solo quita un
+  termino (absorcion, idempotencia), no hay nada nuevo que pintar.
+- Leyes: definiciones (condicional, bicondicional, disyuncion excluyente o
+  ⊕, diferencia, diferencia simetrica), Ley de involucion (doble
+  negacion), Ley de De Morgan, negacion de constantes, Ley de dominacion
+  (Ley de acotacion en Boole), Ley de identidad, Ley de idempotencia, Ley de
+  complemento, Ley de absorcion, Ley de consenso, Ley distributiva e Inversa
+  distributiva (factor comun). La conmutativa y la asociativa se usan sin
+  escribirlas.
+- Consenso: AB + A'C + BC = AB + A'C (y su dual). Se usa solo si acorta la
+  expresion: cuando un tercer termino contiene al consenso (se quita) o
+  cuando agregar el consenso absorbe a otro termino
+  (A'C + AB'C = A'C + AB'C + B'C = A'C + B'C). En "Configuracion avanzada"
+  (seccion plegable al final de las opciones) se elige como se escribe:
+    - En un paso: AB + A'C + BC       Ley de consenso
+                  = AB + A'C
+    - Desarrollada, con leyes basicas:
+          AB + A'C + BC                   Ley de identidad
+          = AB + A'C + BC·1               Ley de complemento
+          = AB + A'C + BC(A + A')         Ley distributiva
+          = AB + A'C + ABC + A'BC         Ley de absorcion
+          = AB + A'C + A'BC               Ley de absorcion
+          = AB + A'C
+    - No usar.
+- Debajo de cada simplificacion aclara: "Es solo un ejemplo de como
+  simplificar: puede haber simplificaciones mas cortas o con otros pasos."
+  Sigue un orden fijo de leyes (primero las definiciones, despues las
+  negaciones, despues las simplificaciones, despues factor comun y por
+  ultimo la distributiva), asi que no siempre llega a la forma minima.
+- Cada paso se comprueba con la tabla de verdad: siempre es equivalente a
+  la expresion original. Hasta 8 variables.
+- Opciones: titulo, escribir la ley de cada paso, colores por paso,
+  aclaracion, tamaño de texto y fuente; en "Configuracion avanzada", la ley
+  de consenso (en un paso, desarrollada o no usar). "Ejemplo" inserta tres
+  expresiones; si seleccionas un desarrollo ya insertado se edita en vivo.
+
 PLANTILLAS
-- En el mismo panel, arriba, elegi "Plantillas".
+- En el menu del boton, elegi "Plantillas".
 - Son definiciones fijas (no se cambian): marca las que quieras y toca
   "Insertar en el centro". Se escriben una debajo de otra, como texto
   editable, con el nombre a la izquierda y la formula alineada.
@@ -444,9 +611,25 @@ PLANTILLAS
   - Estructuras algebraicas: L.C.I., asociativa, elemento neutro, elemento
     inverso, conmutativa y distributiva de * sobre +.
   - Funciones: inyectiva, sobreyectiva, biyectiva, creciente y decreciente.
+    Las que nombran el dominio A o el codominio B se escriben como doble
+    implicacion: f: A → B es sobreyectiva ↔ ∀y ∈ B, ∃x ∈ A / f(x) = y.
+  - Sucesion aritmetica: definicion (aₙ₊₁ = aₙ + d), termino general
+    aₖ = a₁ + (k − 1)d, termino n conociendo aₖ, suma de los n primeros
+    Sₙ = n(a₁ + aₙ) / 2 y la distancia d (con a₁ y aₙ, o con aₖ y aₙ).
+  - Sucesion geometrica: definicion (aₙ₊₁ = aₙ × r), termino general
+    aₖ = a₁ × rᵏ⁻¹, termino n conociendo aₖ, suma Sₙ = a₁(rⁿ − 1) / (r − 1)
+    y la razon r (con a₁ y aₙ, o con aₘ y aₙ). En las de la razon la raiz
+    se dibuja con una linea, con el indice (n−1, n−m) como texto aparte, mas
+    chico y arriba del gancho, y el radicando como fraccion con barra.
+    En la pizarra, los nombres que se repiten en las dos llevan el tipo:
+    "Termino general (aritmetica)".
+  - Combinatoria: las formulas del generador de combinatoria (Pn = n!,
+    Vn,k = n! / (n − k)!, Cn,k, VRn,k, CRn,k y PRn(a, b, c)).
 - Cada grupo tiene "todas" y "ninguna" para marcar o desmarcar rapido.
 - Los dos operadores de las estructuras algebraicas se eligen en
   "Operadores" (por defecto * y +), por ejemplo ∘ y △.
+- En "Con repeticion" se elige si las de combinatoria se escriben VR, CR,
+  PR o V', C', P'.
 - Opciones: notacion de R ("(x, y) ∈ R" o "x R y"), tamaño de texto,
   fuente, escribir o no el nombre de la propiedad (y si va en color) y mas
   espacio entre renglones.
@@ -456,10 +639,13 @@ PLANTILLAS
 TITULOS DE LOS GRAFICOS
 - Cada grafico que se inserta lleva su titulo arriba a la izquierda, un
   tamaño mas grande que su texto:
-  - Tabla de verdad: "Tabla de verdad" y "Circuito de interruptores".
+  - Logica proposicional: "Tabla de verdad" y "Circuito de interruptores"
+    ("Circuito de interruptores (simplificado)" si es el de la expresion
+    simplificada).
   - Algebra de Boole: "Tabla de verdad", "Mapa de Karnaugh (miniterminos)"
-    o "(maxiterminos)" y "Circuito logico" (si se dibujan los dos, con
-    "(expresion escrita)" y "(simplificada)").
+    o "(maxiterminos)" y "Circuito logico" ("Circuito logico
+    (simplificado)" si es el de la simplificada; si se dibujan los dos, el
+    otro dice "(expresion escrita)").
   - Relaciones: "Grafico cartesiano", "Diagrama sagital" y "Grafo dirigido"
     sobre cada diagrama.
   - Recta real: "Recta real". Funciones: "Grafico de funciones".
