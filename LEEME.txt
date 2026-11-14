@@ -466,8 +466,10 @@ RELACIONES BINARIAS (prototipo)
   por comprension: R = {(x, y) ∈ A × A / x < y} = {...}), dominio e imagen,
   y propiedades de las relaciones en A × A: reflexiva, simetrica,
   antisimetrica y transitiva, con un contraejemplo cuando no se cumple
-  ("R no es simetrica: (1, 2) ∈ R y (2, 1) ∉ R"), y si es de equivalencia
-  o de orden.
+  ("R no es simetrica: (1, 2) ∈ R y (2, 1) ∉ R"), si es de equivalencia,
+  y si es de orden amplio (reflexiva, transitiva y antisimetrica) o de
+  orden estricto (arreflexiva, asimetrica y transitiva), siempre con la
+  justificacion ("R no es de orden amplio dado que no es reflexiva").
 - Hasta 2500 pares por producto cartesiano.
 - Igual que los otros: "Insertar en el centro", "Ejemplo" (tres relaciones,
   una de equivalencia y una inversa), "Restablecer", y si seleccionas un

@@ -3029,7 +3029,20 @@
       textoPar(noTra[1][0], noTra[1][1]) + " ∈ " + n + " y " + textoPar(noTra[0][0], noTra[1][1]) + " ∉ " + n
       : n + " es transitiva");
     if (!noRef && !noSim && !noTra) res.push(n + " es una relación de equivalencia");
-    if (!noRef && !noAnti && !noTra) res.push(n + " es una relación de orden");
+    // orden amplio (reflexiva, transitiva, antisimetrica) y estricto
+    // (arreflexiva, asimetrica, transitiva), con la justificacion
+    var noArref = A.filter(function (a) { return R.tiene(a, a); })[0];
+    var noAsim = P.filter(function (p) { return R.tiene(p[1], p[0]); })[0];
+    function clasificarOrden(tipo, props) {
+      var faltan = props.filter(function (p) { return !p[1]; }).map(function (p) { return p[0]; });
+      var todas = props.map(function (p) { return p[0]; });
+      function lista(xs, conj) { return xs.length > 1 ? xs.slice(0, -1).join(", ") + " " + conj + " " + xs[xs.length - 1] : xs[0]; }
+        res.push(faltan.length
+          ? n + " no es de orden " + tipo + " dado que no es " + lista(faltan, "ni")
+          : n + " es de orden " + tipo + " dado que es " + lista(todas, "y"));
+    }
+    clasificarOrden("amplio", [["reflexiva", !noRef], ["transitiva", !noTra], ["antisimétrica", !noAnti]]);
+    clasificarOrden("estricto", [["arreflexiva", !noArref], ["asimétrica", !noAsim], ["transitiva", !noTra]]);
     if (detalle) return { res: res, noRef: noRef, noSim: noSim, noAnti: noAnti, noTra: noTra };
     return res;
   }
