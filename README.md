@@ -23,6 +23,24 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   `assets/mermaid-to-excalidraw-*.js`. Si se recompila, hay que compilar con
   `base: "./"` y conservar estos cambios.
 - `?sinpuntero` en la URL oculta el puntero del colaborador (útil para grabar con OBS).
+- Compresión de PNG (`app/compresion.js`): al exportar como PNG o copiar como PNG, la
+  imagen se guarda con paleta de colores (PNG indexado). Como pngquant / iLoveIMG, se usa
+  la paleta más chica (desde 4 colores) cuyo error medio no pase `RMSE_OBJETIVO`, sin
+  que ningún color visible cambie más de `ERROR_COLOR_MAX`. Si ni con 256 colores
+  alcanza (por ejemplo, con fotos pegadas), se usa el PNG original. Se activa o
+  desactiva en menú principal → Preferencias → «Comprimir imágenes PNG» (activada por
+  defecto). Requiere dos cambios en el build (`assets/index-*.js`): en la exportación
+  a PNG y a portapapeles, `u5(d)` pasa a ser
+  `window.__pizarraPng?window.__pizarraPng(d,u5):u5(d)`, y el interruptor se agrega
+  como otro `OPS` en el submenú Preferencias.
+  Como el navegador vuelve a codificar lo que copia al portapapeles (y se pierde la
+  compresión), con el servidor local en Windows «Copiar como PNG» manda el PNG comprimido
+  a `servidor.js` (`POST /portapapeles`), que lo guarda en `%TEMP%\unzip.mat` (se borra a
+  las 24 h) y con PowerShell lo pone en el portapapeles a la vez como archivo, como
+  formato `PNG` (los bytes comprimidos) y como imagen común (sobre fondo blanco). Para eso
+  la rama de portapapeles del build empieza con
+  `if(window.__pizarraCopiarPng&&await window.__pizarraCopiarPng(d,u5))return;`. Si el
+  servidor no responde, o en la versión online, se copia como siempre.
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite

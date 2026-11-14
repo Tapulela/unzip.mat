@@ -3,12 +3,16 @@
 //  (Los interruptores estan en el menu principal -> Preferencias, dentro del bundle.)
 //  - window.__ocultarPunteros: no dibuja los cursores de otros colaboradores
 //    (la URL con ?sinpuntero sigue forzando este ocultamiento).
+//  - window.__comprimirPng: comprime los PNG al exportar o copiar (compresion.js).
 (function () {
   var OPCIONES = [
     { clave: "pizarra-ocultar-seleccion-remota", bandera: "__ocultarSeleccionRemota",
       texto: "Ocultar selección de colaboradores", defecto: true },
     { clave: "pizarra-ocultar-punteros", bandera: "__ocultarPunteros",
       texto: "Ocultar cursores de colaboradores", defecto: true },
+    // Ver compresion.js: guarda los PNG exportados/copiados con paleta de colores.
+    { clave: "pizarra-comprimir-png", bandera: "__comprimirPng",
+      texto: "Comprimir imágenes PNG", defecto: true },
   ];
 
   OPCIONES.forEach(function (o) {

@@ -7,6 +7,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
+const os = require("os");
 const crypto = require("crypto");
 const { spawn } = require("child_process");
 const { Server } = require("socket.io");
@@ -104,7 +105,111 @@ const manejarArchivo = (req, res, clave) => {
   res.end(datos);
 };
 
+// Portapapeles de Windows (app/compresion.js): el navegador vuelve a codificar las
+// imagenes que copia (y pierde la compresion), asi que "Copiar como PNG" manda el PNG
+// comprimido aca. Se guarda en una carpeta temporal y se pone en el portapapeles a la
+// vez como archivo (lo pegan tal cual WhatsApp, el correo, el Explorador...), como
+// "PNG" (los bytes comprimidos) y como imagen comun (Paint y similares; sobre fondo
+// blanco, porque ese formato no tiene transparencia).
+const CARPETA_PORTAPAPELES = path.join(os.tmpdir(), "unzip.mat");
+const MAX_PNG = 50 * 1024 * 1024;
+const SCRIPT_PORTAPAPELES = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+$ruta = $env:UNZIPMAT_PNG
+$bytes = [IO.File]::ReadAllBytes($ruta)
+$d = New-Object System.Windows.Forms.DataObject
+$lista = New-Object System.Collections.Specialized.StringCollection
+[void]$lista.Add($ruta)
+$d.SetFileDropList($lista)
+$d.SetData('Preferred DropEffect', (New-Object IO.MemoryStream(,[byte[]](1,0,0,0))))
+$d.SetData('PNG', (New-Object IO.MemoryStream(,$bytes)))
+$img = [Drawing.Image]::FromStream((New-Object IO.MemoryStream(,$bytes)))
+$bmp = New-Object Drawing.Bitmap($img.Width, $img.Height)
+$g = [Drawing.Graphics]::FromImage($bmp)
+$g.Clear([Drawing.Color]::White)
+$g.DrawImage($img, (New-Object Drawing.Rectangle(0, 0, $img.Width, $img.Height)))
+$g.Dispose()
+$d.SetImage($bmp)
+[Windows.Forms.Clipboard]::SetDataObject($d, $true, 10, 100)
+`;
+
+const limpiarTemporales = () => {
+  fs.readdir(CARPETA_PORTAPAPELES, (err, nombres) => {
+    if (err) return;
+    const limite = Date.now() - 24 * 3600 * 1000;
+    for (const n of nombres) {
+      const f = path.join(CARPETA_PORTAPAPELES, n);
+      fs.stat(f, (e, st) => {
+        if (!e && st.mtimeMs < limite) fs.unlink(f, () => {});
+      });
+    }
+  });
+};
+
+const copiarAlPortapapeles = (req, res) => {
+  const fallar = (codigo, msg) => {
+    if (res.writableEnded) return;
+    res.writeHead(codigo, { "Content-Type": TYPES[".txt"] });
+    res.end(msg || "");
+  };
+  if (process.platform !== "win32") return fallar(501, "solo Windows");
+  // Solo la propia pizarra: el encabezado propio obliga a los otros sitios a pedir
+  // permiso (CORS) y este servidor no lo da.
+  const origen = req.headers.origin;
+  if (req.method !== "POST" || req.headers["x-unzipmat"] !== "1" ||
+      (origen && origen !== `http://${req.headers.host}`)) {
+    return fallar(403);
+  }
+  const partes = [];
+  let total = 0;
+  req.on("data", (c) => {
+    total += c.length;
+    if (total > MAX_PNG) {
+      fallar(413);
+      req.destroy();
+      return;
+    }
+    partes.push(c);
+  });
+  req.on("end", () => {
+    if (res.writableEnded) return;
+    const png = Buffer.concat(partes);
+    if (png.length < 8 || png.readUInt32BE(0) !== 0x89504e47) return fallar(400, "no es PNG");
+    const d = new Date();
+    const dos = (n) => String(n).padStart(2, "0");
+    const nombre = `pizarra ${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())} ` +
+      `${dos(d.getHours())}.${dos(d.getMinutes())}.${dos(d.getSeconds())}.png`;
+    fs.mkdir(CARPETA_PORTAPAPELES, { recursive: true }, () => {
+      const ruta = path.join(CARPETA_PORTAPAPELES, nombre);
+      fs.writeFile(ruta, png, (err) => {
+        if (err) return fallar(500, err.message);
+        limpiarTemporales();
+        const ps = spawn(
+          "powershell.exe",
+          ["-NoProfile", "-NonInteractive", "-STA", "-ExecutionPolicy", "Bypass",
+           "-Command", "-"],
+          { env: { ...process.env, UNZIPMAT_PNG: ruta }, windowsHide: true,
+            stdio: ["pipe", "ignore", "pipe"] },
+        );
+        let error = "";
+        ps.stderr.on("data", (c) => (error += c));
+        ps.on("error", (e) => fallar(500, e.message));
+        ps.on("close", (codigo) => {
+          if (codigo === 0) {
+            res.writeHead(200, { "Content-Type": TYPES[".txt"] });
+            return res.end("ok");
+          }
+          fallar(500, error.trim());
+        });
+        ps.stdin.end(SCRIPT_PORTAPAPELES);
+      });
+    });
+  });
+};
+
 const server = http.createServer((req, res) => {
+  if (req.url === "/portapapeles") return copiarAlPortapapeles(req, res);
   if (req.url.startsWith("/archivos/")) {
     return manejarArchivo(req, res, req.url.split("?")[0]);
   }
