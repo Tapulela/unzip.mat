@@ -46,6 +46,35 @@ window.PIZARRA_SIN_SERVIDOR = true;
         if (/colaboraci|collaborat/i.test(items[i].textContent)) items[i].style.display = "none";
       }
     }).observe(document.documentElement, { childList: true, subtree: true });
+
+    // Menú principal: ítem para descargar la versión de Windows (unzip.mat.exe,
+    // armado por .github/workflows/exe.yml). Solo en la versión online: con
+    // servidor local (o dentro del .exe) PIZARRA_SIN_SERVIDOR es false.
+    var URL_EXE = "https://github.com/Tapulela/unzip.mat/releases/latest/download/unzip.mat.exe";
+    var ICONO_DESCARGA =
+      '<svg aria-hidden="true" focusable="false" role="img" viewBox="0 0 20 20" fill="none" ' +
+      'stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M10 3.333v9.167M6.25 8.75 10 12.5l3.75-3.75M3.333 14.167v1.666c0 .46.373.834.834.834h11.666c.46 0 .834-.373.834-.834v-1.666"/></svg>';
+    new MutationObserver(function () {
+      var menu = document.querySelector(".main-menu");
+      if (!menu || menu.querySelector("[data-pizarra-descarga]")) return;
+      var a = document.createElement("a");
+      a.className = "dropdown-menu-item dropdown-menu-item-base";
+      a.setAttribute("data-pizarra-descarga", "");
+      a.setAttribute("role", "menuitem");
+      a.href = URL_EXE;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.title = "Un solo archivo para Windows: doble clic y listo, sin instalar nada y sin internet. Incluye la colaboración entre ventanas.";
+      a.innerHTML =
+        '<div class="dropdown-menu-item__icon">' + ICONO_DESCARGA + "</div>" +
+        '<div class="dropdown-menu-item__text"><span>Descargar para Windows (sin internet)</span></div>';
+      var antes =
+        menu.querySelector("a[href='https://github.com/excalidraw/excalidraw']") ||
+        menu.querySelector(".dropdown-menu__submenu-trigger");
+      var contenedor = antes ? antes.parentNode : menu.querySelector(".dropdown-menu-container") || menu;
+      contenedor.insertBefore(a, antes || null);
+    }).observe(document.documentElement, { childList: true, subtree: true });
   }
 
   // Ayuda visual de la barra (pantalla vacía): en lugar de "Elige una herramienta y

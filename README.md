@@ -183,6 +183,25 @@ npm start
 Abre <http://localhost:3000>. En Windows también sirve `Iniciar pizarra.bat`.
 Instrucciones completas en [LEEME.txt](LEEME.txt).
 
+### Ejecutable de Windows (`unzip.mat.exe`)
+
+Un solo archivo (~110 MB) con Node, `servidor.js` y toda la carpeta `app/` adentro
+([Node SEA](https://nodejs.org/api/single-executable-applications.html)): doble clic,
+sin instalar nada y sin internet. Hace lo mismo que `Iniciar pizarra.bat` (sesión
+nueva, link copiado, navegador abierto); si ya hay uno abierto, solo abre una sesión
+nueva, y si el puerto 3000 está ocupado por otro programa prueba el siguiente.
+
+- Armarlo a mano (Windows, Node 24+): `npm install` y `npm run exe` → `dist/unzip.mat.exe`
+  y su SHA-256 (script: [`build/armar-exe.mjs`](build/armar-exe.mjs)).
+- Publicarlo: al subir un tag `v*` (`git tag v1.2.0` y `git push github v1.2.0`), el
+  workflow [`.github/workflows/exe.yml`](.github/workflows/exe.yml) lo arma en Windows
+  y lo sube a un Release. La versión online muestra en el menú principal «Descargar
+  para Windows (sin internet)», que apunta a `releases/latest/download/unzip.mat.exe`.
+- No está firmado: Windows SmartScreen avisa la primera vez («Más información» →
+  «Ejecutar de todas formas»).
+- `servidor.js` sigue funcionando igual con `node servidor.js`; con `--abrir` además
+  abre una sesión nueva como el ejecutable.
+
 ### Versión web (GitHub Pages)
 
 La carpeta `app/` también funciona como sitio estático: el workflow
@@ -200,6 +219,7 @@ Dibujar, guardar, exportar y todos los generadores funcionan igual.
 - `app/` — build compilado de Excalidraw (con las modificaciones).
 - `app/entorno.js` — detecta si hay servidor y oculta la marca y los enlaces de Excalidraw/Excalidraw+.
 - `servidor.js` — servidor HTTP + Socket.IO.
+- `build/armar-exe.mjs` — arma `dist/unzip.mat.exe` (`npm run exe`).
 - `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).
 - `cambios-al-codigo.diff` — parche sobre el código fuente de Excalidraw.
 

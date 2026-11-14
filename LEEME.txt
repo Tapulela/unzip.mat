@@ -15,7 +15,26 @@ Que cambia respecto de excalidraw.com
 - No se guarda nada en la nube de Excalidraw. Las imagenes pegadas tambien
   se comparten por el servidor local.
 
-PRIMERA VEZ (una sola vez)
+OPCION MAS FACIL: unzip.mat.exe (Windows, sin instalar nada)
+- Descargalo desde la version online (menu de arriba a la izquierda ->
+  "Descargar para Windows (sin internet)") o desde
+  https://github.com/Tapulela/unzip.mat/releases/latest
+- Es un solo archivo: copialo donde quieras (o pasalo en un pendrive) y hace
+  doble clic. Hace todo lo que hace "Iniciar pizarra.bat": abre la ventana
+  negra, crea una sesion compartida nueva, copia el link y abre el navegador.
+  No hace falta Node.js ni internet.
+- La primera vez Windows puede mostrar "Windows protegio su PC" porque el
+  archivo no tiene firma digital: toca "Mas informacion" -> "Ejecutar de todas
+  formas". Para verificar que el archivo es el original, compara su SHA-256
+  (en PowerShell: Get-FileHash unzip.mat.exe) con el que figura en el Release.
+- Si lo abris de nuevo con la pizarra ya abierta, no arranca otro servidor:
+  solo abre una sesion nueva en el navegador.
+- Si el puerto 3000 esta ocupado por otro programa, usa el 3001, 3002, etc.
+  (lo dice la ventana negra). Lo dibujado sin sesion se guarda por puerto.
+- Al cerrar la ventana negra se pierden las imagenes pegadas en la sesion
+  (igual que con "Iniciar pizarra.bat").
+
+PRIMERA VEZ (una sola vez, si no usas unzip.mat.exe)
 1. Instala Node.js desde https://nodejs.org (boton "LTS"). Siguiente, siguiente.
 2. Descomprimi esta carpeta donde quieras (por ejemplo en Documentos).
 

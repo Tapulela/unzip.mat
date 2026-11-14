@@ -1,0 +1,45 @@
+# Arma dist/unzip.mat.exe (npm run exe) en Windows y lo publica en un Release.
+# Para publicar una versión nueva:
+#   git tag v1.2.0
+#   git push github v1.2.0
+# El botón "Descargar para Windows" de la versión online apunta a
+# releases/latest/download/unzip.mat.exe, o sea, siempre al último Release.
+# Ejecutándolo a mano (Actions -> Run workflow) solo deja el .exe como artefacto,
+# sin crear un Release.
+name: Ejecutable de Windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  armar:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unzip.mat.exe
+          path: |
+            dist/unzip.mat.exe
+            dist/unzip.mat.exe.sha256
+      - name: Publicar Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/unzip.mat.exe dist/unzip.mat.exe.sha256 \
+            --title "unzip.mat $GITHUB_REF_NAME" \
+            --notes "Ejecutable de Windows: doble clic en unzip.mat.exe, sin instalar nada y sin internet. Ver LEEME.txt. SHA-256: $(cut -d' ' -f1 dist/unzip.mat.exe.sha256)"

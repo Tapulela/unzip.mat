@@ -6,7 +6,15 @@
   "license": "MIT",
   "main": "servidor.js",
   "scripts": {
-    "start": "node servidor.js"
+    "start": "node servidor.js",
+    "exe": "node build/armar-exe.mjs"
   },
-  "dependencies": { "socket.io": "^4.8.1" }
+  "dependencies": {
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "postject": "^1.0.0-alpha.6",
+    "resedit": "^3.1.0"
+  }
 }

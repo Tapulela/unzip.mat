@@ -10,3 +10,7 @@ desktop.ini
 
 # Script local (copiar desde "Iniciar pizarra.bat.example")
 Iniciar pizarra.bat
+
+# Ejecutable de Windows (npm run exe)
+dist/
+build/tmp/

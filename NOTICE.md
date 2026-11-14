@@ -15,6 +15,8 @@ bienvenida y los enlaces a Excalidraw+ y a las redes del proyecto original.
 | `cambios-al-codigo.diff` | Modificaciones propias sobre el código fuente de Excalidraw | MIT |
 | `servidor.js`, `Iniciar pizarra.bat`, `LEEME.txt` | Propio | MIT |
 | `app/fonts/` | Fuentes incluidas en el build de Excalidraw | Ver abajo |
+| `build/armar-exe.mjs`, `.github/workflows/exe.yml` | Propio | MIT |
+| `unzip.mat.exe` (Releases) | Node.js (MIT) + `servidor.js` y `socket.io` empaquetados + `app/` | Ver «Ejecutable de Windows» abajo |
 | `node_modules/` (no se versiona) | Dependencias npm (`socket.io` y sus dependencias) | MIT (cada paquete trae su `LICENSE`) |
 
 ## Excalidraw (MIT)
@@ -57,3 +59,13 @@ archivo está en la raíz de `app/`, en `app/fonts/Assistant/LICENSE.txt`;
 
 `socket.io` (MIT) y sus dependencias transitivas. Se instalan con `npm install`;
 cada paquete conserva su propia licencia dentro de `node_modules/`.
+
+## Ejecutable de Windows (`unzip.mat.exe`)
+
+Es una copia de `node.exe` (Node.js, licencia MIT, Copyright Node.js contributors;
+incluye componentes de terceros como V8, OpenSSL, ICU y libuv, con licencias
+permisivas listadas en <https://github.com/nodejs/node/blob/main/LICENSE>) con ícono
+y datos de versión propios, a la que se le agregó `servidor.js` empaquetado con
+`socket.io` y sus dependencias (MIT; esbuild conserva sus avisos de licencia al final
+del código empaquetado) y la carpeta `app/` completa, con las licencias de las fuentes
+indicadas arriba. Se distribuye junto con `LICENSE` y este archivo en el repositorio.
