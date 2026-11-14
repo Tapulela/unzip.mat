@@ -2989,7 +2989,7 @@
   }
 
   // propiedades de una relacion en A × A, con un contraejemplo si no se cumple
-  function propiedadesRelacion(f) {
+  function propiedadesRelacion(f, detalle) {
     var R = f.rel, A = R.A.lista, n = f.nombre, P = R.pares, res = [];
     var noRef = A.filter(function (a) { return !R.tiene(a, a); })[0];
     var noSim = P.filter(function (p) { return !R.tiene(p[1], p[0]); })[0];
@@ -3012,7 +3012,313 @@
       : n + " es transitiva");
     if (!noRef && !noSim && !noTra) res.push(n + " es una relación de equivalencia");
     if (!noRef && !noAnti && !noTra) res.push(n + " es una relación de orden");
+    if (detalle) return { res: res, noRef: noRef, noSim: noSim, noAnti: noAnti, noTra: noTra };
     return res;
+  }
+
+  // Estudio detallado de cada propiedad (opcion "explicación detallada"):
+  //   Estudio de propiedad simétrica            (subrayado)
+  //   | Definición general de simetría
+  //   |     ∀x, y ∈ A: (x, y) ∈ R → (y, x) ∈ R
+  //   | Definición aplicada de simetría
+  //   |     ∀x, y ∈ A: (x, y) ∈ R → (y, x) ∈ R   (con los nombres del ejercicio)
+  //   |     ∀x, y ∈ A: y mod x = 0 → x mod y = 0 (si es por comprension)
+  //   | La propiedad simétrica se cumple.  /  NO se cumple + contraejemplo:
+  //   |     Para x = 2, y = 4, se tiene:
+  //   |         formula con variables / formula con los valores
+  //   |         V → F   (V verde, F rojo, debajo de cada parte)
+  //   |           F     (se reduce un conector por renglon: ∧ antes que →)
+  // ORDEN: por propiedad, titulo, subrayado, textos de arriba abajo, cada
+  // renglon de la tabla de verdad de izquierda a derecha y la barra al final.
+  var VERDE_VF = COLORES[2], ROJO_VF = COLORES[1];
+
+  // (a, b) ∈ R escrito con la condicion de la relacion si es por comprension
+  // (y mod x = 0 con x -> a, y -> b); si no, "(a, b) ∈ R"
+  function condicionRel(f) {
+    var tc = f.tipo === "comprension" ? textoCondicion(f.codigo, f.previos) : null;
+    var params = tc ? tc.v.replace(/[()\s]/g, "").split(",") : null;
+    return function (a, b) {
+      if (!tc || params.length !== 2) return "(" + a + ", " + b + ") ∈ " + f.nombre;
+      var m = {}; m[params[0]] = a; m[params[1]] = b;
+      var re = new RegExp("(^|[^\\w$])(" + params.map(function (p) { return p.replace(/\$/g, "\\$"); }).join("|") + ")(?![\\w$])", "g");
+      return tc.cond.replace(re, function (t, pre, p) { return pre + m[p]; });
+    };
+  }
+
+  // Clases de equivalencia y conjunto cociente (si R es de equivalencia).
+  // Cada clase se nombra K con subindice: un elemento de la clase (el
+  // primero, como representante); cualquier otro de la clase tambien sirve
+  // de indice, y asi se escribe al final de la linea:
+  //   Clases de equivalencia:
+  //   K₁ = [1] = {x ∈ A / (x + 1) mod 2 = 0} = {1, 3, 5} = K₃ = K₅
+  //   K₂ = [2] = {x ∈ A / (x + 2) mod 2 = 0} = {2, 4} = K₄
+  //   Se puede apreciar que existen dos clases de equivalencia: K₁, K₂
+  //   Por lo tanto el conjunto cociente es
+  //       A
+  //       ─ = {K₁, K₂} = {{1, 3, 5}, {2, 4}}
+  //       R
+  // Los subindices se dibujan (texto mas chico y mas abajo).
+  function calcularClases(f) {
+    var R = f.rel, A = R.A.lista, vistos = {}, clases = [];
+    A.forEach(function (a) {
+      if (vistos[a.k]) return;
+      var cl = A.filter(function (x) { return R.tiene(x, a); });
+      cl.forEach(function (x) { vistos[x.k] = true; });
+      clases.push({ rep: a, lista: cl });
+    });
+    return clases;
+  }
+  function esEquivalencia(f) {
+    var pr = propiedadesRelacion(f, true);
+    return !pr.noRef && !pr.noSim && !pr.noTra;
+  }
+
+  // Escribe partes seguidas desde (x, y): { t, color, sub }. Las que tienen
+  // sub van como subindice. Devuelve el borde derecho.
+  function escribirPartes(x, y, partes, tam, fuente, agregar) {
+    var ts = Math.round(tam * 0.65), lh = tam * fuente.lh;
+    partes.forEach(function (p) {
+      if (!p.t) return;
+      if (p.sub) {
+        agregar(texto(x + 1, y + lh * 0.42, p.t, ts, fuente, p.color, "left"));
+        x += medir(p.t, ts, fuente) + 2;
+      } else {
+        var lead = p.t.length - p.t.replace(/^\s+/, "").length, limpio = p.t.trim();
+        if (limpio) agregar(texto(x + medir(p.t.slice(0, lead), tam, fuente), y, limpio, tam, fuente, p.color, "left"));
+        x += medir(p.t, tam, fuente);
+      }
+    });
+    return x;
+  }
+  // K con subindice e (un elemento)
+  function partesK(e, color) { return [{ t: "K", color: color }, { t: e.t, sub: true, color: color }]; }
+  // partes de "K₁, K₂, K₃" (con separador sep)
+  function partesListaK(reps, color, sep, colorSep) {
+    var out = [];
+    reps.forEach(function (e, i) {
+      if (i) out.push({ t: sep, color: colorSep });
+      out = out.concat(partesK(e, color));
+    });
+    return out;
+  }
+  var NUMEROS_TEXTO = ["cero", "una", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez"];
+
+  function clasesEquivalencia(f, esc, ox, tam, fuente, agregar, conGrafo) {
+    var nA = f.base.split(" × ")[0], cond = condicionRel(f), col = f.color;
+    var lh = tam * fuente.lh, u = Math.round(tam * 1.5);
+    var nAp = /[\s∪∩−Δ]/.test(nA) ? "(" + nA + ")" : nA;
+    var clases = calcularClases(f);
+    function renglon(partes) { escribirPartes(ox, esc.y, partes, tam, fuente, agregar); esc.y += esc.alto; }
+    renglon([{ t: "Clases de equivalencia:", color: TINTA }]);
+    clases.forEach(function (c) {
+      var v = /^[−-]/.test(c.rep.t) ? "(" + c.rep.t + ")" : c.rep.t;
+      var partes = partesK(c.rep, col).concat([{ t: " = [" + c.rep.t + "] = {x ∈ " + nAp + " / " + cond("x", v) + "} = {" +
+        c.lista.map(function (x) { return x.t; }).join(", ") + "}", color: col }]);
+      c.lista.forEach(function (x) {
+        if (x.k !== c.rep.k) partes = partes.concat([{ t: " = ", color: col }], partesK(x, col));
+      });
+      renglon(partes);
+    });
+    var k = clases.length, reps = clases.map(function (c) { return c.rep; });
+    var cuantas = k <= 10 ? NUMEROS_TEXTO[k] : String(k);
+    var frase = (conGrafo ? "Se puede apreciar que exist" : "Exist") + (k === 1 ? "e " : "en ") + cuantas +
+      (k === 1 ? " clase" : " clases") + " de equivalencia: ";
+    esc.y += esc.alto * 0.3;
+    renglon([{ t: frase, color: TINTA }].concat(partesListaK(reps, col, ", ", TINTA)));
+    esc.y += esc.alto * 0.3;
+    renglon([{ t: "Por lo tanto el conjunto cociente es", color: TINTA }]);
+    // fraccion A / R y a la derecha "= {K₁, K₂} = {{...}, {...}}"
+    var x = ox + u, wn = medir(nA, tam, fuente), wd = medir(f.nombre, tam, fuente);
+    var wf = Math.max(wn, wd) + tam * 0.5, yBarra = esc.y + lh + 3;
+    agregar(texto(x + wf / 2, esc.y, nA, tam, fuente, TINTA, "center"));
+    agregar(linea(x, yBarra, [[0, 0], [wf, 0]], { strokeColor: TINTA, strokeWidth: 1.5 }));
+    agregar(texto(x + wf / 2, yBarra + 3, f.nombre, tam, fuente, TINTA, "center"));
+    var conjs = clases.map(function (c) { return "{" + c.lista.map(function (e) { return e.t; }).join(", ") + "}"; });
+    escribirPartes(x + wf + tam * 0.3, yBarra - lh / 2, [{ t: "= {", color: TINTA }]
+      .concat(partesListaK(reps, col, ", ", TINTA))
+      .concat([{ t: "} = {" + conjs.join(", ") + "}", color: TINTA }]), tam, fuente, agregar);
+    esc.y = yBarra + 3 + lh + 10;
+  }
+
+  // Grafo de las clases de equivalencia: cada clase en un renglon, sus
+  // elementos con un lazo cada uno y flechas dobles entre todos (las de
+  // vecinos por arriba, las demas por abajo), encerrada en un ovalo del color
+  // de la relacion con una flecha a su nombre K₁; todas dentro de un ovalo
+  // grande (el conjunto). ORDEN: por clase, sus elementos (texto y lazo), las
+  // flechas, su ovalo y su nombre; al final el ovalo grande y su nombre.
+  function dibujarClases(f, tam, fuente, agregar) {
+    var clases = calcularClases(f), lh = tam * fuente.lh, col = f.color;
+    var lazoR = tam * 0.3, lazoW = 2 * lazoR + 4, alto1 = tam * 0.8, paso = tam * 0.6;
+    var anchoMax = anchoMaximo(f.rel.A.lista, tam, fuente);
+    var sx = Math.max(tam * 4.5, anchoMax + lazoW + tam * 2.5);
+    var flecha = { type: "arrow", startArrowhead: "arrow", endArrowhead: "arrow", strokeColor: TINTA,
+      strokeWidth: 1.5, roundness: { type: 2 } };
+    var fondo = 0, puntosExt = [], agregarTodo = agregar;
+    clases.forEach(function (c, ic) {
+      // cada clase se arma en y = 0 y despues se baja hasta quedar debajo
+      // del ovalo de la anterior
+      var buf = [], agregar = function (e) { buf.push(e); return e; };
+      var n = c.lista.length, x0 = -(n - 1) * sx / 2, pts = [], cy = 0;
+      var abajo = n > 2 ? lh * 0.55 + alto1 + (n - 3) * paso : lh / 2;
+      var xs = c.lista.map(function (e, i) { return x0 + i * sx; });
+      c.lista.forEach(function (e, i) {
+        var w = medir(e.t, tam, fuente), xc = xs[i];
+        agregar(texto(xc, cy - lh / 2, e.t, tam, fuente, TINTA, "center"));
+        // lazo a la derecha del elemento; la punta vuelve hacia el elemento
+        var lc = [xc + w / 2 + 2 + lazoR, cy];
+        agregar(trazo([-160, -90, 0, 90, 150].map(function (g) {
+          var r = g * Math.PI / 180;
+          return [lc[0] + lazoR * Math.cos(r), lc[1] + lazoR * Math.sin(r)];
+        }), { type: "arrow", endArrowhead: "arrow", strokeColor: TINTA, strokeWidth: 1.5, roundness: { type: 2 } }));
+        pts.push([xc - w / 2, cy - lh / 2], [xc - w / 2, cy + lh / 2], [lc[0] + lazoR, cy - lazoR], [lc[0] + lazoR, cy + lazoR]);
+      });
+      for (var i = 0; i < n; i++) {
+        for (var j = i + 1; j < n; j++) {
+          var wi = medir(c.lista[i].t, tam, fuente), wj = medir(c.lista[j].t, tam, fuente);
+          var m = (xs[i] + xs[j]) / 2, arc;
+          if (j === i + 1) {
+            var ya = cy - lh * 0.6;
+            arc = [[xs[i] + wi / 2 + lazoW, ya], [m, ya - tam * 0.45], [xs[j] - wj / 2 - 4, ya]];
+          } else {
+            var yb = cy + lh * 0.55;
+            arc = [[xs[i] + wi / 2 + 2, yb], [m, yb + alto1 + (j - i - 2) * paso], [xs[j] - wj / 2, yb]];
+          }
+          agregar(trazo(arc, flecha));
+          pts.push(arc[1]);
+        }
+      }
+      // ovalo de la clase: semieje a fijo; b, el menor que contiene los puntos
+      var xmin = Math.min.apply(null, pts.map(function (p) { return p[0]; }));
+      var xmax = Math.max.apply(null, pts.map(function (p) { return p[0]; }));
+      var ymin = Math.min.apply(null, pts.map(function (p) { return p[1]; }));
+      var ccx = (xmin + xmax) / 2, a = (xmax - xmin) / 2 + tam * 1.6;
+      var ccy = (ymin + cy + abajo) / 2;
+      var b = pts.reduce(function (mx, p) {
+        var dx = (p[0] - ccx) / a;
+        return Math.max(mx, Math.abs(p[1] - ccy) / Math.sqrt(Math.max(0.05, 1 - dx * dx)));
+      }, lh * 0.8) + 6;
+      agregar(base("ellipse", { x: ccx - a, y: ccy - b, width: 2 * a, height: 2 * b, strokeColor: col, strokeWidth: 2 }));
+      // flecha curva desde el borde derecho del ovalo hasta K₁
+      var fx = ccx + a, fy = ccy;
+      agregar(trazo([[fx - 2, fy], [fx + tam * 0.6, fy + tam * 0.15], [fx + tam * 1.1, fy + tam * 0.55]],
+        { type: "arrow", endArrowhead: "arrow", strokeColor: col, strokeWidth: 1.5, roundness: { type: 2 } }));
+      var kx = fx + tam * 1.25, ky = fy + tam * 0.55 - lh / 2;
+      var kfin = escribirPartes(kx, ky, partesK(c.rep, col), tam, fuente, agregar);
+      var dy = (ic ? fondo + tam * 0.5 : 0) - (ccy - b);
+      buf.forEach(function (e) { e.y += dy; agregarTodo(e); });
+      for (var g = 0; g < 32; g++) {
+        var t = g * Math.PI / 16;
+        puntosExt.push([ccx + a * Math.cos(t), ccy + dy + b * Math.sin(t)]);
+      }
+      puntosExt.push([kfin, ky + dy], [kfin, ky + dy + lh * 1.3]);
+      fondo = ccy + dy + b;
+    });
+    // ovalo grande: centrado en el medio de todo, con el mismo criterio
+    var xsE = puntosExt.map(function (p) { return p[0]; }), ysE = puntosExt.map(function (p) { return p[1]; });
+    var X0 = Math.min.apply(null, xsE), X1 = Math.max.apply(null, xsE);
+    var Y0 = Math.min.apply(null, ysE), Y1 = Math.max.apply(null, ysE);
+    var ox2 = (X0 + X1) / 2, oy2 = (Y0 + Y1) / 2, A2 = (X1 - X0) / 2 * 1.3 + tam;
+    var B2 = puntosExt.reduce(function (mx, p) {
+      var dx = (p[0] - ox2) / A2;
+      return Math.max(mx, Math.abs(p[1] - oy2) / Math.sqrt(Math.max(0.05, 1 - dx * dx)));
+    }, 0) + tam * 0.6;
+    agregar(base("ellipse", { x: ox2 - A2, y: oy2 - B2, width: 2 * A2, height: 2 * B2, strokeWidth: 2 }));
+    agregar(texto(ox2 - A2 * 0.72, oy2 - B2 * 0.72 - lh, f.base.split(" × ")[0], tam, fuente, TINTA, "right"));
+  }
+
+  function estudioPropiedades(f, esc, ox, tam, fuente, agregar) {
+    var an = propiedadesRelacion(f, true), n = f.nombre, nA = f.base.split(" × ")[0];
+    if (/[\s∪∩−Δ]/.test(nA)) nA = "(" + nA + ")";
+    var lh = tam * fuente.lh, alto = esc.alto, u = Math.round(tam * 1.5);
+    var cond = condicionRel(f);
+    function paren(s) { return /[∧∨→↔]/.test(s) ? "(" + s + ")" : s; }
+    function val(e) { return /^[−-]/.test(e.t) ? "(" + e.t + ")" : e.t; }
+    // atomos: { gen: texto general (con A y R), apl: aplicado con variables,
+    // con: aplicado con valores (funcion del contraejemplo), v: valor }
+    function enRel(a, b) {
+      return { gen: "(" + a + ", " + b + ") ∈ R", apl: "(" + a + ", " + b + ") ∈ " + n, cnd: paren(cond(a, b)),
+        con: function (V) { return paren(cond(val(V[a]), val(V[b]))); } };
+    }
+    var props = [
+      { nombre: "reflexiva", sust: "reflexividad", cuant: "∀x", vars: ["x"], ce: an.noRef && { x: an.noRef },
+        partes: [{ gen: "x ∈ A", apl: "x ∈ " + nA, cnd: "x ∈ " + nA, con: function (V) { return val(V.x) + " ∈ " + nA; } },
+          "→", enRel("x", "x")], valores: [true, false], dosPuntos: true },
+      { nombre: "simétrica", sust: "simetría", cuant: "∀x, y ∈ ", vars: ["x", "y"],
+        ce: an.noSim && { x: an.noSim[0], y: an.noSim[1] },
+        partes: [enRel("x", "y"), "→", enRel("y", "x")], valores: [true, false] },
+      { nombre: "antisimétrica", sust: "antisimetría", cuant: "∀x, y ∈ ", vars: ["x", "y"],
+        ce: an.noAnti && { x: an.noAnti[0], y: an.noAnti[1] },
+        partes: [enRel("x", "y"), "∧", enRel("y", "x"), "→",
+          { gen: "x = y", apl: "x = y", cnd: "x = y", con: function (V) { return val(V.x) + " = " + val(V.y); } }],
+        valores: [true, true, false] },
+      { nombre: "transitiva", sust: "transitividad", cuant: "∀x, y, z ∈ ", vars: ["x", "y", "z"],
+        ce: an.noTra && { x: an.noTra[0][0], y: an.noTra[0][1], z: an.noTra[1][1] },
+        partes: [enRel("x", "y"), "∧", enRel("y", "z"), "→", enRel("x", "z")], valores: [true, true, false] },
+    ];
+    function unir(partes, campo, V) {
+      return partes.map(function (p) { return typeof p === "string" ? p : campo === "con" ? p.con(V) : p[campo]; }).join(" ");
+    }
+    props.forEach(function (p) {
+      var y0 = esc.y, x1 = ox + u, x2 = ox + 2 * u, x3 = ox + 3 * u;
+      var titulo = "Estudio de propiedad " + p.nombre, wt = medir(titulo, tam, fuente);
+      agregar(texto(ox, esc.y, titulo, tam, fuente, TINTA, "left"));
+      agregar(linea(ox, esc.y + lh + 2, [[0, 0], [wt, 0]], { strokeColor: f.color, strokeWidth: 1.5 }));
+      esc.y += alto + 4;
+      var yBarra = esc.y - 2;
+      function escribir(x, s, color) { agregar(texto(x, esc.y, s, tam, fuente, color || TINTA, "left")); esc.y += alto; }
+      // p.cuant de reflexiva es "∀x" (la pertenencia a A va dentro de la formula)
+      var cuantGen = p.dosPuntos ? p.cuant + ": " : p.cuant + "A: ";
+      var cuantApl = p.dosPuntos ? p.cuant + ": " : p.cuant + nA + ": ";
+      escribir(x1, "Definición general de " + p.sust);
+      escribir(x2, cuantGen + unir(p.partes, "gen"));
+      escribir(x1, "Definición aplicada de " + p.sust);
+      var apl = unir(p.partes, "apl"), cnd = unir(p.partes, "cnd");
+      escribir(x2, cuantApl + apl);
+      if (cnd !== apl) escribir(x2, cuantApl + cnd);
+      if (!p.ce) {
+        escribir(x1, "La propiedad " + p.nombre + " se cumple.");
+      } else {
+        var V = p.ce;
+        escribir(x1, "La propiedad " + p.nombre + " NO se cumple. Demostración por contraejemplo:");
+        escribir(x2, "Para " + p.vars.map(function (v) { return v + " = " + V[v].t; }).join(", ") + ", se tiene:");
+        esc.y += alto * 0.5;
+        escribir(x3, cnd);
+        // posiciones (centros) de cada parte en el renglon con los valores
+        var piezas = p.partes.map(function (q) { return typeof q === "string" ? q : q.con(V); });
+        var cx = [], xx = x3;
+        piezas.forEach(function (s, i) {
+          var w = medir(s, tam, fuente);
+          cx.push(xx + w / 2);
+          xx += w + (i < piezas.length - 1 ? medir(" ", tam, fuente) : 0);
+        });
+        escribir(x3, piezas.join(" "));
+        esc.y += alto * 0.5;
+        // tabla de verdad: el frente de valores y conectores; en cada renglon
+        // se resuelve un conector (∧ antes que →)
+        var k = 0;
+        var frente = piezas.map(function (s, i) {
+          return typeof p.partes[i] === "string" ? { op: s, x: cx[i] } : { v: p.valores[k++], x: cx[i] };
+        });
+        for (;;) {
+          frente.forEach(function (e) {
+            var s = e.op || (e.v ? "V" : "F");
+            agregar(texto(e.x, esc.y, s, tam, fuente, e.op ? TINTA : e.v ? VERDE_VF : ROJO_VF, "center"));
+          });
+          esc.y += alto;
+          if (frente.length === 1) break;
+          var j = -1;
+          frente.forEach(function (e, i) { if (j < 0 && e.op === "∧") j = i; });
+          if (j < 0) frente.forEach(function (e, i) { if (j < 0 && e.op) j = i; });
+          var a = frente[j - 1].v, b = frente[j + 1].v;
+          var r = frente[j].op === "∧" ? a && b : !a || b;
+          frente.splice(j - 1, 3, { v: r, x: frente[j].x });
+          esc.y += alto * 0.25;
+        }
+      }
+      agregar(linea(ox + u * 0.4, yBarra, [[0, 0], [0, esc.y - yBarra]], { strokeColor: TINTA, strokeWidth: 1 }));
+      esc.y += alto * 0.75;
+    });
+    an.res.slice(4).forEach(function (t) { esc.linea(t, f.color); });
   }
 
   function anchoMaximo(lista, tam, fuente) {
@@ -3157,22 +3463,35 @@
         esc.lista("Dom(" + f.nombre + ") = ", listarConjunto({ lista: dom }, null, Infinity), f.color);
         esc.lista("Im(" + f.nombre + ") = ", listarConjunto({ lista: im }, null, Infinity), f.color);
       }
-      if (op.propiedades && f.homogenea) propiedadesRelacion(f).forEach(function (t) { esc.linea(t, f.color); });
+      if (op.propiedades && f.homogenea) {
+        if (op.propDetalle) {
+          if (esc.y > oy) esc.y += esc.alto * 0.5;
+          estudioPropiedades(f, esc, ox, tam, fuente, agregar);
+        } else propiedadesRelacion(f).forEach(function (t) { esc.linea(t, f.color); });
+      }
+      if (op.clases && f.homogenea && f.rel.A.lista.length && esEquivalencia(f)) {
+        if (esc.y > oy) esc.y += esc.alto * 0.5;
+        clasesEquivalencia(f, esc, ox, tam, fuente, agregar, op.clasesGrafo);
+      }
     });
 
     dibujarCartesiano.titulo = "Gráfico cartesiano";
     dibujarSagital.titulo = "Diagrama sagital";
     dibujarGrafo.titulo = "Grafo dirigido";
+    dibujarClases.titulo = "Clases de equivalencia";
     var dibujos = [op.cartesiano && dibujarCartesiano, op.sagital && dibujarSagital, op.grafo && dibujarGrafo]
       .filter(Boolean);
-    if (!dibujos.length) return;
     var y = esc.y + (esc.y > oy ? 30 : 0);
     an.filas.forEach(function (f) {
       if (f.errores.length || f.clase !== "relacion" || !f.rel.A.lista.length || !f.rel.B.lista.length) return;
+      // el grafo de las clases va al lado de los otros diagramas de la relacion
+      var dibujosF = dibujos;
+      if (op.clases && op.clasesGrafo && f.homogenea && esEquivalencia(f)) dibujosF = dibujos.concat([dibujarClases]);
+      if (!dibujosF.length) return;
       agregar(texto(ox, y, f.nombre + " ⊆ " + f.base, tam, fuente, f.color, "left"));
       y += tam * fuente.lh + 30;
       var x = ox, alto = 0;
-      dibujos.forEach(function (dibujar) {
+      dibujosF.forEach(function (dibujar) {
         var c = colocarConTitulo(function (ag) { dibujar(f, tam, fuente, ag); }, x, y,
           op.titulos && dibujar.titulo, tam, fuente, agregar);
         x += c.w + 90;
@@ -7645,7 +7964,7 @@
           { nombre: "R", texto: "(x, y) => y % x == 0", base: "A × A", color: COLORES[1] },
         ],
         tamTexto: "M", fuente: "normal", ancho: "medio",
-        escribir: true, mostrarDef: true, dominio: false, propiedades: true,
+        escribir: true, mostrarDef: true, dominio: false, propiedades: true, propDetalle: false, clases: false, clasesGrafo: true,
         cartesiano: true, sagital: true, grafo: true, titulos: true,
       },
       contenido: ["filas"],
@@ -7680,7 +7999,7 @@
       erroresFila: erroresRelacion,
       posicion: function (op, cx, cy) { return { x: cx - 450, y: cy - 250 }; },
       generar: generarRelaciones,
-      opciones: function (ui) {
+      opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
         ui.arriba(function () {
           ui.chk("Gráfico cartesiano", "cartesiano");
@@ -7693,7 +8012,12 @@
         ui.chk("Escribir conjuntos y relaciones por extensión", "escribir");
         ui.chk("Escribir la definición por comprensión", "mostrarDef");
         ui.chk("Escribir dominio e imagen", "dominio");
-        ui.chk("Propiedades (relaciones en A × A)", "propiedades");
+        ui.chk("Propiedades (relaciones en A × A)", "propiedades", true);
+        if (op.propiedades) {
+          ui.chk("Explicación detallada de cada propiedad (definiciones y contraejemplo con tabla de verdad)", "propDetalle");
+        }
+        ui.chk("Clases de equivalencia y conjunto cociente (si es de equivalencia)", "clases", true);
+        if (op.clases) ui.chk("Dibujar las clases en un grafo dirigido", "clasesGrafo");
         ui.chk("Títulos de los diagramas («Diagrama sagital»...)", "titulos");
       },
     },
