@@ -1429,10 +1429,12 @@
     return pts;
   }
 
-  // Dibuja una compuerta con el borde izquierdo en x y el centro vertical en yc,
-  // para k entradas. Devuelve { xSalida, pin(y) -> x donde termina el cable de entrada }.
-  function compuerta(tipo, x, yc, k, agregar) {
-    var h = Math.max(36, k * 18), y0 = yc - h / 2, trazoG = { strokeWidth: 2 }, r = 5;
+  // Dibuja una compuerta con el borde izquierdo en x, el centro vertical en yc
+  // y alto h (el NOT tiene alto fijo). Devuelve { xSalida, pin(y) -> x donde
+  // termina el cable de entrada }. Si es muy alta, el frente no crece con el
+  // alto en la misma proporcion, para que no quede demasiado ancha.
+  function compuerta(tipo, x, yc, h, agregar) {
+    var y0 = yc - h / 2, trazoG = { strokeWidth: 2 }, r = 5;
     var burbuja = function (xb) {
       agregar(base("ellipse", { x: xb, y: yc - r, width: 2 * r, height: 2 * r, strokeWidth: 2 }));
       return xb + 2 * r;
@@ -1443,17 +1445,18 @@
       return { xSalida: burbuja(x + L), pin: function () { return x; } };
     }
     if (tipo === "and" || tipo === "nand") {
-      var w0 = 26, ra = h / 2, pts = [[x, y0], [x + w0, y0]];
+      var w0 = 26, rx = Math.min(h / 2, 22 + h * 0.15), pts = [[x, y0], [x + w0, y0]];
       for (var i = 1; i < 16; i++) {
         var a = -Math.PI / 2 + Math.PI * i / 16;
-        pts.push([x + w0 + ra * Math.cos(a), yc + ra * Math.sin(a)]);
+        pts.push([x + w0 + rx * Math.cos(a), yc + h / 2 * Math.sin(a)]);
       }
       pts.push([x + w0, y0 + h], [x, y0 + h], [x, y0]);
       agregar(trazo(pts, trazoG));
-      return { xSalida: tipo === "nand" ? burbuja(x + w0 + ra) : x + w0 + ra, pin: function () { return x; } };
+      return { xSalida: tipo === "nand" ? burbuja(x + w0 + rx) : x + w0 + rx, pin: function () { return x; } };
     }
     // OR, NOR, XOR y XNOR: dorso curvo hacia adentro y frente en punta
-    var ex = tipo === "or" || tipo === "nor" ? 0 : 9, bx = x + ex, Lo = 34 + h * 0.4, d = h * 0.16;
+    var ex = tipo === "or" || tipo === "nor" ? 0 : 9, bx = x + ex;
+    var Lo = Math.min(34 + h * 0.4, 50 + h * 0.2), d = Math.min(h * 0.16, 4 + h * 0.06);
     var forma = curvaCuadratica([bx, y0], [bx + Lo * 0.55, y0], [bx + Lo, yc], 10)
       .concat(curvaCuadratica([bx + Lo, yc], [bx + Lo * 0.55, y0 + h], [bx, y0 + h], 10).slice(1))
       .concat(curvaCuadratica([bx, y0 + h], [bx + 2 * d, yc], [bx, y0], 10).slice(1));
@@ -1468,101 +1471,127 @@
     };
   }
 
-  // Circuito de una expresion con una sola entrada por variable:
-  //  - Cada variable usada tiene una linea vertical (con su nombre arriba). Si
-  //    se usa negada, desde arriba sale una rama a una compuerta NOT y de ahi
-  //    baja otra linea vertical (la de A').
-  //  - Las compuertas van a la derecha, por niveles. Cada vez que una compuerta
-  //    usa una variable, el cable sale de su linea (con un punto en la
-  //    bifurcacion) y va hacia la derecha.
+  // Circuito de una expresion, en dos partes:
+  //  1. Las variables: cada una aparece una sola vez, en orden, con su nombre
+  //     arriba y una linea vertical que baja hasta su ultimo uso. De ella salen
+  //     todas las bifurcaciones que hagan falta (con un punto en la union).
+  //  2. Despues de la ultima variable, las compuertas, por niveles (columnas).
+  //     Una variable negada es una compuerta NOT en el camino del cable.
+  //  - Para que no haya pliegues, cada compuerta es tan alta como haga falta
+  //    para que todas sus entradas lleguen en linea recta: cada cable entra a
+  //    la altura de la salida de lo que lo alimenta. Las entradas quedan
+  //    equidistantes, salvo que eso agrande demasiado el circuito.
   //  - Si un cable cruza a otro sin estar unido, el horizontal hace un salto.
-  // ORDEN: nombres y lineas de las variables (con sus NOT); despues las
-  // compuertas de izquierda a derecha, cada una con los cables que le llegan;
-  // la salida al final.
-  // negar(v): como se escribe la variable negada (A' o ¬A)
+  // ORDEN: nombres y lineas de las variables; despues las compuertas de
+  // izquierda a derecha, cada una con los cables que le llegan; la salida al final.
+  // negar(v): no se usa (las negaciones se dibujan con compuertas NOT)
   // universal: "nand" o "nor" para dibujarlo solo con ese tipo de compuerta
   function dibujarCircuito(arbol, vars, etiqueta, color, tam, fuente, agregar, negar, universal) {
-    var raiz = universal ? aUniversal(arbol, universal) : aCircuito(arbol), lh = tam * fuente.lh;
-    var SLOT = Math.max(38, tam * 1.9), COL = 150, R_SALTO = 6, R_PUNTO = 3.5, Y_NOT = 26;
-    var cable = { strokeWidth: 1.5 };
+    var lh = tam * fuente.lh;
+    var SLOT = Math.max(26, tam * 1.3), PASO_VAR = Math.max(40, tam * 2), SEP = 40, GAP = 40;
+    var R_SALTO = 6, R_PUNTO = 3.5, Y0 = 24, MARGEN = 6, cable = { strokeWidth: 1.5 };
 
-    // hojas y niveles
-    var hojas = [], porNivel = [];
-    (function medir2(nd) {
-      if (nd.tipo === "entrada" || nd.tipo === "const") { nd.nivel = 0; nd.alto = SLOT; return; }
-      nd.hijos.forEach(medir2);
-      nd.nivel = 1 + Math.max.apply(null, nd.hijos.map(function (h) { return h.nivel; }));
-      nd.alto = nd.hijos.reduce(function (s, h) { return s + h.alto; }, 0);
-    })(raiz);
-    var Y0 = Y_NOT + 40;
-    (function ubicar(nd, y) {
-      if (nd.nivel === 0) { nd.y = y + nd.alto / 2; hojas.push(nd); return; }
-      var yy = y;
-      nd.hijos.forEach(function (h) { ubicar(h, yy); yy += h.alto; });
-      nd.y = nd.hijos.length === 1 ? nd.hijos[0].y : (nd.hijos[0].y + nd.hijos[nd.hijos.length - 1].y) / 2;
-      (porNivel[nd.nivel] = porNivel[nd.nivel] || []).push(nd);
-    })(raiz, Y0);
-
-    // lineas de las variables, en el orden de la tabla
-    var lineas = {}, x = 0, ordenLineas = [];
-    vars.forEach(function (v) {
-      var pos = hojas.some(function (h) { return h.v === v && !h.neg; });
-      var neg = hojas.some(function (h) { return h.v === v && h.neg; });
-      if (!pos && !neg) return;
-      var lp = { v: v, x: x, top: 0, taps: [], neg: false };
-      lineas[v + "+"] = lp;
-      ordenLineas.push(lp);
-      if (neg) {
-        var ln = { v: v, x: x + 74, top: Y_NOT, taps: [], neg: true };
-        lineas[v + "-"] = ln;
-        ordenLineas.push(ln);
-        lp.taps.push(Y_NOT); // la rama hacia el NOT
-        x += 74;
+    // copia del arbol (sin nodos compartidos), con cada variable negada como
+    // una compuerta NOT sobre la variable
+    var raiz = (function norm(nd) {
+      if (nd.tipo === "entrada") {
+        var e = { tipo: "entrada", v: nd.v };
+        return nd.neg ? { tipo: "not", hijos: [e] } : e;
       }
-      x += 46;
-    });
-    var XB = x - 46 + 50; // las compuertas empiezan a la derecha de las lineas
+      if (nd.tipo === "const") return { tipo: "const", nombre: nd.nombre };
+      return { tipo: nd.tipo, hijos: nd.hijos.map(norm) };
+    })(universal ? aUniversal(arbol, universal) : aCircuito(arbol));
+    function esHoja(nd) { return nd.tipo === "entrada" || nd.tipo === "const"; }
+    // NAND/NOR de una sola entrada: las dos entradas unidas (hace de NOT)
+    function unida(nd) { return nd.hijos.length === 1 && (nd.tipo === "nand" || nd.tipo === "nor"); }
 
-    // segmentos de cable: { pts: [[x, y]...], color }. Se arman todos antes de
-    // dibujar, para encontrar los cruces.
-    var cables = [];
+    // medidas de cada subarbol, relativas a la altura de su salida:
+    // arriba/abajo = cuanto ocupa por encima y por debajo; rel = donde van los hijos
+    (function medir(nd) {
+      if (esHoja(nd)) { nd.nivel = 0; nd.arriba = nd.abajo = SLOT / 2; return; }
+      var hs = nd.hijos, k = hs.length;
+      hs.forEach(medir);
+      nd.nivel = 1 + Math.max.apply(null, hs.map(function (h) { return h.nivel; }));
+      // equidistantes: la separacion es la mayor que necesita un par de vecinos
+      var d = 0, junto = [0];
+      for (var i = 0; i + 1 < k; i++) {
+        var s = hs[i].abajo + hs[i + 1].arriba;
+        d = Math.max(d, s);
+        junto.push(junto[i] + s);
+      }
+      var largo = junto[k - 1];
+      nd.rel = (k > 1 && (k - 1) * d > largo * 1.5)
+        ? junto.map(function (p) { return p - largo / 2; }) // pegados, si equidistantes agranda mucho
+        : hs.map(function (h, j) { return (j - (k - 1) / 2) * d; });
+      var span = nd.rel[k - 1] - nd.rel[0];
+      nd.h = nd.tipo === "not" ? 28 : k === 1 ? 36 : Math.max(36, span + 18);
+      nd.arriba = nd.h / 2 + MARGEN;
+      nd.abajo = nd.h / 2 + MARGEN;
+      hs.forEach(function (h, j) {
+        nd.arriba = Math.max(nd.arriba, h.arriba - nd.rel[j]);
+        nd.abajo = Math.max(nd.abajo, h.abajo + nd.rel[j]);
+      });
+    })(raiz);
+
+    // cada compuerta va en la columna justo antes de la que alimenta (asi las
+    // de un mismo nivel quedan alineadas y los NOT, pegados a su compuerta)
+    var hojas = [], porNivel = [];
+    (function ubicar(nd, y, col) {
+      nd.y = y;
+      if (esHoja(nd)) { hojas.push(nd); return; }
+      nd.hijos.forEach(function (h, j) { ubicar(h, y + nd.rel[j], col - 1); });
+      (porNivel[col] = porNivel[col] || []).push(nd);
+    })(raiz, Y0 + raiz.arriba, raiz.nivel);
+
+    // 1a parte: las lineas de las variables, en el orden de la tabla
+    var lineas = {}, ordenLineas = [], x = 0;
+    vars.forEach(function (v) {
+      if (!hojas.some(function (h) { return h.v === v; })) return;
+      var l = { v: v, x: x, top: 0, taps: [] };
+      lineas[v] = l;
+      ordenLineas.push(l);
+      x += PASO_VAR;
+    });
+    var hayConst = hojas.some(function (h) { return h.tipo === "const"; });
+    var XB = (ordenLineas.length ? x - PASO_VAR : 0) + SEP + (hayConst ? 20 : 0); // fin de la 1a parte
     hojas.forEach(function (h) {
-      if (h.tipo === "const") { h.xSalida = XB - 20; return; }
-      var l = lineas[h.v + (h.neg ? "-" : "+")];
+      if (h.tipo === "const") { h.xSalida = XB; return; }
+      var l = lineas[h.v];
       l.taps.push(h.y);
       h.xSalida = l.x;
       h.linea = l;
     });
-    var gates = [];
+
+    // 2a parte: columnas de compuertas, cada una tan ancha como su compuerta mas ancha
+    var nada = function () {}, colX = [];
+    colX[1] = XB + (hayConst ? 20 : 0) + 14;
     for (var nv = 1; nv < porNivel.length; nv++) {
+      var ancho = Math.max.apply(null, (porNivel[nv] || []).map(function (nd) {
+        return compuerta(nd.tipo, 0, 0, nd.h, nada).xSalida;
+      }).concat([0]));
+      colX[nv + 1] = colX[nv] + ancho + GAP;
+    }
+
+    // segmentos de cable: { pts: [[x, y]...], color }. Se arman todos antes de
+    // dibujar, para encontrar los cruces.
+    var cables = [], gates = [];
+    for (nv = 1; nv < porNivel.length; nv++) {
       (porNivel[nv] || []).forEach(function (nd) {
-        var gx = XB + 30 + (nv - 1) * COL, k = nd.hijos.length;
-        var h = Math.max(36, k * 18), sp = h / k;
-        var propios = [];
-        // NAND/NOR con las dos entradas unidas (hace de NOT): el cable llega
-        // al medio y se abre en dos, con un punto en la union
-        if (k === 1 && (nd.tipo === "nand" || nd.tipo === "nor")) {
-          var hj1 = nd.hijos[0], forma1 = [], g1 = compuerta(nd.tipo, gx, nd.y, 2, function (e) { forma1.push(e); });
-          var p1 = nd.y - 9, p2 = nd.y + 9, xu = gx - 10;
-          var c1 = { pts: [[hj1.xSalida, hj1.y], [xu, hj1.y], [xu, p1], [g1.pin(p1), p1]], desde: hj1 };
-          var c2 = { pts: [[xu, nd.y], [xu, p2], [g1.pin(p2), p2]] };
+        var gx = colX[nv], forma = [], g = compuerta(nd.tipo, gx, nd.y, nd.h, function (e) { forma.push(e); });
+        nd.xSalida = g.xSalida;
+        if (unida(nd)) { // el cable llega al medio y se abre en dos, con un punto en la union
+          var hj = nd.hijos[0], p1 = nd.y - 9, p2 = nd.y + 9, xu = gx - 12;
+          var c1 = { pts: [[hj.xSalida, hj.y], [xu, hj.y], [xu, p1], [g.pin(p1), p1]], desde: hj };
+          var c2 = { pts: [[xu, nd.y], [xu, p2], [g.pin(p2), p2]] };
           cables.push(c1, c2);
-          nd.xSalida = g1.xSalida;
-          gates.push({ forma: forma1, cables: [c1, c2], union: [xu, nd.y] });
+          gates.push({ forma: forma, cables: [c1, c2], union: [xu, nd.y] });
           return;
         }
-        var forma = [], g = compuerta(nd.tipo, gx, nd.y, k, function (e) { forma.push(e); });
-        nd.hijos.forEach(function (hj, i) {
-          var py = nd.tipo === "not" ? nd.y : nd.y - h / 2 + sp * (i + 0.5), px = g.pin(py);
-          var pts = Math.abs(hj.y - py) < 0.5 ? [[hj.xSalida, hj.y], [px, py]] : (function () {
-            var xm = gx - 14 - (k > 1 ? Math.abs(i - (k - 1) / 2) * 7 : 0);
-            return [[hj.xSalida, hj.y], [xm, hj.y], [xm, py], [px, py]];
-          })();
-          var c = { pts: pts, desde: hj };
+        var propios = nd.hijos.map(function (hj) {
+          var c = { pts: [[hj.xSalida, hj.y], [g.pin(hj.y), hj.y]], desde: hj };
           cables.push(c);
-          propios.push(c);
+          return c;
         });
-        nd.xSalida = g.xSalida;
         gates.push({ forma: forma, cables: propios });
       });
     }
@@ -1571,7 +1600,7 @@
     if (raiz.nivel === 0) salida.pts[1][0] = Math.max(xs + 36, XB + 30); // F = A: un solo cable
     cables.push(salida);
 
-    // tramos verticales (lineas de variables y codos de los cables), para los saltos
+    // tramos verticales (lineas de variables y uniones), para los saltos
     ordenLineas.forEach(function (l) { l.bottom = Math.max.apply(null, l.taps.concat([l.top])); });
     var verticales = ordenLineas.map(function (l) { return { x: l.x, y0: l.top, y1: l.bottom }; });
     cables.forEach(function (c) {
@@ -1607,21 +1636,10 @@
       agregar(base("ellipse", { x: px - R_PUNTO, y: py - R_PUNTO, width: 2 * R_PUNTO, height: 2 * R_PUNTO, backgroundColor: TINTA }));
     }
 
-    // 1. variables: nombre, linea (y su NOT con la linea negada)
+    // 1. variables: nombre y linea
     ordenLineas.forEach(function (l) {
-      if (!l.neg) {
-        agregar(texto(l.x, l.top - lh - 6, l.v, tam, fuente, TINTA, "center"));
-        agregar(linea(l.x, l.top, [[0, 0], [0, l.bottom - l.top]], cable));
-        return;
-      }
-      // rama al NOT: sale de la linea positiva a la altura Y_NOT
-      var lp = lineas[l.v + "+"], gx = lp.x + 14;
-      var forma = [], g = compuerta("not", gx, Y_NOT, 1, function (e) { forma.push(e); });
-      agregar(trazo([[lp.x, Y_NOT], [gx, Y_NOT]], cable));
-      if (lp.bottom > Y_NOT + 0.5) punto(lp.x, Y_NOT);
-      forma.forEach(agregar);
-      agregar(trazo([[g.xSalida, Y_NOT], [l.x, Y_NOT], [l.x, l.bottom]], cable));
-      agregar(texto(l.x + 6, Y_NOT - lh - 2, (negar || function (v) { return v + "'"; })(l.v), tam * 0.8, fuente, GUIA, "left"));
+      agregar(texto(l.x, l.top - lh - 6, l.v, tam, fuente, TINTA, "center"));
+      agregar(linea(l.x, l.top, [[0, 0], [0, l.bottom - l.top]], cable));
     });
 
     // 2. compuertas, cada una con sus cables (los que salen de una linea de
