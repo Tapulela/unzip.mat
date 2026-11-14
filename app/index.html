@@ -8,6 +8,10 @@
         }
 
         function getTheme() {
+          // unzip.mat: modo oscuro por defecto (la app lee esta misma clave al iniciar).
+          if (!window.localStorage.getItem("excalidraw-theme")) {
+            window.localStorage.setItem("excalidraw-theme", "dark");
+          }
           const theme = window.localStorage.getItem("excalidraw-theme");
 
           if (theme && theme === "system") {
