@@ -8857,7 +8857,28 @@
     ".pz-gen .subfila span{flex:none;width:52px;font-size:11px;opacity:.75;text-align:right;line-height:1.1}",
     ".pz-gen input.extra{font-size:13px;padding:3px 7px}",
     ".pz-gen .invalida input.codigo,.pz-gen input.invalido{border-color:#e03131;background:rgba(224,49,49,.07)}",
-    ".pz-gen input[type=color]{width:28px;height:28px;padding:0;border:1px solid #c9c8d1;border-radius:6px;background:none;cursor:pointer}",
+    ".pz-gen button.color{flex:none;width:28px;height:28px;padding:0;border:1px solid #c9c8d1;border-radius:6px;cursor:pointer;",
+    "box-shadow:inset 0 0 0 2px #fff}",
+    ".pz-gen.oscuro button.color{box-shadow:inset 0 0 0 2px #232329;border-color:#5c5c66}",
+    // selector de color con la paleta de Excalidraw (en vez del nativo del sistema)
+    ".pz-color{position:fixed;z-index:30;width:196px;background:#fff;color:#1b1b1f;border:1px solid #e0dfe6;border-radius:10px;",
+    "box-shadow:0 4px 18px rgba(0,0,0,.18);padding:10px 12px;font:12px/1.4 Assistant,system-ui,sans-serif}",
+    ".pz-color.oscuro{background:#232329;color:#e3e3e8;border-color:#3a3a43}",
+    ".pz-color .tit{opacity:.7;margin:2px 0 6px}",
+    ".pz-color .grilla{display:grid;grid-template-columns:repeat(5,28px);gap:8px}",
+    ".pz-color .grilla+.tit{margin-top:10px}",
+    ".pz-color button{width:28px;height:28px;padding:0;border:1px solid rgba(0,0,0,.12);border-radius:6px;cursor:pointer;",
+    "position:relative;font:10px/1 Assistant,system-ui,sans-serif}",
+    ".pz-color.oscuro button{border-color:rgba(255,255,255,.15)}",
+    ".pz-color button:hover{transform:scale(1.08)}",
+    ".pz-color button.activo{outline:2px solid #6965db;outline-offset:1px}",
+    ".pz-color button span{position:absolute;right:2px;bottom:2px;opacity:.6}",
+    ".pz-color .hex{display:flex;align-items:center;margin-top:10px;border:1px solid #c9c8d1;border-radius:6px;overflow:hidden}",
+    ".pz-color.oscuro .hex{border-color:#3a3a43}",
+    ".pz-color .hex b{padding:4px 7px;opacity:.6;font-weight:400;border-right:1px solid #c9c8d1}",
+    ".pz-color.oscuro .hex b{border-color:#3a3a43}",
+    ".pz-color .hex input{flex:1;min-width:0;border:0;background:transparent;color:inherit;padding:4px 7px;font:inherit;outline:0}",
+    ".pz-color .hex.mal{border-color:#e03131}",
     ".pz-gen .error{color:#e03131;font-size:12px;margin:2px 0 0 2px}",
     ".pz-gen .opc .error{grid-column:1/3;margin:0}",
     ".pz-gen .botones{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}",
@@ -8886,6 +8907,94 @@
     ".pz-gen details.avanzado>.opc{margin-top:8px}",
     ".pz-gen .nota{grid-column:1/3;font-size:12px;opacity:.7;line-height:1.35}",
   ].join("");
+
+  // Selector de color con la misma paleta que la herramienta (Excalidraw):
+  // colores base, tonos del color elegido y codigo hexadecimal
+  var PALETA_EXC = [
+    ["#1e1e1e"], ["#ffffff"],
+    ["#f8f9fa", "#e9ecef", "#ced4da", "#868e96", "#343a40"],
+    ["#f8f1ee", "#eaddd7", "#d2bab0", "#a18072", "#846358"],
+    ["#fff5f5", "#ffc9c9", "#ff8787", "#fa5252", "#e03131"],
+    ["#fff0f6", "#fcc2d7", "#f783ac", "#e64980", "#c2255c"],
+    ["#f8f0fc", "#eebefa", "#da77f2", "#be4bdb", "#9c36b5"],
+    ["#f3f0ff", "#d0bfff", "#9775fa", "#7950f2", "#6741d9"],
+    ["#e7f5ff", "#a5d8ff", "#4dabf7", "#228be6", "#1971c2"],
+    ["#e3fafc", "#99e9f2", "#3bc9db", "#15aabf", "#0c8599"],
+    ["#e6fcf5", "#96f2d7", "#38d9a9", "#12b886", "#099268"],
+    ["#ebfbee", "#b2f2bb", "#69db7c", "#40c057", "#2f9e44"],
+    ["#fff9db", "#ffec99", "#ffd43b", "#fab005", "#f08c00"],
+    ["#fff4e6", "#ffd8a8", "#ffa94d", "#fd7e14", "#e8590c"]
+  ];
+  var selectorColor = {
+    el: null, boton: null, alElegir: null, valor: "",
+    abrir: function (boton, valor, oscuro, alElegir) {
+      if (this.el && this.boton === boton) { this.cerrar(); return; }
+      this.cerrar();
+      var self = this;
+      this.boton = boton; this.alElegir = alElegir; this.valor = (valor || "").toLowerCase();
+      var el = this.el = document.createElement("div");
+      el.className = "pz-color" + (oscuro ? " oscuro" : "");
+      document.body.appendChild(el);
+      this.pintar();
+      var r = boton.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+      var x = Math.max(8, Math.min(r.right - w, innerWidth - w - 8));
+      var y = r.bottom + 6 + h > innerHeight - 8 ? Math.max(8, r.top - 6 - h) : r.bottom + 6;
+      el.style.left = x + "px"; el.style.top = y + "px";
+      // se cierra al tocar fuera (salvo el mismo boton, que lo alterna) o con Escape
+      this.fuera = function (e) { if (!el.contains(e.target) && e.target !== boton) self.cerrar(); };
+      this.tecla = function (e) { if (e.key === "Escape") { e.stopPropagation(); self.cerrar(); boton.focus(); } };
+      document.addEventListener("pointerdown", self.fuera, true);
+      document.addEventListener("keydown", self.tecla, true);
+    },
+    cerrar: function () {
+      if (!this.el) return;
+      this.el.remove();
+      this.el = this.boton = null;
+      document.removeEventListener("pointerdown", this.fuera, true);
+      document.removeEventListener("keydown", this.tecla, true);
+    },
+    elegir: function (v) {
+      this.valor = v.toLowerCase();
+      this.alElegir(this.valor);
+      this.pintar();
+    },
+    pintar: function () {
+      var self = this, el = this.el, v = this.valor;
+      var fam = null;
+      PALETA_EXC.forEach(function (f) { if (f.indexOf(v) >= 0) fam = f; });
+      el.innerHTML = '<div class="tit">Colores</div><div class="grilla base"></div>' +
+        (fam && fam.length > 1 ? '<div class="tit">Tonos</div><div class="grilla tonos"></div>' : "") +
+        '<div class="hex"><b>#</b><input type="text" spellcheck="false" autocomplete="off" maxlength="7"></div>';
+      function muestra(cont, color, activo, etiqueta) {
+        var b = document.createElement("button");
+        b.style.background = color;
+        b.title = color;
+        if (activo) b.className = "activo";
+        if (etiqueta) {
+          var s = document.createElement("span");
+          s.textContent = etiqueta;
+          s.style.color = /^#[d-f]/.test(color) ? "#000" : "#fff";
+          b.appendChild(s);
+        }
+        b.onclick = function () { self.elegir(color); };
+        cont.appendChild(b);
+      }
+      var base = el.querySelector(".base");
+      PALETA_EXC.forEach(function (f) { muestra(base, f[f.length - 1], f === fam); });
+      var tonos = el.querySelector(".tonos");
+      if (tonos) fam.forEach(function (c, i) { muestra(tonos, c, c === v, String(i + 1)); });
+      var hex = el.querySelector(".hex"), inp = hex.querySelector("input");
+      inp.value = v.replace(/^#/, "");
+      inp.oninput = function () {
+        var t = inp.value.trim().replace(/^#/, "").toLowerCase();
+        if (/^[0-9a-f]{3}$/.test(t)) t = t.replace(/./g, "$&$&");
+        var ok = /^[0-9a-f]{6}$/.test(t);
+        hex.classList.toggle("mal", !ok && t !== "");
+        if (ok) { self.valor = "#" + t; self.alElegir(self.valor); }
+      };
+      inp.onkeydown = function (e) { if (e.key === "Enter") self.pintar(); };
+    }
+  };
 
   var panel = {
     el: null, abierto: false, tipo: "recta", ops: {}, temporizador: null,
@@ -9021,6 +9130,7 @@
     },
 
     pintarFilas: function (enfocarUltima) {
+      selectorColor.cerrar();
       var self = this, gen = this.gen(), cont = this.el.querySelector(".filas");
       cont.innerHTML = "";
       this.validadores = [];
@@ -9029,11 +9139,11 @@
         caja.innerHTML = '<div class="fila">' +
           (gen.nombreFila ? '<input type="text" class="nombre" spellcheck="false" autocomplete="off">' : "") +
           '<input type="text" class="codigo" spellcheck="false" autocomplete="off">' +
-          '<input type="color"><button class="quitar" title="Quitar">✕</button></div>' +
+          '<button class="color" title="Color"></button><button class="quitar" title="Quitar">✕</button></div>' +
           '<div class="extras"></div><div class="error"></div>';
-        var t = caja.querySelector("input.codigo"), c = caja.querySelector("input[type=color]");
+        var t = caja.querySelector("input.codigo"), c = caja.querySelector("button.color");
         t.placeholder = gen.placeholder;
-        t.value = f.texto; c.value = f.color;
+        t.value = f.texto; c.style.background = f.color;
         var nom = caja.querySelector("input.nombre");
         if (nom) {
           // vacio = nombre por defecto segun la posicion (f, g, h...)
@@ -9072,7 +9182,11 @@
         validar();
         self.validadores.push(validar);
         t.oninput = function () { f.texto = t.value; self.cambio(); };
-        c.oninput = function () { f.color = c.value; self.cambio(); };
+        c.onclick = function () {
+          selectorColor.abrir(c, f.color, self.el.classList.contains("oscuro"), function (v) {
+            f.color = v; c.style.background = v; self.cambio();
+          });
+        };
         caja.querySelector(".quitar").onclick = function () {
           self.op.filas.splice(i, 1);
           self.pintarFilas();
@@ -9248,6 +9362,7 @@
     alternar: function (abrir) {
       this.abierto = abrir === undefined ? !this.abierto : abrir;
       this.el.style.display = this.abierto ? "" : "none";
+      if (!this.abierto) selectorColor.cerrar();
       boton.actualizar();
       if (this.abierto) seleccionado = undefined, seleccionCambio();
     },
