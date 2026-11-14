@@ -1,5 +1,7 @@
 **[Acceder a esta herramienta online aquí](https://tapulela.github.io/unzip.mat/)**
 
+[![Descarga esta herramienta para poder usarla sin internet](https://img.shields.io/badge/Descarga_esta_herramienta_para_poder_usarla_sin_internet-0078D4?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/Tapulela/unzip.mat/releases/latest/download/unzip.mat.exe)
+
 # unzip.mat
 
 ![unzip.mat](app/logo.svg)
