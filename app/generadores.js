@@ -6886,6 +6886,41 @@
     }
     return null;
   }
+  // distributiva general: x ∧ (y ∨ z) = (x ∧ y) ∨ (x ∧ z) (y su dual), solo si
+  // despues de repartir, las leyes basicas dejan una expresion mas corta:
+  // (p ∧ q ∨ ¬p ∧ ¬q) ∧ ¬q = (p ∧ q ∧ ¬q) ∨ (¬p ∧ ¬q ∧ ¬q) = ¬p ∧ ¬q
+  function tamSimp(n) {
+    if (n.k === "v" || n.k === "c") return 1;
+    if (n.xs) return n.xs.reduce(function (s, x) { return s + tamSimp(x); }, 0);
+    if (n.k === "not") return tamSimp(n.a);
+    return tamSimp(n.a) + tamSimp(n.b);
+  }
+  function reducirSimp(n) {
+    var fases = [leyNegacion, leySimplificacion, leyFactorComun, leyDistributiva];
+    for (var k = 0; k < 40; k++) {
+      var r = null;
+      for (var f = 0; f < fases.length && !r; f++) r = aplicarLeySimp(n, fases[f]);
+      if (!r) break;
+      n = quitarMarcas(planchar(r.pasos[r.pasos.length - 1].n));
+    }
+    return n;
+  }
+  function leyRepartir(n) {
+    if (n.k !== "and" && n.k !== "or") return null;
+    var K = n.k, D = dualSimp(K), xs = n.xs, tam = tamSimp(n);
+    for (var j = 0; j < xs.length; j++) {
+      if (xs[j].k !== D) continue;
+      for (var i = 0; i < xs.length; i++) {
+        if (i === j) continue;
+        var repartido = { k: D, xs: xs[j].xs.map(function (y) { return planchar({ k: K, xs: [y, xs[i]] }); }) };
+        var otros = xs.filter(function (x, q) { return q !== i && q !== j; });
+        otros.splice(Math.min(i, j), 0, repartido);
+        var r = juntar(K, otros);
+        if (tamSimp(reducirSimp(planchar(r))) < tam) return { n: r, ley: "distributiva", op: K };
+      }
+    }
+    return null;
+  }
   // Consenso: xy ∨ ¬xz ∨ yz = xy ∨ ¬xz (y su dual). Dos terminos con un solo
   // literal en conflicto (x en uno, ¬x en el otro) generan el termino de
   // consenso C (el resto de los literales de los dos). Se usa solo si acorta:
@@ -6986,7 +7021,7 @@
   function simplificarPasos(arbol, vars, N, consenso) {
     var fases = [leyDefinicion, leyNegacion, leySimplificacion, leyFactorComun];
     if (consenso !== "no") fases.push(leyConsenso(consenso === "desarrollado"));
-    fases.push(leyDistributiva);
+    fases.push(leyDistributiva, leyRepartir);
     var pasos = [{ n: arbol }], actual = arbol;
     for (var k = 0; k < 80 && !pasos.error; k++) {
       var r = null;
