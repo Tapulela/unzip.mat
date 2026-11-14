@@ -1,5 +1,5 @@
-PIZARRA LOCAL (Excalidraw modificado)
-=====================================
+UNZIP.MAT (pizarra basada en Excalidraw modificado)
+====================================================
 
 Que cambia respecto de excalidraw.com
 - Las dos ventanas se sincronizan dentro de tu PC, sin pasar por internet.

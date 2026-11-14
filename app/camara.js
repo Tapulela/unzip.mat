@@ -12,6 +12,8 @@
 (function () {
   var params = new URLSearchParams(location.search);
   if (params.has("sincamara")) return;
+  // Sin servidor (hosting estático, ver entorno.js) no hay con quién sincronizar.
+  if (window.PIZARRA_SIN_SERVIDOR) return;
   var CLAVE_ROL = "pizarra-proyeccion";
   var esProyeccion = params.has("proyeccion");
   try { if (sessionStorage.getItem(CLAVE_ROL) === "1") esProyeccion = true; } catch (e) {}

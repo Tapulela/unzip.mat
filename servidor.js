@@ -65,6 +65,26 @@ const server = http.createServer((req, res) => {
   if (req.url.startsWith("/archivos/")) {
     return manejarArchivo(req, res, req.url.split("?")[0]);
   }
+  // app/entorno.js dice "sin servidor" (para hosting estático como GitHub
+  // Pages); este servidor cambia esa bandera para habilitar colaboración y cámara.
+  if (req.url.split("?")[0] === "/entorno.js") {
+    return fs.readFile(path.join(ROOT, "entorno.js"), "utf8", (err, txt) => {
+      if (err) {
+        res.writeHead(404);
+        return res.end();
+      }
+      res.writeHead(200, {
+        "Content-Type": TYPES[".js"],
+        "Cache-Control": "no-cache",
+      });
+      res.end(
+        txt.replace(
+          "window.PIZARRA_SIN_SERVIDOR = true;",
+          "window.PIZARRA_SIN_SERVIDOR = false;",
+        ),
+      );
+    });
+  }
   let urlPath = decodeURIComponent(req.url.split("?")[0]);
   let file = path.normalize(path.join(ROOT, urlPath));
   if (!file.startsWith(ROOT)) {
@@ -165,7 +185,7 @@ io.on("connection", (socket) => {
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log("");
-  console.log("  Pizarra local lista.");
+  console.log("  unzip.mat listo.");
   console.log(`  Abri en el navegador:  http://localhost:${PORT}`);
   console.log("");
   console.log("  No cierres esta ventana mientras grabas.");

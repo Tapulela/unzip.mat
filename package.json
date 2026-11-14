@@ -1,8 +1,8 @@
 {
-  "name": "pizarra-local",
+  "name": "unzip.mat",
   "version": "1.0.0",
   "private": true,
-  "description": "Excalidraw local con colaboracion en la misma PC",
+  "description": "unzip.mat: pizarra para clases de matematica basada en Excalidraw, con colaboracion en la misma PC",
   "license": "MIT",
   "main": "servidor.js",
   "scripts": {

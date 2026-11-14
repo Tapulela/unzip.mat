@@ -2,7 +2,10 @@
 
 Este proyecto es un **derivado de [Excalidraw](https://github.com/excalidraw/excalidraw)**
 (licencia MIT, Copyright (c) 2020 Excalidraw). No está afiliado ni respaldado por el
-proyecto Excalidraw. "Excalidraw" es el nombre del proyecto original.
+proyecto Excalidraw. "Excalidraw", "Excalidraw+" y su logo son marcas del proyecto
+original: la licencia MIT cubre el código, no la marca. Por eso unzip.mat usa
+nombre e íconos propios, y `app/entorno.js` oculta el logo de la pantalla de
+bienvenida y los enlaces a Excalidraw+ y a las redes del proyecto original.
 
 ## Qué es de quién
 
@@ -31,11 +34,24 @@ Carpetas incluidas: CascadiaCode, ComicShanns, Excalifont, LiberationSans, Lilit
 Nunito, Virgil, Xiaolai (y `Assistant-Regular.woff2`, `Cascadia.woff2`, `Virgil.woff2`
 en la raíz de `app/`).
 
-Estas fuentes tienen sus propias licencias, en general SIL Open Font License 1.1
-(OFL), que permite redistribuirlas junto con software siempre que se conserven sus
-avisos de copyright y no se vendan por separado. Comic Shanns es MIT. Consulta la
-licencia de cada fuente en el repositorio de Excalidraw
-(`packages/excalidraw/fonts/`) o en su sitio de origen antes de redistribuir.
+Estas fuentes tienen sus propias licencias: SIL Open Font License 1.1 (OFL), que
+permite redistribuirlas junto con software siempre que se conserven sus avisos de
+copyright y no se vendan por separado; Comic Shanns es MIT. El texto de cada licencia
+está junto a la fuente, en `app/fonts/<Fuente>/LICENSE.txt` (la de Assistant, cuyo
+archivo está en la raíz de `app/`, en `app/fonts/Assistant/LICENSE.txt`;
+`Cascadia.woff2` y `Virgil.woff2` de la raíz usan las de CascadiaCode y Virgil).
+
+| Fuente | Licencia | Origen |
+|---|---|---|
+| Assistant | OFL 1.1 | Google Fonts |
+| Cascadia Code | OFL 1.1 | Microsoft |
+| Comic Shanns | MIT | Shannon Miwa |
+| Excalifont | OFL 1.1 | Excalidraw / DizajnDesign |
+| Liberation Sans | OFL 1.1 | Liberation Fonts |
+| Lilita One | OFL 1.1 | Google Fonts |
+| Nunito | OFL 1.1 | Google Fonts |
+| Virgil | OFL 1.1 | Ellinor Rapp |
+| Xiaolai | OFL 1.1 | LXGW (Kose Font) |
 
 ## Dependencias npm
 

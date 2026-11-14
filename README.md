@@ -1,6 +1,8 @@
-# Pizarra local
+# unzip.mat
 
-Versión modificada de [Excalidraw](https://github.com/excalidraw/excalidraw) para
+![unzip.mat](app/logo.svg)
+
+Pizarra para clases de matemática. Versión modificada de [Excalidraw](https://github.com/excalidraw/excalidraw) para
 colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nube.
 
 > Proyecto derivado, no afiliado a Excalidraw. Ver [NOTICE.md](NOTICE.md).
@@ -10,6 +12,12 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
 - La colaboración usa un servidor local (`servidor.js`, Socket.IO) en vez del servidor de Excalidraw.
 - No se guarda la escena en Firebase; las imágenes pegadas se guardan (cifradas) en memoria del servidor local.
 - El service worker se autodestruye para no cachear versiones viejas.
+- Rutas relativas para poder publicarlo en una subcarpeta (GitHub Pages). Además del
+  parche, se editó el build: `index.html` (rutas y `EXCALIDRAW_ASSET_PATH` calculado
+  desde la URL), el registro de `sw.js` en `assets/index-*.js`, el `url()` de la
+  fuente Assistant en `assets/index-*.css` y el helper de precarga en
+  `assets/mermaid-to-excalidraw-*.js`. Si se recompila, hay que compilar con
+  `base: "./"` y conservar estos cambios.
 - `?sinpuntero` en la URL oculta el puntero del colaborador (útil para grabar con OBS).
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
@@ -173,9 +181,22 @@ npm start
 Abre <http://localhost:3000>. En Windows también sirve `Iniciar pizarra.bat`.
 Instrucciones completas en [LEEME.txt](LEEME.txt).
 
+### Versión web (GitHub Pages)
+
+La carpeta `app/` también funciona como sitio estático: el workflow
+[`.github/workflows/pages.yml`](.github/workflows/pages.yml) la publica en GitHub
+Pages en cada push a `main` (en el repo: Settings → Pages → Source: «GitHub Actions»).
+Las rutas son relativas, así que funciona en `usuario.github.io/nombre-del-repo/`.
+
+Sin `servidor.js` no hay colaboración entre ventanas, cámara remota ni imágenes
+compartidas: `app/entorno.js` define `window.PIZARRA_SIN_SERVIDOR = true` y oculta
+esos botones. `servidor.js` sirve ese mismo archivo con la bandera en `false`.
+Dibujar, guardar, exportar y todos los generadores funcionan igual.
+
 ## Estructura
 
 - `app/` — build compilado de Excalidraw (con las modificaciones).
+- `app/entorno.js` — detecta si hay servidor y oculta la marca y los enlaces de Excalidraw/Excalidraw+.
 - `servidor.js` — servidor HTTP + Socket.IO.
 - `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).
 - `cambios-al-codigo.diff` — parche sobre el código fuente de Excalidraw.
