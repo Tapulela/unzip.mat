@@ -146,6 +146,47 @@
     });
   }
 
+  // ------------------------------------------------------- raices dibujadas
+  // REGLA GENERAL DEL SISTEMA: la raiz cuadrada nunca se escribe con el
+  // caracter √. Todo texto generado que lo tenga se parte en textos y un
+  // trazo: el gancho de la raiz y la linea por encima del radicando.
+  // Radicando: un numero (√16), una letra (√Δ) o algo entre parentesis
+  // (√(a² + b²), que se dibuja sin los parentesis).
+  var RE_RAIZ = /√(?:\[([^\]]+)\])?(\((?:[^()]|\([^()]*\))*\)|[0-9]+(?:[.,][0-9]+)?|[A-Za-zΔπρ](?![A-Za-z]))/;
+  function fuenteDeId(id) {
+    for (var k in FUENTES) if (FUENTES[k].id === id) return FUENTES[k];
+    return FUENTES.normal;
+  }
+  function expandirRaices(e) {
+    if (e.type !== "text" || e.text.indexOf("√") < 0 || /\n/.test(e.text)) return [e];
+    var fuente = fuenteDeId(e.fontFamily), tam = e.fontSize, lh = tam * fuente.lh;
+    var out = [], x = e.x, resto = e.text, mid = e.y + lh / 2, m;
+    function escribir(t) {
+      if (!t) return;
+      var lead = t.length - t.replace(/^\s+/, "").length, limpio = t.trim();
+      if (limpio) out.push(texto(x + medir(t.slice(0, lead), tam, fuente), e.y, limpio, tam, fuente, e.strokeColor, "left"));
+      x += medir(t, tam, fuente);
+    }
+    while ((m = RE_RAIZ.exec(resto))) {
+      escribir(resto.slice(0, m.index));
+      var rad = m[2].replace(/^\((.*)\)$/, "$1"), w = medir(rad, tam, fuente), g = tam * 0.6;
+      var top = e.y - 1, bot = e.y + lh - 3;
+      if (m[1]) {
+        // indice (√[3]): mas chico, arriba del gancho; si es ancho, corre la raiz
+        var tamI = Math.round(tam * 0.55), wI = medir(m[1], tamI, fuente), corre = Math.max(0, wI - g * 0.45);
+        x += corre;
+        out.push(texto(x + g * 0.5 - wI, mid - tamI * fuente.lh - 1, m[1], tamI, fuente, e.strokeColor, "left"));
+      }
+      out.push(trazo([[x + tam * 0.05, mid + 2], [x + g * 0.3, mid - 2], [x + g * 0.6, bot], [x + g, top],
+        [x + g + w + tam * 0.1, top]], { strokeColor: e.strokeColor, strokeWidth: Math.max(1, tam / 14) }));
+      out.push(texto(x + g + tam * 0.05, e.y, rad, tam, fuente, e.strokeColor, "left"));
+      x += w + tam * 0.8;
+      resto = resto.slice(m.index + m[0].length);
+    }
+    escribir(resto);
+    return out.length ? out : [e];
+  }
+
   // ------------------------------------------------------------ titulos
   // Cada grafico puede llevar un titulo ("Tabla de verdad", "Diagrama
   // sagital"...) arriba a la izquierda, un tamaño mas grande que su texto.
@@ -3243,7 +3284,7 @@
     return { alto: arriba + Hr, medio: medio };
   }
 
-  // ======================================= ECUACIONES CON VALOR ABSOLUTO
+  // ======================================= EXPRESIONES CON VALOR ABSOLUTO
   // No resuelve: arma la plantilla. La ecuacion va arriba con una llave
   // debajo; de la llave baja una linea que se abre en los dos casos del valor
   // absoluto de mas a la izquierda (E ≥ 0 y E < 0), cada uno con una flecha
@@ -3336,6 +3377,398 @@
     return medir(m ? s.slice(0, m.index) : s, tam, fuente);
   }
 
+  // ---------------------------------- resolucion paso a paso (lineales)
+  // Fracciones exactas { n, d } con d > 0.
+  function mcdAbs(a, b) { a = Math.abs(a); b = Math.abs(b); while (b) { var t = a % b; a = b; b = t; } return a || 1; }
+  function fr(n, d) {
+    d = d === undefined ? 1 : d;
+    if (d < 0) { n = -n; d = -d; }
+    var g = mcdAbs(n, d);
+    return { n: n / g || 0, d: d / g };
+  }
+  function frNeg(a) { return { n: -a.n || 0, d: a.d }; }
+  function frSuma(a, b) { return fr(a.n * b.d + b.n * a.d, a.d * b.d); }
+  function frMul(a, b) { return fr(a.n * b.n, a.d * b.d); }
+  function frDiv(a, b) { return fr(a.n * b.d, a.d * b.n); }
+  function frCero(a) { return a.n === 0; }
+  function frUno(a) { return a.n === 1 && a.d === 1; }
+  function frValor(a) { return a.n / a.d; }
+  function frTexto(a) { return (a.n < 0 ? "−" : "") + Math.abs(a.n) + (a.d === 1 ? "" : "/" + a.d); }
+  function errAbs(m) { throw { msjAbs: m }; }
+
+  // Expresion lineal en la variable `vari` -> lista de terminos { c, x }
+  // (x: 1 si lleva la variable) en el orden en que quedan al quitar los
+  // parentesis, SIN juntar los semejantes: −(1 − x) + 7 -> −1, x, 7.
+  // `grado` (1 por defecto): el grado maximo admitido (2 para polinomios).
+  function leerLineal(s, vari, grado) {
+    grado = grado || 1;
+    var t = String(s).replace(/\s+/g, ""), i = 0;
+    var negar = function (L) { return L.map(function (m) { return { c: frNeg(m.c), x: m.x }; }); };
+    var mult = function (A, B) {
+      var r = [];
+      A.forEach(function (p) {
+        B.forEach(function (q) {
+          if (p.x + q.x > grado) errAbs(grado > 1 ? "El grado es mayor que 2"
+            : "No es lineal (aparece " + vari + "²): por ahora se resuelven solo las lineales");
+          r.push({ c: frMul(p.c, q.c), x: p.x + q.x });
+        });
+      });
+      return r;
+    };
+    var dividir = function (A, B) {
+      var j = juntarLineal(B);
+      if (j.length > 1 || j[0].x) errAbs("No se puede dividir por una expresión con " + vari);
+      if (frCero(j[0].c)) errAbs("División por cero");
+      return A.map(function (m) { return { c: frDiv(m.c, j[0].c), x: m.x }; });
+    };
+    function expr() {
+      var r = termino();
+      while (t[i] === "+" || t[i] === "−") { var o = t[i++], b = termino(); r = r.concat(o === "+" ? b : negar(b)); }
+      return r;
+    }
+    function termino() {
+      var r = unario();
+      for (;;) {
+        var c = t[i];
+        if (c === "·" || c === "×") { i++; r = mult(r, unario()); }
+        else if (c === "/" || c === ":") { i++; r = dividir(r, unario()); }
+        else if (c && /[A-Za-z0-9(\[{]/.test(c)) r = mult(r, potencia()); // 2x, 2(x − 1)
+        else return r;
+      }
+    }
+    function unario() {
+      if (t[i] === "−") { i++; return negar(unario()); }
+      if (t[i] === "+") { i++; return unario(); }
+      return potencia();
+    }
+    function potencia() {
+      var b = atomo(), m = /^[⁰¹²³⁴-⁹]+/.exec(t.slice(i));
+      if (!m) return b;
+      i += m[0].length;
+      var e = parseInt(m[0].split("").map(function (c) { return "⁰¹²³⁴⁵⁶⁷⁸⁹".indexOf(c); }).join(""), 10);
+      var r = [{ c: fr(1), x: 0 }];
+      for (var k = 0; k < e; k++) r = mult(r, b);
+      return r;
+    }
+    function atomo() {
+      var c = t[i];
+      if (c === "(" || c === "[" || c === "{") {
+        var fin = { "(": ")", "[": "]", "{": "}" }[c];
+        i++;
+        var r = expr();
+        if (t[i] !== fin) errAbs("Falta cerrar un «" + c + "»");
+        i++;
+        return r;
+      }
+      if (c === "|") errAbs("Hay más de un valor absoluto: para resolver se admite uno solo");
+      var m = /^(\d+)(?:[.,](\d+))?/.exec(t.slice(i));
+      if (m) {
+        i += m[0].length;
+        var dec = m[2] || "";
+        return [{ c: fr(parseInt(m[1] + dec, 10), Math.pow(10, dec.length)), x: 0 }];
+      }
+      if (c && /[A-Za-z]/.test(c)) { i++; return [{ c: fr(1), x: 1 }]; }
+      errAbs(c ? "No se entiende «" + c + "»" : "Falta un término");
+    }
+    var r = expr();
+    if (i < t.length) errAbs("No se entiende «" + t[i] + "»");
+    return r;
+  }
+
+  // junta los semejantes: [a·x, b] (sin los que dan cero; [0] si no queda nada)
+  // Si no hay semejantes para juntar, queda en el orden escrito (1 − x).
+  function juntarLineal(L) {
+    var nx = L.filter(function (m) { return m.x; }).length;
+    if (L.length && nx <= 1 && L.length - nx <= 1 && L.every(function (m) { return !frCero(m.c); })) return L;
+    var a = fr(0), b = fr(0);
+    L.forEach(function (m) { if (m.x) a = frSuma(a, m.c); else b = frSuma(b, m.c); });
+    var r = [];
+    if (!frCero(a)) r.push({ c: a, x: 1 });
+    if (!frCero(b) || !r.length) r.push({ c: b, x: 0 });
+    return r;
+  }
+  function coefLineal(L) {
+    var j = juntarLineal(L), a = fr(0), b = fr(0);
+    j.forEach(function (m) { if (m.x) a = m.c; else b = m.c; });
+    return { a: a, b: b };
+  }
+  // termino sin signo (c > 0): 3, 7/4, x, 2x, (3/4)x
+  function textoTerminoAbs(c, x, vari) {
+    var s = frTexto(c);
+    if (!x) return s;
+    if (frUno(c)) return vari;
+    return (c.d === 1 ? s : "(" + s + ")") + vari;
+  }
+  function textoLineal(L, vari) {
+    if (!L.length) return "0";
+    return L.map(function (m, k) {
+      var neg = m.c.n < 0, s = textoTerminoAbs(neg ? frNeg(m.c) : m.c, m.x, vari);
+      return k ? (neg ? " − " : " + ") + s : (neg ? "−" : "") + s;
+    }).join("");
+  }
+
+  var COLOR_SUMA = "#2f9e44", COLOR_PRODUCTO = "#9c36b5";
+  var COLOR_CONDICION = "#f08c00", COLOR_CASO = "#1971c2";
+  var INVERTIR_ABS = { "<": ">", ">": "<", "≤": "≥", "≥": "≤", "=": "=" };
+  var TAM_NOTA = { S: 16, M: 16, L: 20, XL: 28 };
+
+  function textoSegs(segs) { return segs.map(function (s) { return s.t; }).join(""); }
+  function textoLineaAbs(l) { return textoSegs(l.izq) + " " + l.rel + " " + textoSegs(l.der); }
+
+  // Resuelve «izq rel der» (lineal) escribiendo cada paso. Devuelve
+  // { lineas, tramos }: cada linea es { izq, rel, der, nota } con izq y der
+  // listas de { t, color } (lo que se agrega por la propiedad uniforme va en
+  // color) y nota = [{ t, color }] (que se hizo, en el mismo color).
+  function resolverLineal(txt, vari) {
+    var rels = txt.match(/[=<>≤≥≠]/g) || [];
+    if (rels.length !== 1) errAbs("Para resolver tiene que haber una sola relación (=, <, >, ≤ o ≥)");
+    var rel = rels[0];
+    if (rel === "≠") errAbs("Con ≠ no se resuelve: usá =, <, >, ≤ o ≥");
+    var p = txt.indexOf(rel), tI = txt.slice(0, p).trim(), tD = txt.slice(p + 1).trim();
+    var L = leerLineal(tI, vari), R = leerLineal(tD, vari);
+    var lineas = [{ izq: [{ t: tI }], rel: rel, der: [{ t: tD }] }];
+    var simple = function (T) { return [{ t: textoLineal(T, vari) }]; };
+    function poner(izq, der, rel2, nota) {
+      var l = { izq: izq, rel: rel2 || rel, der: der, nota: nota };
+      if (textoLineaAbs(l) !== textoLineaAbs(lineas[lineas.length - 1])) lineas.push(l);
+    }
+    // propiedad uniforme: suma (o resta) del mismo termino en los dos miembros
+    function sumar(c, x) {
+      var neg = c.n < 0, txtT = textoTerminoAbs(neg ? frNeg(c) : c, x, vari);
+      var seg = [{ t: (neg ? " − " : " + ") + txtT, color: COLOR_SUMA }];
+      poner(simple(L).concat(seg), simple(R).concat(seg), rel,
+        [{ t: (neg ? "Restar " : "Sumar ") + txtT + " en ambos miembros", color: COLOR_SUMA }]);
+      L = juntarLineal(L.concat([{ c: c, x: x }]));
+      R = juntarLineal(R.concat([{ c: c, x: x }]));
+      poner(simple(L), simple(R));
+    }
+    // quitar parentesis y juntar semejantes
+    poner(simple(L), simple(R));
+    L = juntarLineal(L); R = juntarLineal(R);
+    poner(simple(L), simple(R));
+    // las x a la izquierda y los numeros a la derecha
+    var cR = coefLineal(R);
+    if (!frCero(cR.a)) sumar(frNeg(cR.a), 1);
+    var cL = coefLineal(L);
+    cR = coefLineal(R);
+    if (frCero(cL.a)) {
+      // no queda la variable: se cumple siempre o nunca
+      var u = frValor(cL.b), v = frValor(cR.b);
+      var ok = { "=": u === v, "<": u < v, ">": u > v, "≤": u <= v, "≥": u >= v }[rel];
+      lineas[lineas.length - 1].nota = [{ t: ok ? "Se cumple para todo " + vari : "No se cumple para ningún " + vari, color: COLOR_SUMA }];
+      lineas[lineas.length - 1].notaFinal = true;
+      return { lineas: lineas, tramos: ok ? [{ a: -Infinity, b: Infinity, ca: false, cb: false, ta: "−∞", tb: "∞" }] : [] };
+    }
+    if (!frCero(cL.b)) sumar(frNeg(cL.b), 0);
+    cL = coefLineal(L); cR = coefLineal(R);
+    var a = cL.a, val = frDiv(cR.b, a), rel2 = a.n < 0 ? INVERTIR_ABS[rel] : rel;
+    if (!frUno(a)) {
+      // propiedad uniforme: multiplicar (o dividir) los dos miembros
+      var seg, nota;
+      if (a.n === -1 && a.d === 1) {
+        seg = "·(−1)"; nota = "Multiplicar por −1 en ambos miembros";
+      } else if (a.d === 1) {
+        seg = " : " + (a.n < 0 ? "(" + frTexto(a) + ")" : frTexto(a)); nota = "Dividir por " + frTexto(a) + " en ambos miembros";
+      } else {
+        var inv = frDiv(fr(1), a);
+        seg = "·(" + frTexto(inv) + ")"; nota = "Multiplicar por " + frTexto(inv) + " en ambos miembros";
+      }
+      var notas = [{ t: nota, color: COLOR_PRODUCTO }];
+      if (a.n < 0 && rel !== "=") notas.push({ t: "(se invierte la desigualdad)", color: COLOR_PRODUCTO });
+      var s = [{ t: seg, color: COLOR_PRODUCTO }];
+      poner(simple(L).concat(s), simple(R).concat(s), rel2, notas);
+      poner([{ t: vari }], [{ t: frTexto(val) }], rel2);
+    }
+    var x = frValor(val), tx = frTexto(val);
+    var tr = {
+      "=": { a: x, b: x, ca: true, cb: true, ta: tx, tb: tx },
+      "<": { a: -Infinity, b: x, ca: false, cb: false, ta: "−∞", tb: tx },
+      "≤": { a: -Infinity, b: x, ca: false, cb: true, ta: "−∞", tb: tx },
+      ">": { a: x, b: Infinity, ca: false, cb: false, ta: tx, tb: "∞" },
+      "≥": { a: x, b: Infinity, ca: true, cb: false, ta: tx, tb: "∞" },
+    }[rel2];
+    return { lineas: lineas, tramos: [tr] };
+  }
+
+  function textoConjuntoAbs(lista) {
+    if (lista.length === 1 && lista[0].a === -Infinity && lista[0].b === Infinity) return "ℝ";
+    // solo puntos sueltos: {−4, −2/3}
+    if (lista.length > 1 && lista.every(function (t) { return t.a === t.b; }))
+      return "{" + lista.map(function (t) { return t.ta; }).join(", ") + "}";
+    return textoResultado(lista).replace(/-∞/g, "−∞");
+  }
+  // intervalo como lo lee la recta real ({2} -> [2, 2])
+  function textoRectaAbs(t) {
+    return (t.ca ? "[" : "(") + (t.a === -Infinity ? "−∞" : t.ta) + ", " + (t.b === Infinity ? "∞" : t.tb) + (t.cb ? "]" : ")");
+  }
+
+  // Resolucion recursiva: cada relacion se separa en los dos casos del valor
+  // absoluto de mas a la izquierda; si la condicion o la ecuacion de un caso
+  // todavia tienen valores absolutos, se vuelven a separar (y asi
+  // sucesivamente). Nodo: { hoja: { lineas, tramos }, tramos } o
+  // { texto, casos: [{ cond, ec, res }], tramos } (cond y ec son nodos).
+  var MAX_ABS = 3;
+  function contarAbs(s) { return (String(s).match(/\|/g) || []).length / 2; }
+  function resolverNodoAbs(txt, vari, estricto) {
+    if (String(txt).indexOf("|") < 0) {
+      var h = resolverLineal(txt, vari);
+      return { hoja: h, tramos: h.tramos };
+    }
+    var a = leerEcuacionAbs(txt);
+    if (a.error) errAbs(a.error);
+    var cs = casosAbs(a, estricto);
+    var casos = [0, 1].map(function (k) {
+      var cond = resolverNodoAbs(cs.cond[k], vari, estricto), ec = resolverNodoAbs(cs.ec[k], vari, estricto);
+      return { cond: cond, ec: ec, res: intersecar(cond.tramos, ec.tramos) };
+    });
+    return { texto: a.s, casos: casos, tramos: unir(casos[0].res, casos[1].res) };
+  }
+
+  // { vari, nodo } o { error }
+  function resolverAbs(a, estricto) {
+    var letras = (a.s.match(/[A-Za-z]/g) || []).filter(function (c, i, l) { return l.indexOf(c) === i; });
+    if (!letras.length) return { error: "Falta la incógnita (x)" };
+    if (letras.length > 1) return { error: "Para resolver se admite una sola variable (hay " + letras.join(", ") + ")" };
+    if (contarAbs(a.s) > MAX_ABS) return { error: "Para resolver se admiten hasta " + MAX_ABS + " valores absolutos" };
+    try {
+      return { vari: letras[0], nodo: resolverNodoAbs(a.s, letras[0], estricto) };
+    } catch (e) {
+      if (e && e.msjAbs) return { error: e.msjAbs };
+      throw e;
+    }
+  }
+
+  // escribe una linea con su relacion en xRel; devuelve su borde derecho
+  function dibujarLineaAbs(l, xRel, y, tam, fuente, agregar) {
+    var segs = l.izq.concat([{ t: " " + l.rel + " " }], l.der), juntos = [];
+    segs.forEach(function (s) {
+      var u = juntos[juntos.length - 1], c = s.color || TINTA;
+      if (u && u.color === c) u.t += s.t;
+      else juntos.push({ t: s.t, color: c });
+    });
+    var x0 = xRel - medir(textoSegs(l.izq) + " ", tam, fuente), pre = "";
+    juntos.forEach(function (s) {
+      var lead = s.t.length - s.t.replace(/^\s+/, "").length, limpio = s.t.trim();
+      if (limpio) agregar(texto(x0 + medir(pre + s.t.slice(0, lead), tam, fuente), y, limpio, tam, fuente, s.color, "left"));
+      pre += s.t;
+    });
+    return x0 + medir(pre, tam, fuente);
+  }
+
+  // c: { tam, fuente, lh, paso, tamN, op, color, agregar }
+  // Hoja: las lineas con las relaciones alineadas; la primera empieza en x y
+  // las demas no pasan de xMin. Con `notas`, lo que se hace en cada paso va a
+  // la derecha, en el renglon anterior al paso. Devuelve { y, x1, finCab }.
+  function dibujarHojaAbs(h, x, xMin, y, c, notas) {
+    var tam = c.tam, fuente = c.fuente, lh = c.lh, L = h.lineas;
+    var antes = function (l) { return medir(textoSegs(l.izq) + " ", tam, fuente); };
+    var ancho = function (l) { return medir(textoLineaAbs(l), tam, fuente); };
+    var xRel = x + antes(L[0]);
+    L.forEach(function (l, i) { if (i) xRel = Math.max(xRel, xMin + antes(l)); });
+    var der = 0;
+    L.forEach(function (l) { der = Math.max(der, xRel - antes(l) + ancho(l)); });
+    var xNota = der + tam * 1.5, x1 = der, hN = c.tamN * fuente.lh;
+    var nota = function (m, yl) {
+      if (!notas || !c.op.notas || !m || !m.nota) return;
+      m.nota.forEach(function (n, j) {
+        c.agregar(texto(xNota, yl + (lh - m.nota.length * hN) / 2 + j * hN, n.t, c.tamN, fuente, n.color, "left"));
+        x1 = Math.max(x1, xNota + medir(n.t, c.tamN, fuente));
+      });
+    };
+    L.forEach(function (l, i) {
+      var yl = y + i * c.paso;
+      dibujarLineaAbs(l, xRel, yl, tam, fuente, c.agregar);
+      if (l.notaFinal) nota(l, yl);
+      var sig = L[i + 1];
+      if (sig && !sig.notaFinal) nota(sig, yl);
+    });
+    return { y: y + L.length * c.paso, x1: x1, finCab: xRel - antes(L[0]) + ancho(L[0]) };
+  }
+  function dibujarBloqueAbs(b, x, xMin, y, c, notas) {
+    return b.hoja ? dibujarHojaAbs(b.hoja, x, xMin, y, c, notas) : dibujarNodoAbs(b, x, y, c, false);
+  }
+
+  // Nodo: la relacion con una llave debajo; de la llave baja una linea que
+  // se abre en los dos casos (la condicion, una flecha y la relacion del
+  // caso, cada una resuelta o separada otra vez en casos), la interseccion
+  // de cada caso, su recta real y al final la union de los dos casos.
+  function dibujarNodoAbs(N, x, y, c, raiz) {
+    var tam = c.tam, fuente = c.fuente, lh = c.lh;
+    var ln = { strokeColor: c.color, strokeWidth: 2 };
+    var fl = { type: "arrow", endArrowhead: "arrow", strokeColor: c.color, strokeWidth: 2 };
+    var wEc = medir(N.texto, tam, fuente), yLlave = y + lh + tam * 0.3, pata = tam * 0.4;
+    var xTallo = x + tam * 1.2, xCond = xTallo + tam * 3;
+    var yy = yLlave + lh * 0.7, medios = [], bloques = [], x1 = x + wEc;
+    N.casos.forEach(function (cs) {
+      // cada caso se arma aparte (para saber hasta donde baja el tallo)
+      var els = [], cc = {};
+      for (var k in c) cc[k] = c[k];
+      cc.agregar = function (e) { els.push(e); return e; };
+      var yk = yy, ym = yk + lh / 2;
+      medios.push(ym);
+      cc.agregar(trazo([[xTallo, ym], [xCond - tam * 0.5, ym]], fl));
+      var rc = dibujarBloqueAbs(cs.cond, xCond, xTallo + tam * 0.8, yk, cc, false);
+      var xEc = Math.max(rc.x1 + tam * 1.5, rc.finCab + Math.max(tam * 5, 80));
+      cc.agregar(trazo([[rc.finCab + tam * 0.6, ym], [xEc, ym]], fl));
+      var re = dibujarBloqueAbs(cs.ec, xEc + tam * 0.6, xEc + tam * 0.3, yk, cc, true);
+      // interseccion de la condicion con lo que dio el caso
+      var yI = Math.max(rc.y, re.y) + lh * 0.4;
+      var tC = textoConjuntoAbs(cs.cond.tramos), tE = textoConjuntoAbs(cs.ec.tramos);
+      var wC = medir(tC, tam, fuente), wE = medir(tE, tam, fuente);
+      var xC = xCond, xE = Math.max(xC + wC + tam * 3, xEc + tam * 0.6), subr = yI + lh + 3;
+      var igual = " = " + textoConjuntoAbs(cs.res);
+      cc.agregar(texto(xC, yI, tC, tam, fuente, TINTA, "left"));
+      cc.agregar(trazo([[xC, subr], [xC + wC, subr]], { strokeColor: COLOR_CONDICION, strokeWidth: 2.5 }));
+      cc.agregar(texto((xC + wC + xE) / 2, yI, "∩", tam, fuente, TINTA, "center"));
+      cc.agregar(texto(xE, yI, tE, tam, fuente, TINTA, "left"));
+      cc.agregar(trazo([[xE, subr], [xE + wE, subr]], { strokeColor: COLOR_CASO, strokeWidth: 2.5 }));
+      cc.agregar(texto(xE + wE, yI, igual, tam, fuente, TINTA, "left"));
+      x1 = Math.max(x1, rc.x1, re.x1, xE + wE + medir(igual, tam, fuente));
+      yy = yI + lh + tam * 0.6;
+      // recta real con los dos conjuntos rayados
+      var filasR = [];
+      if (cs.cond.tramos.length) filasR.push({ texto: cs.cond.tramos.map(textoRectaAbs).join(" ∪ "), color: COLOR_CONDICION });
+      if (cs.ec.tramos.length) filasR.push({ texto: cs.ec.tramos.map(textoRectaAbs).join(" ∪ "), color: COLOR_CASO });
+      if (c.op.recta && filasR.length) {
+        var opR = Object.assign(copiar(GEN.recta.defecto), {
+          filas: filasR, operacion: "interseccion", mostrarUnion: false, mostrarResultado: false, referencia: false,
+          ocultarNumeros: true, largo: x1 - xTallo > 760 ? "media" : "corta", tamExtremos: c.op.tamTexto, fuente: c.op.fuente,
+        });
+        var tmp = [];
+        generarRecta(opR, 0, 0, function (e) { tmp.push(e); return e; });
+        if (tmp.length) {
+          var b = cajaDe(tmp), dx = xTallo + tam * 1.5 - b.x0, dy = yy + tam * 0.4 - b.y0;
+          tmp.forEach(function (e) { e.x += dx; e.y += dy; cc.agregar(e); });
+          yy += tam * 0.4 + (b.y1 - b.y0);
+        }
+      }
+      yy += lh * 1.2;
+      bloques.push(els);
+    });
+    // en orden de dibujo: la relacion, la llave, el tallo y los dos casos
+    c.agregar(texto(x, y, N.texto, tam, fuente, TINTA, "left"));
+    c.agregar(trazo([[x - 4, yLlave - pata], [x - 4, yLlave], [x + wEc + 4, yLlave], [x + wEc + 4, yLlave - pata]], ln));
+    c.agregar(trazo([[xTallo, yLlave], [xTallo, medios[medios.length - 1]]], ln));
+    bloques.forEach(function (els) { els.forEach(c.agregar); });
+    // union de los dos casos: el conjunto solucion (o el de este subcaso)
+    var R1 = N.casos[0].res, R2 = N.casos[1].res, tU = textoConjuntoAbs(N.tramos);
+    var union = textoConjuntoAbs(R1) + " ∪ " + textoConjuntoAbs(R2);
+    var sol = (raiz ? "Conjunto solución: " : "Solución de " + N.texto + ": ") + union;
+    if (!R1.length || !R2.length || tU !== union) sol += " = " + tU;
+    c.agregar(texto(x + tam, yy, sol, tam, fuente, raiz ? TINTA : c.color, "left"));
+    x1 = Math.max(x1, x + tam + medir(sol, tam, fuente));
+    return { y: yy + lh * (raiz ? 1 : 1.4), x1: x1, finCab: x + wEc };
+  }
+
+  function generarAbsResuelta(op, a, fila, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh;
+    var r = resolverAbs(a, op.casos === "estricto");
+    if (r.error) return oy;
+    var c = { tam: tam, fuente: fuente, lh: lh, paso: lh * 1.15, tamN: TAM_NOTA[op.tamTexto] || 16, op: op,
+      color: op.colorLineas ? fila.color : TINTA, agregar: agregar };
+    return dibujarNodoAbs(r.nodo, ox, oy, c, true).y;
+  }
+
   function generarAbs(op, ox, oy, agregar) {
     var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
     var lh = tam * fuente.lh, renglones = Math.max(0, Math.round(Number(op.renglones) || 0));
@@ -3343,6 +3776,10 @@
     op.filas.forEach(function (fila) {
       var a = leerEcuacionAbs(fila.texto);
       if (a.error) return;
+      if (op.modoAbs !== "plantilla") {
+        y = generarAbsResuelta(op, a, fila, ox, y, agregar) + lh * 2;
+        return;
+      }
       var cs = casosAbs(a, op.casos === "estricto");
       var color = op.colorLineas ? fila.color : TINTA;
       var ln = { strokeColor: color, strokeWidth: 2 };
@@ -3370,6 +3807,1460 @@
         agregar(texto(xIgual - antesDelIgualAbs(cs.ec[k], tam, fuente), yk, cs.ec[k], tam, fuente, TINTA, "left"));
       });
       y = y2 + lh * (1 + renglones) + lh * 1.5;
+    });
+  }
+
+  // ================== INECUACIONES CON LA REGLA DE LOS SIGNOS (motor comun)
+  // Un producto A · B (o, mas adelante, un cociente A / B) comparado con 0 se
+  // separa en dos casos segun los signos (+·+ ∨ −·− si es > 0; +·− ∨ −·+ si
+  // es < 0). Cada caso son dos inecuaciones lineales (columnas) que se
+  // resuelven paso a paso y se intersecan; al final se unen los dos casos.
+  var REL_INV = { "<": ">", ">": "<", "≤": "≥", "≥": "≤" };
+  // casos para A · B rel 0: [[relA, relB, etiqueta], ...]
+  function casosSignos(rel) {
+    switch (rel) {
+      case ">": return [[">", ">", "+ · +"], ["<", "<", "− · −"]];
+      case "≥": return [["≥", "≥", "+ · +"], ["≤", "≤", "− · −"]];
+      case "<": return [[">", "<", "+ · −"], ["<", ">", "− · +"]];
+      default: return [["≥", "≤", "+ · −"], ["≤", "≥", "− · +"]];
+    }
+  }
+  // casos para A / B rel 0 (el denominador nunca es 0: siempre estricto)
+  function casosCociente(rel) {
+    var et = function (a, b) { return FrF(a, b); };
+    switch (rel) {
+      case ">": return [[">", ">", et("+", "+")], ["<", "<", et("−", "−")]];
+      case "≥": return [["≥", ">", et("+", "+")], ["≤", "<", et("−", "−")]];
+      case "<": return [[">", "<", et("+", "−")], ["<", ">", et("−", "+")]];
+      default: return [["≥", "<", et("+", "−")], ["≤", ">", et("−", "+")]];
+    }
+  }
+  // Factor x − r con r irracional ({ u, w, m, s }): x − r rel 0 -> se suma r
+  // en ambos miembros -> x rel r. Los extremos se ordenan por su valor y se
+  // escriben con la raiz.
+  function hojaRaizIrracional(factor, rel, R, vari) {
+    var rT = textoRaizX(R), val = frValor(R.u) + R.s * frValor(R.w) * Math.sqrt(R.m);
+    // se suma r (o, si r = −√2, se resta √2)
+    var resta = /^−[^ ]+$/.test(rT), rA = resta ? rT.slice(1) : rT;
+    var suma = (resta ? " − " : " + ") + (/ /.test(rA) && !/^\(/.test(rA) ? "(" + rA + ")" : rA);
+    var lineas = [
+      { izq: [{ t: factor }], rel: rel, der: [{ t: "0" }] },
+      { izq: [{ t: factor }, { t: suma, color: COLOR_SUMA }], rel: rel, der: [{ t: "0" }, { t: suma, color: COLOR_SUMA }],
+        nota: [{ t: (resta ? "Restar " : "Sumar ") + rA + " en ambos miembros", color: COLOR_SUMA }] },
+      { izq: [{ t: vari }], rel: rel, der: [{ t: rT }] },
+    ];
+    var tr = {
+      "<": { a: -Infinity, b: val, ca: false, cb: false, ta: "−∞", tb: rT },
+      "≤": { a: -Infinity, b: val, ca: false, cb: true, ta: "−∞", tb: rT },
+      ">": { a: val, b: Infinity, ca: false, cb: false, ta: rT, tb: "∞" },
+      "≥": { a: val, b: Infinity, ca: true, cb: false, ta: rT, tb: "∞" },
+    }[rel];
+    return { lineas: lineas, tramos: [tr] };
+  }
+  // S: { A, B (textos), rel, vari, cociente, raices } -> { casos: [{ etq, ha, hb, res }], tramos }
+  function resolverSignos(S) {
+    var rs = S.raices || [];
+    var hoja = function (f, rel, R) { return R ? hojaRaizIrracional(f, rel, R, S.vari) : resolverLineal(f + " " + rel + " 0", S.vari); };
+    var casos = (S.cociente ? casosCociente : casosSignos)(S.rel).map(function (q) {
+      var ha = hoja(S.A, q[0], rs[0]), hb = hoja(S.B, q[1], rs[1]);
+      return { etq: q[2], ha: ha, hb: hb, res: intersecar(ha.tramos, hb.tramos) };
+    });
+    return { casos: casos, tramos: unir(casos[0].res, casos[1].res) };
+  }
+
+  // Dibuja la cabecera (con llave y la regla: → +·+ ∨ −·−), los dos casos y
+  // el conjunto solucion. c como en dibujarNodoAbs. Devuelve la y de abajo.
+  function dibujarSignos(cab, R, x, y, c) {
+    var tam = c.tam, fuente = c.fuente, lh = c.lh;
+    var ln = { strokeColor: c.color, strokeWidth: 2 };
+    var fl = { type: "arrow", endArrowhead: "arrow", strokeColor: c.color, strokeWidth: 2 };
+    // la cabecera y las etiquetas pueden tener fracciones (items de dibujarItsF)
+    var cabI = itF(cab), mCab = medirItsF(cabI, tam, fuente), wCab = mCab.w, ym0 = y + mCab.ar;
+    var yLlave = y + mCab.ar + mCab.ab + tam * 0.3, pata = tam * 0.4;
+    var etqs = R.casos.map(function (cs) { return itF(cs.etq); });
+    var mEtq = etqs.map(function (e) { return medirItsF(e, tam, fuente); });
+    var altoEtq = Math.max.apply(null, mEtq.map(function (m) { return m.ar; })) - lh / 2;
+    var xTallo = x + tam * 1.2, xEtq = xTallo + tam * 3, yy = yLlave + lh * 0.7 + altoEtq, medios = [], bloques = [], x1 = x + wCab;
+    var wEtq = Math.max.apply(null, mEtq.map(function (m) { return m.w; }));
+    R.casos.forEach(function (cs, ic) {
+      var els = [], cc = {};
+      for (var k in c) cc[k] = c[k];
+      cc.agregar = function (e) { els.push(e); return e; };
+      var yk = yy, ym = yk + lh / 2;
+      medios.push(ym);
+      // → +·+ → columna A  ∧  columna B
+      cc.agregar(trazo([[xTallo, ym], [xEtq - tam * 0.5, ym]], fl));
+      dibujarItsF(etqs[ic], xEtq, ym, c.color, tam, fuente, cc.agregar);
+      var xA = xEtq + wEtq + tam * 3.5;
+      cc.agregar(trazo([[xEtq + wEtq + tam * 0.5, ym], [xA - tam * 0.5, ym]], fl));
+      var ra = dibujarHojaAbs(cs.ha, xA, xA - tam * 1.5, yk, cc, true);
+      var xY = ra.x1 + tam * 1.5, xB = xY + medir("∧", tam, fuente) + tam * 1.5;
+      cc.agregar(texto(xY, yk, "∧", tam, fuente, TINTA, "left"));
+      var rb = dibujarHojaAbs(cs.hb, xB, xB - tam * 1.5, yk, cc, true);
+      // interseccion de las dos columnas
+      var yI = Math.max(ra.y, rb.y) + lh * 0.4;
+      var tA = textoConjuntoAbs(cs.ha.tramos), tB = textoConjuntoAbs(cs.hb.tramos);
+      var wA = medir(tA, tam, fuente), wB = medir(tB, tam, fuente), subr = yI + lh + 3;
+      var xa = xA, xb = Math.max(xa + wA + tam * 3, xB), igual = " = " + textoConjuntoAbs(cs.res);
+      cc.agregar(texto(xa, yI, tA, tam, fuente, TINTA, "left"));
+      cc.agregar(trazo([[xa, subr], [xa + wA, subr]], { strokeColor: COLOR_CONDICION, strokeWidth: 2.5 }));
+      cc.agregar(texto((xa + wA + xb) / 2, yI, "∩", tam, fuente, TINTA, "center"));
+      cc.agregar(texto(xb, yI, tB, tam, fuente, TINTA, "left"));
+      cc.agregar(trazo([[xb, subr], [xb + wB, subr]], { strokeColor: COLOR_CASO, strokeWidth: 2.5 }));
+      cc.agregar(texto(xb + wB, yI, igual, tam, fuente, TINTA, "left"));
+      x1 = Math.max(x1, ra.x1, rb.x1, xb + wB + medir(igual, tam, fuente));
+      yy = yI + lh + tam * 0.6;
+      // recta real con los dos conjuntos rayados
+      var filasR = [];
+      if (cs.ha.tramos.length) filasR.push({ texto: cs.ha.tramos.map(textoRectaAbs).join(" ∪ "), color: COLOR_CONDICION });
+      if (cs.hb.tramos.length) filasR.push({ texto: cs.hb.tramos.map(textoRectaAbs).join(" ∪ "), color: COLOR_CASO });
+      if (c.op.recta && filasR.length) {
+        var opR = Object.assign(copiar(GEN.recta.defecto), {
+          filas: filasR, operacion: "interseccion", mostrarUnion: false, mostrarResultado: false, referencia: false,
+          ocultarNumeros: true, largo: x1 - xTallo > 760 ? "media" : "corta", tamExtremos: c.op.tamTexto, fuente: c.op.fuente,
+        });
+        var tmp = [];
+        generarRecta(opR, 0, 0, function (e) { tmp.push(e); return e; });
+        if (tmp.length) {
+          var b = cajaDe(tmp), dx = xTallo + tam * 1.5 - b.x0, dy = yy + tam * 0.4 - b.y0;
+          tmp.forEach(function (e) { e.x += dx; e.y += dy; cc.agregar(e); });
+          yy += tam * 0.4 + (b.y1 - b.y0);
+        }
+      }
+      yy += lh * 1.2 + altoEtq;
+      bloques.push(els);
+    });
+    // cabecera: la inecuacion, la llave, → y la regla de los signos
+    dibujarItsF(cabI, x, ym0, TINTA, tam, fuente, c.agregar);
+    c.agregar(trazo([[x - 4, yLlave - pata], [x - 4, yLlave], [x + wCab + 4, yLlave], [x + wCab + 4, yLlave - pata]], ln));
+    var xr = x + wCab + tam * 0.8;
+    c.agregar(trazo([[xr, ym0], [xr + tam * 2.5, ym0]], fl));
+    dibujarItsF(etqs[0].concat([TF("   ∨   ")], etqs[1]), xr + tam * 3, ym0, c.color, tam, fuente, c.agregar);
+    c.agregar(trazo([[xTallo, yLlave], [xTallo, medios[medios.length - 1]]], ln));
+    bloques.forEach(function (els) { els.forEach(c.agregar); });
+    var R1 = R.casos[0].res, R2 = R.casos[1].res, tU = textoConjuntoAbs(R.tramos), union = textoConjuntoAbs(R1) + " ∪ " + textoConjuntoAbs(R2);
+    var sol = "Conjunto solución: " + union + (!R1.length || !R2.length || tU !== union ? " = " + tU : "");
+    c.agregar(texto(x + tam, yy, sol, tam, fuente, TINTA, "left"));
+    return yy + lh;
+  }
+
+  // ======================================== INECUACIONES DE SEGUNDO GRADO
+  // Factorizada: (5x − 2)(3 − 6x) > 0, 0 < (5x − 2)(3 − 6x), 2(x − 1)(x + 3) ≤ 0.
+  // Desarrollada: x² − 5x + 6 < 0 (se buscan las raices y se factoriza).
+  // Devuelve { previos: [lineas para dibujarBloqueF], cab, signos: {A, B, rel,
+  // vari}, fin: texto si se resuelve sin casos } o { error }.
+  function leerInecuacion2(txt, color) {
+    var t = normalizarPoli(txt).replace(/<=/g, "≤").replace(/>=/g, "≥").replace(/\s+/g, " ").trim();
+    if (!t) return { error: "Escribí la inecuación, por ejemplo: (5x − 2)(3 − 6x) > 0" };
+    var rels = t.match(/[<>≤≥]/g) || [];
+    if (rels.length !== 1 || /[=≠]/.test(t)) return { error: "Tiene que haber un solo <, >, ≤ o ≥: (5x − 2)(3 − 6x) > 0" };
+    var rel = rels[0], p = t.indexOf(rel), izq = t.slice(0, p).trim(), der = t.slice(p + 1).trim();
+    if (!izq || !der) return { error: "Falta un miembro de la inecuación" };
+    var letras = (t.match(/[A-Za-z]/g) || []).filter(function (c, i, l) { return l.indexOf(c) === i; });
+    if (letras.length !== 1) return { error: letras.length ? "Usá una sola variable" : "Falta la incógnita (x)" };
+    var v = letras[0];
+    try {
+      // coeficientes por grado [c, b, a] (sin juntarLineal: ese mezcla x² con x)
+      var coefs = function (L) {
+        var co = [fr(0), fr(0), fr(0)];
+        L.forEach(function (m) { co[m.x] = frSuma(co[m.x], m.c); });
+        return co;
+      };
+      var esCero = function (s) { return coefs(leerLineal(s, v, 2)).every(frCero); };
+      var lado, relP, inv = false;
+      if (esCero(der)) { lado = izq; relP = rel; }
+      else if (esCero(izq)) { lado = der; relP = REL_INV[rel]; inv = true; }
+      else lado = null;
+      // factorizada: [k](A)(B)
+      var mF = lado && /^([−+]?\s*[0-9/]*)\s*\(([^()]+)\)\s*·?\s*\(([^()]+)\)$/.exec(lado);
+      if (mF) {
+        var fac = [mF[2], mF[3]].map(function (f) {
+          var L = leerLineal(f, v);
+          if (!L.some(function (m) { return m.x && !frCero(m.c); })) errAbs("Cada factor tiene que tener " + v + ": (5x − 2)(3 − 6x)");
+          return textoLineal(juntarLineal(L), v);
+        });
+        var kTxt = mF[1].replace(/\s/g, ""), k = kTxt === "" || kTxt === "+" ? fr(1) : kTxt === "−" ? fr(-1)
+          : (function () { var c = coefLineal(leerLineal(kTxt.replace(/^\+/, ""), v)); return c.b; })();
+        if (frCero(k)) return { error: "El factor numérico no puede ser 0" };
+        var prod = "(" + fac[0] + ")(" + fac[1] + ")";
+        var previos = [];
+        if (!frUno(k)) {
+          // se divide por el numero de adelante (si es negativo, se invierte)
+          var pre = k.n === -1 && k.d === 1 ? "−" : frTexto(k), rel2 = k.n < 0 ? REL_INV[relP] : relP;
+          previos.push(LnF(null, null, inv ? "0 " + rel + " " + pre + prod : pre + prod + " " + rel + " 0"));
+          previos.push(LnF(null, null, "",
+            notaF(["Dividir ambos miembros por " + frTexto(k)].concat(k.n < 0 ? ["(se invierte la desigualdad)"] : []), COLOR_PRODUCTO)));
+          return { previos: previos, cab: prod + " " + rel2 + " 0", signos: { A: fac[0], B: fac[1], rel: rel2, vari: v } };
+        }
+        return { previos: [], cab: inv ? "0 " + rel + " " + prod : prod + " " + rel + " 0", signos: { A: fac[0], B: fac[1], rel: relP, vari: v } };
+      }
+      // desarrollada: todo a un miembro, raices y factorizacion
+      var co = coefs(leerLineal(izq, v, 2).concat(leerLineal(der, v, 2).map(function (m) { return { c: frNeg(m.c), x: m.x }; })));
+      var a = co[2], b = co[1], c0 = co[0];
+      if (frCero(a)) return { error: "No es de segundo grado: falta el término con " + v + "² (o escribila factorizada)" };
+      var L = [], poli = poliF(a, b, c0, v);
+      L.push(LnF(null, null, t));
+      if (!lado) L.push(LnF(null, null, poli + " " + rel + " 0", notaF("Pasar todo al primer miembro", COLOR_SUMA)));
+      else if (inv) { L.push(LnF(null, null, poli + " " + relP + " 0", notaF("Leerla al revés: 0 " + rel + " P equivale a P " + relP + " 0", TINTA))); }
+      var relQ = lado ? relP : rel;
+      // factorizacion con la formula cuadratica (la misma de "Factorizacion
+      // de polinomios"), aclarando que hay otros metodos
+      var nom = "P(" + v + ")";
+      L.push(libreF(LnF(null, null, "Factorizamos " + nom + " = " + poli + " con la fórmula cuadrática")));
+      L.push(libreF(LnF(null, null, "(también se puede completando el cuadrado o por descomposición):")));
+      var form = metodoFormula({ a: a, b: b, c: c0, vari: v }, nom, color || TINTA);
+      form[0].corte = true;
+      L = L.concat(form);
+      var D = frRes(frMul(b, b), frMul(fr(4), frMul(a, c0)));
+      if (D.n < 0) {
+        var siempre = a.n > 0 ? "positivo" : "negativo";
+        var cumple = (a.n > 0) === (relQ === ">" || relQ === "≥");
+        var expl = libreF(LnF(null, null, "Como no tiene raíces reales, " + poli + " es siempre " + siempre + " (el signo de a)"));
+        expl.corte = true;
+        L.push(expl);
+        return { previos: L, fin: "Conjunto solución: " + (cumple ? "ℝ" : "∅") };
+      }
+      // las raices, en el mismo orden que la formula (x₁ con +, x₂ con −)
+      var rz = raizRacional(D), den = frMul(fr(2), a), R1, R2;
+      if (rz.m === 1) { R1 = { r: frDiv(frSuma(frNeg(b), rz.coef), den) }; R2 = { r: frDiv(frRes(frNeg(b), rz.coef), den) }; }
+      else {
+        var u = frDiv(frNeg(b), den), w = frDiv(rz.coef, den), sg = w.n < 0 ? -1 : 1;
+        R1 = { u: u, w: frAbs(w), m: rz.m, s: sg }; R2 = { u: u, w: frAbs(w), m: rz.m, s: -sg };
+      }
+      var f1 = factorX(R1, v, true), f2 = factorX(R2, v, true);
+      var prod2 = "(" + f1 + ")(" + f2 + ")", pre2 = prefijoF(a);
+      // el ultimo paso solo se anuncia: su resultado es la cabecera de los casos
+      var notaReemp = notaF("Reemplazar " + nom + " por su forma factorizada", COLOR_PRODUCTO), relF = relQ;
+      if (pre2) {
+        var reemp = LnF(null, null, pre2 + prod2 + " " + relQ + " 0", notaReemp);
+        reemp.corte = true;
+        L.push(reemp);
+        relF = a.n < 0 ? REL_INV[relQ] : relQ;
+        L.push(LnF(null, null, "", notaF(["Dividir ambos miembros por " + frTexto(a)].concat(a.n < 0 ? ["(se invierte la desigualdad)"] : []), COLOR_PRODUCTO)));
+      } else L.push(LnF(null, null, "", notaReemp));
+      return { previos: L, cab: prod2 + " " + relF + " 0",
+        signos: { A: f1, B: f2, rel: relF, vari: v, raices: [R1.r ? null : R1, R2.r ? null : R2] } };
+    } catch (e) {
+      if (e && e.msjAbs) return { error: e.msjAbs };
+      throw e;
+    }
+  }
+
+  function generarInecuaciones2(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh, y = oy;
+    op.filas.forEach(function (fila) {
+      var I = leerInecuacion2(fila.texto, fila.color);
+      if (I.error) return;
+      var c = { tam: tam, fuente: fuente, lh: lh, paso: lh * 1.15, tamN: TAM_NOTA[op.tamTexto] || 16, op: op,
+        color: op.colorLineas ? fila.color : TINTA, agregar: agregar };
+      if (I.previos.length) y = dibujarBloqueF(I.previos, ox, y, op, agregar) + lh * 0.8;
+      if (I.fin) { agregar(texto(ox + tam, y, I.fin, tam, fuente, TINTA, "left")); y += lh * 3; return; }
+      var R;
+      try { R = resolverSignos(I.signos); } catch (e) { if (e && e.msjAbs) return; throw e; }
+      y = dibujarSignos(I.cab, R, ox, y, c) + lh * 2;
+    });
+  }
+
+  // =========================================== INECUACIONES RACIONALES
+  // (2x + 1)/(3 − 4x) < −2, 0 ≤ (x − 1)/(x + 2), 3 > (x + 1)/x ...
+  // Numerador y denominador lineales (el denominador con x) y del otro lado
+  // un numero. Si no es 0, se pasa restando (o sumando) en ambos miembros,
+  // se suman las fracciones con el denominador comun, se aplica la
+  // distributiva y se juntan los semejantes. Despues, la regla de los
+  // signos con A / B comparado con 0 (el denominador siempre estricto).
+  // Devuelve { previos, cab (items), signos } o { error }.
+  function partirFraccion(s) {
+    var n = 0, p = -1;
+    for (var i = 0; i < s.length; i++) {
+      if (s[i] === "(" || s[i] === "[") n++;
+      else if (s[i] === ")" || s[i] === "]") n--;
+      else if ((s[i] === "/" || s[i] === ":") && n === 0) { if (p >= 0) return null; p = i; }
+    }
+    if (p < 0) return null;
+    var sin = function (t) { t = t.trim(); return /^\(.*\)$/.test(t) && partirFraccionBalance(t.slice(1, -1)) ? t.slice(1, -1).trim() : t; };
+    return [sin(s.slice(0, p)), sin(s.slice(p + 1))];
+  }
+  // ¿los parentesis de adentro estan balanceados? ((a)(b) no es (a)·(b) entre parentesis)
+  function partirFraccionBalance(t) {
+    var n = 0;
+    for (var i = 0; i < t.length; i++) {
+      if (t[i] === "(") n++;
+      else if (t[i] === ")" && --n < 0) return false;
+    }
+    return n === 0;
+  }
+
+  function leerInecuacionRacional(txt) {
+    var t = normalizarPoli(txt).replace(/<=/g, "≤").replace(/>=/g, "≥").replace(/\s+/g, " ").trim();
+    if (!t) return { error: "Escribí la inecuación, por ejemplo: (2x + 1)/(3 − 4x) < −2" };
+    var rels = t.match(/[<>≤≥]/g) || [];
+    if (rels.length !== 1 || /[=≠]/.test(t)) return { error: "Tiene que haber un solo <, >, ≤ o ≥: (2x + 1)/(3 − 4x) < −2" };
+    var rel = rels[0], p = t.indexOf(rel), izq = t.slice(0, p).trim(), der = t.slice(p + 1).trim();
+    if (!izq || !der) return { error: "Falta un miembro de la inecuación" };
+    var letras = (t.match(/[A-Za-z]/g) || []).filter(function (c, i, l) { return l.indexOf(c) === i; });
+    if (letras.length !== 1) return { error: letras.length ? "Usá una sola variable" : "Falta la incógnita (x)" };
+    var v = letras[0];
+    try {
+      var tieneX = function (L) { return L.some(function (m) { return m.x && !frCero(m.c); }); };
+      var fI = partirFraccion(izq), fD = partirFraccion(der), frac, otro, inv = false;
+      if (fI && !tieneX(leerLineal(der, v))) { frac = fI; otro = der; }
+      else if (fD && !tieneX(leerLineal(izq, v))) { frac = fD; otro = izq; inv = true; }
+      else return { error: "De un lado va la fracción (2x + 1)/(3 − 4x) y del otro un número" };
+      var LA = leerLineal(frac[0], v), LB = leerLineal(frac[1], v);
+      if (!tieneX(LB)) return { error: "El denominador tiene que tener " + v + " (si no, es una inecuación lineal)" };
+      var A = textoLineal(juntarLineal(LA), v), B = textoLineal(juntarLineal(LB), v);
+      var k = coefLineal(leerLineal(otro, v)).b, relF = inv ? REL_INV[rel] : rel;
+      var F = function (num) { return FrF(num, B); };
+      var L = [];
+      L.push(LnF(null, null, inv ? [frTexto(k) + " " + rel + " ", F(A)] : [F(A), " " + rel + " " + frTexto(k)]));
+      if (inv) L.push(LnF(null, null, [F(A), " " + relF + " " + frTexto(k)],
+        notaF("Leerla al revés: " + frTexto(k) + " " + rel + " A/B equivale a A/B " + relF + " " + frTexto(k), TINTA)));
+      // restriccion: el denominador no puede ser 0 (va al final, antes de los casos)
+      var cB = coefLineal(juntarLineal(LB)), cero = frDiv(frNeg(cB.b), cB.a);
+      var restr = libreF(LnF(null, null, "Restricción: " + B + " ≠ 0" + (B === v ? "" : "  ⇒  " + v + " ≠ " + frTexto(cero))));
+      var Ntxt = A;
+      if (!frCero(k)) {
+        // se pasa el numero al otro miembro: m = −k (se suma m en ambos miembros)
+        var m = frNeg(k), mas = m.n > 0, mA = frAbs(m), mT = frTexto(mA);
+        var sg = mas ? " + " : " − ";
+        L.push(LnF(null, null, [F(A), TF(sg, COLOR_SUMA), { frac: [itF(TF(mT, COLOR_SUMA)), itF(TF("1", COLOR_SUMA))] },
+          " " + relF + " " + frTexto(k), TF(sg + mT, COLOR_SUMA)],
+          notaF((mas ? "Sumar " : "Restar ") + mT + " en ambos miembros", COLOR_SUMA)));
+        // suma de fracciones con el denominador comun
+        var Bp = / /.test(B) ? "(" + B + ")" : B;
+        L.push(LnF(null, null, [FrF([A + sg + Bp + "·", TF(mT, COLOR_SUMA)], B), " " + relF + " 0"],
+          notaF("Sumar las fracciones (denominador común " + B + ")", COLOR_PRODUCTO)));
+        var prod = LB.map(function (q) { return { c: frMul(q.c, m), x: q.x }; });
+        var exp = juntarLineal(LA).concat(prod);
+        L.push(LnF(null, null, [F(textoLineal(exp, v)), " " + relF + " 0"], notaF("Aplicar la distributiva", COLOR_SUMA)));
+        // ax + b (sin los que dan cero)
+        var c2 = coefLineal(exp), junto = [];
+        if (!frCero(c2.a)) junto.push({ c: c2.a, x: 1 });
+        if (!frCero(c2.b) || !junto.length) junto.push({ c: c2.b, x: 0 });
+        Ntxt = textoLineal(junto, v);
+        // el resultado es la cabecera de los casos: aca solo se anuncia el paso
+        L.push(LnF(null, null, "", notaF("Juntar términos semejantes", COLOR_SUMA)));
+      } else if (!inv) L = []; // la inecuacion ya es la cabecera
+      L.push(restr);
+      return { previos: L, cab: [F(Ntxt), " " + relF + " 0"], signos: { A: Ntxt, B: B, rel: relF, vari: v, cociente: true } };
+    } catch (e) {
+      if (e && e.msjAbs) return { error: e.msjAbs };
+      throw e;
+    }
+  }
+
+  function generarRacionales(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh, y = oy;
+    op.filas.forEach(function (fila) {
+      var I = leerInecuacionRacional(fila.texto);
+      if (I.error) return;
+      var c = { tam: tam, fuente: fuente, lh: lh, paso: lh * 1.15, tamN: TAM_NOTA[op.tamTexto] || 16, op: op,
+        color: op.colorLineas ? fila.color : TINTA, agregar: agregar };
+      y = dibujarBloqueF(I.previos, ox, y, op, agregar) + lh;
+      var R;
+      try { R = resolverSignos(I.signos); } catch (e) { if (e && e.msjAbs) return; throw e; }
+      y = dibujarSignos(I.cab, R, ox, y, c) + lh * 2;
+    });
+  }
+
+  // ============================ FACTORIZACION DE POLINOMIOS DE 2.º GRADO
+  // Cada fila es un polinomio ax² + bx + c (coeficientes enteros o
+  // fracciones). Se factoriza por los metodos elegidos, cada uno con sus
+  // pasos y, a la derecha, que se va a hacer (en el renglon de la expresion
+  // actual, en el color del paso):
+  //  - formula cuadratica: formula general, reemplazo de a, b y c,
+  //    operaciones y las dos raices; despues a(x − x₁)(x − x₂);
+  //  - completar el cuadrado: factor comun a, sumar y restar (b/2)²,
+  //    trinomio cuadrado perfecto y diferencia de cuadrados;
+  //  - descomposicion (como en la filmina): discriminante, factor comun,
+  //    caso 1 (b = a + c), caso 2 (a = 1: p + q = b, p · q = c) o caso 3
+  //    (p + q = b, p · q = a · c), y sacar factor comun por grupos.
+  var COLOR_A = "#1971c2", COLOR_B = "#e8590c", COLOR_C = "#0c8599", COLOR_MAL = "#e03131";
+
+  function normalizarPoli(t) {
+    var sup = function (d) { return d.split("").map(function (c) { return SUPER[c]; }).join(""); };
+    return String(t || "").replace(/[-–]/g, "−").replace(/\*/g, "·")
+      .replace(/\^(\d+)/g, function (_, d) { return sup(d); })
+      .replace(/([A-Za-z])(\d+)/g, function (_, l, d) { return l + sup(d); }); // x2 -> x²
+  }
+
+  function leerPoli(txt) {
+    var t = normalizarPoli(txt).trim().replace(/^[A-Za-z]\w*\(\s*[A-Za-z]\s*\)\s*=/, "").trim();
+    if (!t) return { error: "Escribí el polinomio, por ejemplo: 6x² − 7x − 3" };
+    if (/[=<>≤≥≠]/.test(t)) return { error: "Escribí solo el polinomio, sin «=»" };
+    var letras = (t.match(/[A-Za-z]/g) || []).filter(function (c, i, l) { return l.indexOf(c) === i; });
+    if (letras.length > 1) return { error: "Usá una sola variable (hay " + letras.join(", ") + ")" };
+    var vari = letras[0] || "x", L;
+    try { L = leerLineal(t, vari, 2); } catch (e) { if (e && e.msjAbs) return { error: e.msjAbs }; throw e; }
+    var co = [fr(0), fr(0), fr(0)];
+    L.forEach(function (m) { co[m.x] = frSuma(co[m.x], m.c); });
+    if (frCero(co[2])) return { error: "No es de segundo grado: falta el término con " + vari + "²" };
+    var grande = co.some(function (c) { return Math.abs(c.n) > 1e6 || c.d > 1e6; });
+    if (grande) return { error: "Los coeficientes son demasiado grandes" };
+    return { a: co[2], b: co[1], c: co[0], vari: vari };
+  }
+
+  // ------------------------------------------------------------ textos
+  function px(v) { return v.n < 0 || v.d !== 1 ? "(" + frTexto(v) + ")" : frTexto(v); } // entre operaciones
+  function frAbs(v) { return v.n < 0 ? frNeg(v) : v; }
+  function frRes(a, b) { return frSuma(a, frNeg(b)); }
+  function frIgual(a, b) { return a.n === b.n && a.d === b.d; }
+  // monomio sin signo (c > 0): 3, x, 2x, (5/2)x²
+  function monoF(c, g, vari) {
+    var s = frTexto(c);
+    if (!g) return s;
+    var v = vari + (g === 2 ? "²" : "");
+    return frUno(c) ? v : (c.d === 1 ? s : "(" + s + ")") + v;
+  }
+  function conSignoF(c, g, vari) { return (c.n < 0 ? " − " : " + ") + monoF(frAbs(c), g, vari); }
+  // [[coef, grado], ...] -> "6x² − 7x − 3" (sin los ceros)
+  function textoPoli(ts, vari) {
+    var t = ts.filter(function (m) { return !frCero(m[0]); });
+    if (!t.length) return "0";
+    return t.map(function (m, k) {
+      return k ? conSignoF(m[0], m[1], vari) : (m[0].n < 0 ? "−" : "") + monoF(frAbs(m[0]), m[1], vari);
+    }).join("");
+  }
+  function poliF(a, b, c, vari) { return textoPoli([[a, 2], [b, 1], [c, 0]], vari); }
+  // factor delante de un parentesis: 6(...), −(...), 1/6(...)
+  function prefijoF(k) { return frUno(k) ? "" : k.n === -1 && k.d === 1 ? "−" : frTexto(k); }
+
+  // √n con n entero >= 0 -> { k, m } con n = k²·m
+  function raizEntera(n) {
+    if (n === 0) return { k: 0, m: 1 };
+    var k = 1, m = n;
+    for (var i = Math.floor(Math.sqrt(n)); i > 1; i--) if (n % (i * i) === 0) { k = i; m = n / (i * i); break; }
+    return { k: k, m: m };
+  }
+  // √q con q racional >= 0 -> { coef (racional), m }: √q = coef·√m
+  function raizRacional(q) {
+    var r = raizEntera(q.n * q.d);
+    return { coef: fr(r.k, q.d), m: r.m };
+  }
+  function textoRaizF(r) { // coef·√m, coef > 0
+    if (r.m === 1) return frTexto(r.coef);
+    return (r.coef.n === 1 ? "" : r.coef.n) + "√" + r.m + (r.coef.d === 1 ? "" : "/" + r.coef.d);
+  }
+  function cuadradoF(t) { return /^\d+$/.test(t) ? t + "²" : "(" + t + ")²"; }
+
+  // Raiz: { r } racional o { u, w, m, s } = u + s·w·√m (w > 0)
+  function textoRaizX(R) {
+    if (R.r) return frTexto(R.r);
+    var Lc = R.u.d * R.w.d / mcdAbs(R.u.d, R.w.d), U = R.u.n * (Lc / R.u.d), W = R.w.n * (Lc / R.w.d);
+    var raiz = (W === 1 ? "" : W) + "√" + R.m;
+    var num = U === 0 ? (R.s < 0 ? "−" : "") + raiz : U + (R.s < 0 ? " − " : " + ") + raiz;
+    num = num.replace(/-/g, "−");
+    return Lc === 1 ? num : "(" + num + ")/" + Lc;
+  }
+  function factorX(R, vari, limpio) {
+    if (R.r) return limpio ? textoPoli([[fr(1), 1], [frNeg(R.r), 0]], vari)
+      : vari + " − " + (R.r.n < 0 ? "(" + frTexto(R.r) + ")" : frTexto(R.r));
+    var t = textoRaizX(R);
+    if (limpio && /^−[^ ]+$/.test(t)) return vari + " + " + t.slice(1); // x − (−√2) = x + √2
+    return vari + " − " + (/^\(/.test(t) || !/[ −]/.test(t) ? t : "(" + t + ")");
+  }
+  // sin limpiar, el factor a se escribe siempre (tambien 1 y −1)
+  function factorizadoX(a, R1, R2, vari, limpio) {
+    var f1 = "(" + factorX(R1, vari, limpio) + ")", f2 = "(" + factorX(R2, vari, limpio) + ")";
+    return (limpio ? prefijoF(a) : frTexto(a)) + (f1 === f2 ? f1 + "²" : f1 + f2);
+  }
+
+  // ------------------------------------------- renglones con fracciones
+  // item: { t, color } | { frac: [items, items] } | { raiz: items }
+  // linea: { izq, rel, der: items, nota, color }; rel null = linea suelta
+  function itF(x) {
+    if (typeof x === "string") return [{ t: x }];
+    if (Array.isArray(x)) return [].concat.apply([], x.map(itF));
+    return [x];
+  }
+  function TF(t, color) { return { t: t, color: color }; }
+  function FrF(num, den) { return { frac: [itF(num), itF(den)] }; }
+  function RzF(x) { return { raiz: itF(x) }; }
+  function LnF(izq, rel, der, nota, color) { return { izq: izq, rel: rel, der: itF(der), nota: nota, color: color }; }
+  function libreF(l) { l.libre = true; return l; }
+  // renglon de una bifurcacion: «x₁ = ...» con una flecha desde la llave
+  // del renglon anterior marcado con `llave`
+  function ramaF(etiqueta, der, nota) {
+    var l = LnF(null, null, [etiqueta + " = "].concat(itF(der)), nota);
+    l.rama = true;
+    return l;
+  }
+  function notaF(t, color) { return (Array.isArray(t) ? t : [t]).map(function (x) { return { t: x, color: color }; }); }
+  // racional como item: 3, −4 o fraccion con barra
+  function itemRac(r) {
+    if (r.d === 1) return TF(frTexto(r));
+    var f = FrF(String(Math.abs(r.n)), String(r.d));
+    return r.n < 0 ? [TF("−"), f] : f;
+  }
+
+  function medirItsF(its, tam, fuente) {
+    var lh = tam * fuente.lh, w = 0, ar = lh / 2, ab = lh / 2;
+    its.forEach(function (it) {
+      var m = medirItF(it, tam, fuente);
+      w += m.w; ar = Math.max(ar, m.ar); ab = Math.max(ab, m.ab);
+    });
+    return { w: w, ar: ar, ab: ab };
+  }
+  // marcas dibujadas (no caracteres): ✓ verde o ✗ roja
+  function MarcaF(ok) { return { marca: ok ? "ok" : "mal" }; }
+  // sistema de ecuaciones con una llave dibujada a la izquierda
+  function SistemaF(filas) { return { sistema: filas.map(itF) }; }
+  // tabla: filas de celdas; en cada columna las celdas se alinean a la
+  // derecha por lo escrito (la marca ✓/✗ queda afuera, a la derecha)
+  function TablaF(filas) { return { tabla: filas.map(function (f) { return f.map(itF); }) }; }
+  function medidasTablaF(it, tam, fuente) {
+    var lh = tam * fuente.lh, cols = [], altoF = lh * 1.35, gap = tam * 3;
+    it.tabla.forEach(function (f) {
+      f.forEach(function (celda, j) {
+        var txt = medirItsF(celda.filter(function (x) { return !x.marca; }), tam, fuente).w;
+        var mar = medirItsF(celda.filter(function (x) { return x.marca; }), tam, fuente);
+        var c = cols[j] || (cols[j] = { txt: 0, mar: 0 });
+        c.txt = Math.max(c.txt, txt);
+        c.mar = Math.max(c.mar, celda.some(function (x) { return x.marca; }) ? mar.w : 0);
+      });
+    });
+    var x = 0;
+    cols.forEach(function (c) { c.x = x; x += c.txt + c.mar + gap; });
+    return { cols: cols, w: x - gap, altoF: altoF, alto: it.tabla.length * altoF };
+  }
+  function medirItF(it, tam, fuente) {
+    var lh = tam * fuente.lh;
+    if (it.tabla) { var mt = medidasTablaF(it, tam, fuente); return { w: mt.w, ar: mt.alto / 2, ab: mt.alto / 2 }; }
+    if (it.marca) return { w: tam * 1.6, ar: lh / 2, ab: lh / 2 };
+    if (it.sistema) {
+      var ws = it.sistema.map(function (f) { return medirItsF(f, tam, fuente).w; });
+      var h = it.sistema.length * lh;
+      return { w: tam * 0.8 + Math.max.apply(null, ws), ar: h / 2 + 2, ab: h / 2 + 2 };
+    }
+    if (it.frac) {
+      var n = medirItsF(it.frac[0], tam, fuente), d = medirItsF(it.frac[1], tam, fuente);
+      return { w: Math.max(n.w, d.w) + tam * 0.5, ar: n.ar + n.ab + 4, ab: d.ar + d.ab + 4 };
+    }
+    if (it.raiz) {
+      var r = medirItsF(it.raiz, tam, fuente);
+      return { w: r.w + tam * 0.8, ar: r.ar + 4, ab: r.ab };
+    }
+    return { w: medir(it.t, tam, fuente), ar: lh / 2, ab: lh / 2 };
+  }
+  function dibujarItsF(its, x, mid, color, tam, fuente, agregar) {
+    var lh = tam * fuente.lh;
+    its.forEach(function (it) {
+      var m = medirItF(it, tam, fuente), c = it.color || color;
+      if (it.tabla) {
+        var mt = medidasTablaF(it, tam, fuente), y0 = mid - mt.alto / 2;
+        it.tabla.forEach(function (f, i) {
+          f.forEach(function (celda, j) {
+            var col = mt.cols[j], txt = medirItsF(celda.filter(function (q) { return !q.marca; }), tam, fuente).w;
+            dibujarItsF(celda, x + col.x + col.txt - txt, y0 + mt.altoF * (i + 0.5), c, tam, fuente, agregar);
+          });
+        });
+      } else if (it.marca === "ok") {
+        var t = tam * 0.85, x0 = x + tam * 0.6;
+        agregar(trazo([[x0, mid], [x0 + t * 0.35, mid + t * 0.35], [x0 + t, mid - t * 0.45]],
+          { strokeColor: COLOR_SUMA, strokeWidth: 3 }));
+      } else if (it.marca === "mal") {
+        var t2 = tam * 0.55, x1 = x + tam * 0.45;
+        agregar(trazo([[x1, mid - t2 / 2], [x1 + t2, mid + t2 / 2]], { strokeColor: COLOR_MAL, strokeWidth: 3 }));
+        agregar(trazo([[x1 + t2, mid - t2 / 2], [x1, mid + t2 / 2]], { strokeColor: COLOR_MAL, strokeWidth: 3 }));
+      } else if (it.sistema) {
+        // llave «{»: dos curvas que se juntan en la punta del medio
+        var hS = it.sistema.length * lh, top = mid - hS / 2, bot = mid + hS / 2, bw = tam * 0.45;
+        agregar(trazo([[x + bw, top], [x + bw * 0.45, top + hS * 0.1], [x + bw * 0.45, mid - hS * 0.12], [x, mid],
+          [x + bw * 0.45, mid + hS * 0.12], [x + bw * 0.45, bot - hS * 0.1], [x + bw, bot]],
+          { strokeColor: c, strokeWidth: 1.5, roundness: { type: 2 } }));
+        it.sistema.forEach(function (f, j) { dibujarItsF(f, x + tam * 0.7, top + lh * (j + 0.5), c, tam, fuente, agregar); });
+      } else if (it.frac) {
+        var n = medirItsF(it.frac[0], tam, fuente), d = medirItsF(it.frac[1], tam, fuente);
+        dibujarItsF(it.frac[0], x + (m.w - n.w) / 2, mid - 4 - n.ab, c, tam, fuente, agregar);
+        agregar(trazo([[x + tam * 0.1, mid], [x + m.w - tam * 0.1, mid]], { strokeColor: c, strokeWidth: 1.5 }));
+        dibujarItsF(it.frac[1], x + (m.w - d.w) / 2, mid + 4 + d.ar, c, tam, fuente, agregar);
+      } else if (it.raiz) {
+        var r = medirItsF(it.raiz, tam, fuente), g = tam * 0.6, top = mid - r.ar - 1, bot = mid + r.ab - 3;
+        agregar(trazo([[x + tam * 0.05, mid + 2], [x + g * 0.3, mid - 2], [x + g * 0.6, bot], [x + g, top],
+          [x + g + r.w + tam * 0.1, top]], { strokeColor: c, strokeWidth: 1.5 }));
+        dibujarItsF(it.raiz, x + g + tam * 0.05, mid, c, tam, fuente, agregar);
+      } else {
+        var lead = it.t.length - it.t.replace(/^\s+/, "").length, limpio = it.t.trim();
+        if (limpio) agregar(texto(x + medir(it.t.slice(0, lead), tam, fuente), mid - lh / 2, limpio, tam, fuente, c, "left"));
+      }
+      x += m.w;
+    });
+  }
+
+  // Dibuja las lineas con los "=" alineados; la nota de cada paso va a la
+  // derecha del renglon anterior (la expresion actual), antes del paso.
+  function dibujarBloqueF(lineas, x, y, op, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var lh = tam * fuente.lh, tamN = TAM_NOTA[op.tamTexto] || 16, hN = tamN * fuente.lh;
+    // cada seccion (empieza con una linea `sub`) alinea sus "=" por su cuenta
+    var grupos = [], g = -1;
+    lineas.forEach(function (l, i) {
+      if (l.sub || l.corte || !i) grupos.push({ w: 0 });
+      g = grupos.length - 1;
+      l.grupo = g;
+      if (l.izq) grupos[g].w = Math.max(grupos[g].w, medir(l.izq + " ", tam, fuente));
+    });
+    var wIg = medir("= ", tam, fuente);
+    var filas = [], yy = y, der = 0;
+    lineas.forEach(function (l, i) {
+      if ((l.sub || l.corte) && i) yy += lh * 0.5;
+      var xRel = x + grupos[l.grupo].w, xDer = xRel + wIg;
+      var m = medirItsF(l.der, tam, fuente), xs = l.rama ? x + tam * 4 : l.rel === null ? x : xDer;
+      // la nota del paso siguiente va en este renglon: si es mas alta, se
+      // agranda el renglon (mitad arriba y mitad abajo)
+      var sig = lineas[i + 1], hNota = op.notas && sig && sig.nota ? sig.nota.length * hN : 0;
+      if (!i && op.notas && l.nota) hNota = Math.max(hNota, l.nota.length * hN);
+      var extra = Math.max(0, hNota - (m.ar + m.ab)) + (l.caja ? tam * 0.5 : 0);
+      filas.push({ mid: yy + extra / 2 + m.ar, xs: xs, xRel: xRel, m: m, fin: xs + m.w });
+      if (!l.libre) der = Math.max(der, xs + m.w); // los textos sueltos no corren las notas
+      yy += m.ar + m.ab + extra + (m.ar + m.ab > lh + 2 ? lh * 0.45 : lh * 0.2) + (l.llave ? tam * 0.6 : 0)
+        + (l.marcar ? Math.max(tam * 2.8, l.marcar.texto.length * hN + tam * 1.6) : 0);
+    });
+    // bifurcaciones: llave debajo del renglon `llave`, tallo hasta la ultima
+    // rama que le sigue y una flecha a cada rama
+    lineas.forEach(function (l, i) {
+      if (!l.llave) return;
+      var ult = i;
+      while (lineas[ult + 1] && lineas[ult + 1].rama) ult++;
+      filas[i].bif = { y: filas[i].mid + filas[i].m.ab + tam * 0.35, hasta: filas[ult].mid };
+    });
+    var xNota = der + tam * 1.5, finNota = -Infinity;
+    // centrada en el renglon; si pisa la nota anterior, un poco mas abajo
+    function notas(n, mid, fin) {
+      if (!op.notas || !n) return;
+      var y0 = Math.max(mid - n.length * hN / 2, finNota + 2), xn = Math.max(xNota, fin + tam * 1.5);
+      n.forEach(function (t, j) {
+        agregar(texto(xn, y0 + j * hN, t.t, tamN, fuente, t.color, "left"));
+      });
+      finNota = y0 + n.length * hN;
+    }
+    lineas.forEach(function (l, i) {
+      var f = filas[i], col = l.color || TINTA;
+      if (!i) notas(l.nota, f.mid, f.fin);
+      if (l.izq) agregar(texto(x, f.mid - lh / 2, l.izq, tam, fuente, col, "left"));
+      if (l.rel) agregar(texto(f.xRel, f.mid - lh / 2, l.rel, tam, fuente, col, "left"));
+      if (l.caja) {
+        // recuadro con esquinas redondeadas alrededor de lo escrito (sin las marcas)
+        var wc = medirItsF(l.der.filter(function (it) { return !it.marca; }), tam, fuente).w, pc = tam * 0.3;
+        agregar(base("rectangle", { x: f.xs - pc, y: f.mid - f.m.ar - pc * 0.6, width: wc + 2 * pc,
+          height: f.m.ar + f.m.ab + pc * 1.2, strokeColor: l.caja, strokeWidth: 1.5, roundness: { type: 3 } }));
+      }
+      if (l.rama) {
+        var xt = x + tam * 0.9;
+        agregar(trazo([[xt, f.mid], [f.xs - tam * 0.4, f.mid]], { type: "arrow", endArrowhead: "arrow", strokeColor: TINTA, strokeWidth: 1.5 }));
+      }
+      dibujarItsF(l.der, f.xs, f.mid, col, tam, fuente, agregar);
+      if (l.marcar) {
+        // posicion de los terminos marcados (sin los espacios de adelante)
+        var k0 = l.der.indexOf(l.marcar.de), k1 = l.der.indexOf(l.marcar.a);
+        var antes = medirItsF(l.der.slice(0, k0), tam, fuente).w, primero = l.der[k0];
+        if (primero.t) antes += medir(primero.t.slice(0, primero.t.length - primero.t.replace(/^\s+/, "").length), tam, fuente);
+        var xa = f.xs + antes, xb = f.xs + medirItsF(l.der.slice(0, k1 + 1), tam, fuente).w;
+        var yl = f.mid + f.m.ab + tam * 0.15, pm = tam * 0.3, cm = l.marcar.color, xm = (xa + xb) / 2;
+        var sigF = filas[i + 1], yFin = sigF ? sigF.mid - sigF.m.ar - tam * 0.2 : yl + tam * 2.5;
+        agregar(trazo([[xa, yl - pm], [xa, yl], [xb, yl], [xb, yl - pm]], { strokeColor: cm, strokeWidth: 1.5 }));
+        agregar(trazo([[xm, yl], [xm, yFin]], { type: "arrow", endArrowhead: "arrow", strokeColor: cm, strokeWidth: 1.5 }));
+        var yt = (yl + yFin) / 2 - l.marcar.texto.length * hN / 2;
+        l.marcar.texto.forEach(function (t, j) {
+          agregar(texto(xm + tam * 0.6, yt + j * hN, t, tamN, fuente, cm, "left"));
+        });
+      }
+      if (f.bif) {
+        var pa = tam * 0.4, xt2 = x + tam * 0.9;
+        agregar(trazo([[x - 4, f.bif.y - pa], [x - 4, f.bif.y], [f.fin + 4, f.bif.y], [f.fin + 4, f.bif.y - pa]],
+          { strokeColor: TINTA, strokeWidth: 1.5 }));
+        agregar(trazo([[xt2, f.bif.y], [xt2, f.bif.hasta]], { strokeColor: TINTA, strokeWidth: 1.5 }));
+      }
+      if (lineas[i + 1]) notas(lineas[i + 1].nota, f.mid, f.fin);
+    });
+    return yy;
+  }
+
+  // ------------------------------------------------ formula cuadratica
+  function metodoFormula(P, nom, color) {
+    var a = P.a, b = P.b, c = P.c, v = P.vari, X = v + "₁,₂", L = [];
+    var b2 = frMul(b, b), q4 = frMul(fr(4), frMul(a, c)), den = frMul(fr(2), a), mb = frNeg(b), D = frRes(b2, q4);
+    L.push(LnF(nom, "=", poliF(a, b, c, v)));
+    L.push(LnF(null, null, ["a = ", TF(frTexto(a), COLOR_A), "    b = ", TF(frTexto(b), COLOR_B), "    c = ", TF(frTexto(c), COLOR_C)],
+      notaF("Identificar a, b y c", TINTA)));
+    L.push(LnF(X, "=", FrF(["−", TF("b", COLOR_B), " ± ", RzF([TF("b", COLOR_B), "² − 4·", TF("a", COLOR_A), "·", TF("c", COLOR_C)])],
+      ["2·", TF("a", COLOR_A)]), notaF("Fórmula cuadrática", TINTA)));
+    L.push(LnF(X, "=", FrF(["−", TF(px(b), COLOR_B), " ± ", RzF([TF(px(b), COLOR_B), "² − 4·", TF(px(a), COLOR_A), "·",
+      TF(px(c), COLOR_C)])], ["2·", TF(px(a), COLOR_A)]), notaF("Reemplazar a, b y c", COLOR_PRODUCTO)));
+    L.push(LnF(X, "=", FrF([TF(frTexto(mb), COLOR_SUMA), " ± ", RzF([TF(frTexto(b2) + " − " + px(q4), COLOR_SUMA)])],
+      TF(frTexto(den), COLOR_SUMA)), notaF("Resolver las operaciones", COLOR_SUMA)));
+    L.push(LnF(X, "=", FrF([frTexto(mb), " ± ", RzF(TF(frTexto(D), COLOR_SUMA))], frTexto(den)),
+      notaF("Resolver la resta", COLOR_SUMA)));
+    var R1, R2;
+    if (D.n < 0) {
+      L.push(LnF(null, null, TF("La raíz de un número negativo no es real: no hay raíces reales", COLOR_MAL)));
+      L.push(LnF(null, null, TF(nom + " no se puede factorizar en ℝ", color)));
+      return L;
+    }
+    var rz = raizRacional(D), dTxt = D.d === 1 ? frTexto(D) : "(" + frTexto(D) + ")";
+    if (rz.m === 1) {
+      var s = rz.coef;
+      L.push(LnF(X, "=", FrF([frTexto(mb), " ± ", TF(frTexto(s), COLOR_PRODUCTO)], frTexto(den)),
+        notaF("√" + dTxt + " = " + frTexto(s), COLOR_PRODUCTO)));
+      R1 = { r: frDiv(frSuma(mb, s), den) }; R2 = { r: frDiv(frRes(mb, s), den) };
+      // num/den = resultado (sin repetir la fraccion si ya es irreducible)
+      var cociente = function (num, r) {
+        var mismo = num.d === 1 && den.d === 1 && den.n > 0 && r.n === num.n && r.d === den.n;
+        return [FrF(frTexto(num), frTexto(den))].concat(mismo ? [] : [" = "], mismo ? [] : itF(itemRac(r)));
+      };
+      L[L.length - 1].llave = true;
+      if (frCero(s)) {
+        L.push(ramaF(v + "₁ = " + v + "₂", cociente(mb, R1.r), notaF("Una sola raíz (doble)", COLOR_SUMA)));
+      } else {
+        [[v + "₁", " + ", R1, frSuma(mb, s)], [v + "₂", " − ", R2, frRes(mb, s)]].forEach(function (q, k) {
+          var der = [FrF(frTexto(mb) + q[1] + frTexto(s), frTexto(den)), " = "].concat(cociente(q[3], q[2].r));
+          L.push(ramaF(q[0], der, k ? null : notaF("Calcular las dos raíces", COLOR_SUMA)));
+        });
+      }
+    } else {
+      var s2 = rz, simplifica = !(frUno(s2.coef) && D.d === 1);
+      if (simplifica) L.push(LnF(X, "=", FrF([frTexto(mb), " ± ", TF(textoRaizF(s2), COLOR_PRODUCTO)], frTexto(den)),
+        notaF(["Simplificar la raíz: √" + dTxt + " = " + textoRaizF(s2), "(no es exacta: raíces irracionales)"], COLOR_PRODUCTO)));
+      var u = frDiv(mb, den), w = frDiv(s2.coef, den), sg = w.n < 0 ? -1 : 1;
+      R1 = { u: u, w: frAbs(w), m: s2.m, s: sg }; R2 = { u: u, w: frAbs(w), m: s2.m, s: -sg };
+      L[L.length - 1].llave = true;
+      L.push(ramaF(v + "₁", textoRaizX(R1), notaF(simplifica ? "Las dos raíces"
+        : ["Las dos raíces (√" + dTxt + " no es exacta:", "son irracionales)"], COLOR_SUMA)));
+      L.push(ramaF(v + "₂", textoRaizX(R2)));
+    }
+    // la forma factorizada en general (renglon propio) y despues el reemplazo
+    var forma = libreF(LnF(null, null, "Forma factorizada: a(" + v + " − " + v + "₁)(" + v + " − " + v + "₂)"));
+    forma.corte = true;
+    L.push(forma);
+    L.push(LnF(nom, "=", "a(" + v + " − " + v + "₁)(" + v + " − " + v + "₂)"));
+    var crudo = factorizadoX(a, R1, R2, v, false), limpio = factorizadoX(a, R1, R2, v, true);
+    L.push(LnF(nom, "=", crudo, notaF("Reemplazar a, " + v + "₁ y " + v + "₂", COLOR_PRODUCTO)));
+    if (limpio !== crudo) L.push(LnF(nom, "=", limpio, notaF(frUno(a) || (a.n === -1 && a.d === 1)
+      ? ["Simplificar: " + frTexto(a) + "(...) = " + (a.n < 0 ? "−" : "") + "(...)"] : "Resolver los signos", COLOR_SUMA)));
+    L[L.length - 1].color = color;
+    return L;
+  }
+
+  // ---------------------------------------------- completar el cuadrado
+  // `marcar`: llave debajo de los terminos de..a de la linea y una flecha
+  // hacia la linea siguiente, con la explicacion al costado de la flecha
+  function marcarF(l, de, a, texto, color) { l.marcar = { de: de, a: a, texto: texto, color: color }; return l; }
+
+  function metodoCompletar(P, nom, color) {
+    var a = P.a, b = P.b, c = P.c, v = P.vari, L = [];
+    var B = frDiv(b, a), C = frDiv(c, a), h = frDiv(B, fr(2)), pre = prefijoF(a);
+    // envuelve en a(...) o a[...] (con [ ] si adentro ya hay parentesis)
+    var env = function (its, corchete) { return pre ? [pre + (corchete ? "[" : "(")].concat(itF(its), [corchete ? "]" : ")"]) : itF(its); };
+    var masC = frCero(C) ? "" : conSignoF(C, 0, v);
+    L.push(LnF(nom, "=", poliF(a, b, c, v)));
+    if (pre) L.push(LnF(null, "=", [TF(pre, COLOR_PRODUCTO), "(" + poliF(fr(1), B, C, v) + ")"],
+      notaF("Sacar factor común " + frTexto(a), COLOR_PRODUCTO)));
+    var cuad, K;
+    if (!frCero(B)) {
+      var hs = cuadradoF(frTexto(h)), lin = textoPoli([[fr(1), 2], [B, 1]], v);
+      cuad = "(" + textoPoli([[fr(1), 1], [h, 0]], v) + ")²";
+      // x² + Bx + (B/2)² − (B/2)² + C, con el trinomio marcado
+      var t0 = TF(lin), t1 = TF(" + " + hs, COLOR_SUMA);
+      L.push(marcarF(LnF(null, "=", env([t0, t1, TF(" − " + hs, COLOR_SUMA), masC]),
+        notaF(["Sumar y restar " + hs, "(el cuadrado de la mitad de " + frTexto(B) + ")"], COLOR_SUMA)),
+        t0, t1, ["Aplicar trinomio cuadrado perfecto:", lin + " + " + hs + " = " + cuad], COLOR_PRODUCTO));
+      L.push(LnF(null, "=", env([TF(cuad, COLOR_PRODUCTO), " − " + hs + masC], true)));
+      // las cuentas de a una: primero el cuadrado, despues la suma
+      var h2 = frMul(h, h);
+      K = frRes(h2, C);
+      if (!frCero(C)) L.push(LnF(null, "=", env([cuad, " − " + frTexto(h2) + masC], true)));
+      // con distinto denominador, primero se lleva a denominador comun
+      if (!frCero(C) && h2.d !== C.d && (h2.d !== 1 || C.d !== 1)) {
+        var dc = h2.d * C.d / mcdAbs(h2.d, C.d);
+        var conDen = function (q) { return Math.abs(q.n) * (dc / q.d) + "/" + dc; };
+        L.push(LnF(null, "=", env([cuad, " − " + conDen(h2) + (C.n < 0 ? " − " : " + ") + conDen(C)], true)));
+      }
+      L.push(LnF(null, "=", env([cuad, frCero(K) ? "" : conSignoF(frNeg(K), 0, v)], true)));
+    } else {
+      cuad = v + "²"; K = frNeg(C);
+    }
+    var final;
+    if (frCero(K)) {
+      final = pre + cuad;
+    } else if (K.n < 0) {
+      L.push(LnF(null, null, TF("Un cuadrado más un número positivo no se puede factorizar en ℝ", COLOR_MAL)));
+      L.push(LnF(null, null, TF(nom + " no se puede factorizar en ℝ", color)));
+      return L;
+    } else {
+      var rz = raizRacional(K), vT = textoRaizF(rz), vS = cuadradoF(vT);
+      var u = textoPoli([[fr(1), 1], [h, 0]], v), dif = "(" + u + " − " + vT + ")(" + u + " + " + vT + ")";
+      var c0 = TF(cuad), c1 = TF(vS, COLOR_PRODUCTO);
+      L.push(marcarF(LnF(null, "=", env([c0, " − ", c1], true), notaF("Escribir " + frTexto(K) + " como " + vS, COLOR_PRODUCTO)),
+        c0, c1, ["Aplicar diferencia de cuadrados:", "u² − v² = (u − v)(u + v)"], COLOR_PRODUCTO));
+      L.push(LnF(null, "=", [pre, TF(dif, COLOR_PRODUCTO)]));
+      final = pre + dif;
+      if (rz.m === 1) {
+        var r1 = frRes(h, rz.coef), r2 = frSuma(h, rz.coef);
+        final = pre + "(" + textoPoli([[fr(1), 1], [r1, 0]], v) + ")(" + textoPoli([[fr(1), 1], [r2, 0]], v) + ")";
+        // con fracciones, primero el resultado sin simplificar (x − 18/12)
+        var dd = h.d * rz.coef.d / mcdAbs(h.d, rz.coef.d);
+        if (dd !== 1) {
+          var sinSimp = function (r) {
+            var n = r.n * (dd / r.d);
+            return n === 0 ? v : v + (n < 0 ? " + " : " − ") + Math.abs(n) + "/" + dd;
+          };
+          var medio = pre + "(" + sinSimp(frNeg(r1)) + ")(" + sinSimp(frNeg(r2)) + ")";
+          if (medio !== final && medio !== pre + dif) L.push(LnF(null, "=", medio));
+        }
+        if (final !== pre + dif) L.push(LnF(null, "=", TF(final)));
+      }
+    }
+    L.push(LnF(nom, "=", final, null, color));
+    return L;
+  }
+
+  // ------------------------------------------------------ descomposicion
+  function metodoDescomposicion(P, nom, color, op) {
+    var a = P.a, b = P.b, c = P.c, v = P.vari, L = [];
+    var b2 = frMul(b, b), q4 = frMul(fr(4), frMul(a, c)), D = frRes(b2, q4), rz = D.n < 0 ? null : raizRacional(D);
+    var sePuede = rz && rz.m === 1;
+    L.push(LnF(nom, "=", poliF(a, b, c, v)));
+    if (op.discriminante) {
+      // seccion propia: valores de a, b y c, el calculo de Δ y las dos
+      // condiciones, cada una escrita en general y despues con el valor
+      var sub = LnF(null, null, TF("Análisis del discriminante"), null, color);
+      sub.sub = true;
+      L.push(sub);
+      L.push(LnF(null, null, ["a = ", TF(frTexto(a), COLOR_A), "    b = ", TF(frTexto(b), COLOR_B), "    c = ", TF(frTexto(c), COLOR_C)]));
+      L.push(LnF("Δ", "=", [TF("b", COLOR_B), "² − 4·", TF("a", COLOR_A), "·", TF("c", COLOR_C)]));
+      L.push(LnF(null, "=", [TF(px(b), COLOR_B), "² − 4·", TF(px(a), COLOR_A), "·", TF(px(c), COLOR_C)],
+        notaF("Reemplazar a, b y c", COLOR_PRODUCTO)));
+      L.push(LnF(null, "=", TF(frTexto(b2) + " − " + px(q4), COLOR_SUMA), notaF("Resolver las operaciones", COLOR_SUMA)));
+      L.push(LnF(null, "=", frTexto(D)));
+      var dT = D.d === 1 ? frTexto(D) : "(" + frTexto(D) + ")";
+      // los dos criterios, uno al lado del otro: en general y con el valor
+      var crit = [["Δ ≥ 0"], [[frTexto(D) + " ≥ 0", MarcaF(D.n >= 0)]]];
+      if (D.n >= 0) {
+        crit[0].push([RzF("Δ"), " ∈ ℚ"]);
+        crit[1].push([RzF(frTexto(D))].concat(sePuede ? [" = " + frTexto(rz.coef) + " ∈ ℚ"] : [" ∉ ℚ"], [MarcaF(sePuede)]));
+      }
+      L.push(LnF(null, null, TablaF(crit)));
+      if (sePuede) L.push(libreF(LnF(null, null, "Se puede factorizar por descomposición")));
+    }
+    if (!sePuede) {
+      L.push(libreF(LnF(null, null, TF(nom + " no se puede factorizar por descomposición: " +
+        (D.n < 0 ? "Δ < 0, las raíces son imaginarias" : "√Δ ∉ ℚ, las raíces son irracionales"), color))));
+      return L;
+    }
+    var inicio = L.length; // aca empieza la factorizacion (otra alineacion)
+    // factor comun: k·(a'x² + b'x + c') con a', b', c' enteros y a' > 0
+    var mcm = [a, b, c].reduce(function (m, q) { return m * q.d / mcdAbs(m, q.d); }, 1);
+    var ent = [a, b, c].map(function (q) { return q.n * (mcm / q.d); });
+    var g = ent.reduce(function (m, n) { return mcdAbs(m, n); }, 0);
+    var k = fr((ent[0] < 0 ? -1 : 1) * g, mcm);
+    var A = ent[0] / g * (ent[0] < 0 ? -1 : 1), Bq = ent[1] / g * (ent[0] < 0 ? -1 : 1), Cq = ent[2] / g * (ent[0] < 0 ? -1 : 1);
+    var pre = prefijoF(k), Q = poliF(fr(A), fr(Bq), fr(Cq), v);
+    if (pre) {
+      L.push(LnF(nom, "=", [TF(frTexto(k), COLOR_PRODUCTO), "(" + Q + ")"], notaF("Sacar factor común " + frTexto(k), COLOR_PRODUCTO)));
+      L.push(LnF(null, null, "Factorizamos " + Q + ":"));
+    }
+    var cortar = function () { if (op.discriminante && L[inicio]) L[inicio].corte = true; };
+    var mono = function (n, g2) { return monoF(fr(Math.abs(n)), g2, v); };
+    var sig = function (n, g2) { return (n < 0 ? " − " : " + ") + mono(n, g2); };
+    var pn = function (n) { return n < 0 ? "(" + frTexto(fr(n)) + ")" : frTexto(fr(n)); };
+    var bin = function (m, n) { return textoPoli([[fr(m), 1], [fr(n), 0]], v); };
+    var ax2 = mono(A, 2), b1, b2t, fin;
+    if (Cq === 0) {
+      b1 = bin(A, Bq);
+      L.push(LnF(null, "=", [TF(v, COLOR_PRODUCTO), "(" + b1 + ")"], notaF("Sacar factor común " + v, COLOR_PRODUCTO)));
+      fin = pre + v + "(" + b1 + ")";
+      L.push(LnF(nom, "=", fin, null, color));
+      cortar();
+      return L;
+    }
+    var p, q;
+    if (Bq === A + Cq || Bq === -(A + Cq)) {
+      var mas = Bq === A + Cq;
+      p = mas ? A : -A; q = mas ? Cq : -Cq;
+      L.push(libreF(LnF(null, null, "El término lineal se arma con a y c (b = " + (mas ? "" : "−(") + "a + c" + (mas ? "" : ")") + "):")));
+      L.push(LnF(null, null, ["Caso 1: " + frTexto(fr(Bq)) + " = " + (mas ? "" : "−(") + A + " + " + pn(Cq) + (mas ? "" : ")"), MarcaF(true)]));
+      L.push(LnF(null, "=", ["a" + v + "² ", TF((mas ? "+ (a + c)" : "− (a + c)") + v, COLOR_SUMA), " + c"],
+        notaF("Escribir b como " + (mas ? "a + c" : "−(a + c)"), COLOR_SUMA)));
+      L.push(LnF(null, "=", [ax2, TF((mas ? " + (" : " − (") + A + " + " + pn(Cq) + ")" + v, COLOR_SUMA), sig(Cq, 0)],
+        notaF("Reemplazar a = " + A + " y c = " + frTexto(fr(Cq)), COLOR_SUMA)));
+    } else {
+      var N = A === 1 ? Cq : A * Cq, caso2 = A === 1;
+      L.push(libreF(LnF(null, null, caso2 ? "a = 1: buscar p y q con p + q = b y p · q = c"
+        : "a ≠ 1 y no es el caso 1: buscar p y q con p + q = b y p · q = a · c")));
+      L.push(LnF(null, null, (caso2 ? "Caso 2" : "Caso 3") + ": Condiciones a cumplir"));
+      L.push(LnF(null, null, ["    ", SistemaF([["p + q = " + frTexto(fr(Bq))],
+        ["p · q = " + (caso2 ? frTexto(fr(Cq)) : A + "·" + pn(Cq) + " = " + frTexto(fr(N)))]])]));
+      L.push(libreF(LnF(null, null, "Descomponer " + frTexto(fr(N)) + " en dos factores:")));
+      // pares de factores de N, en el orden de la filmina, hasta encontrarlo
+      // (si N > 0, p y q tienen el signo de b: solo se prueban esos)
+      var M = Math.abs(N), sb = Bq < 0 ? -1 : 1;
+      for (var d = 1; d * d <= M && p === undefined; d++) {
+        if (M % d) continue;
+        var pares = N > 0 ? [[sb * d, sb * N / d]] : [[-d, -N / d], [d, N / d]];
+        for (var j = 0; j < pares.length; j++) {
+          var x1 = pares[j][0], x2 = pares[j][1], ok = x1 + x2 === Bq;
+          // los que no sirven llevan una cruz; el que sirve, recuadro y check
+          var par = LnF(null, null, [frTexto(fr(N)) + " = " + pn(x1) + "·" + pn(x2) + "      " + pn(x1) + " + " + pn(x2) + " = " +
+            frTexto(fr(x1 + x2)), MarcaF(ok)]);
+          if (ok) par.caja = COLOR_SUMA;
+          L.push(par);
+          if (ok) { p = x1; q = x2; break; }
+        }
+      }
+      if (p === undefined) { L.push(LnF(null, null, TF("No se encontraron p y q", COLOR_MAL))); return L; }
+      L.push(LnF(null, null, TF("p = " + frTexto(fr(p)) + " ∧ q = " + frTexto(fr(q)), COLOR_SUMA)));
+      var reemplazo = notaF("Reemplazar p = " + frTexto(fr(p)) + " y q = " + frTexto(fr(q)), COLOR_SUMA);
+      if (caso2) {
+        L.push(LnF(null, "=", [v + "² + ", TF("(p + q)", COLOR_SUMA), v + " + ", TF("p · q", COLOR_SUMA)],
+          notaF("Escribir b = p + q y c = p · q", COLOR_SUMA)));
+        L.push(LnF(null, "=", [ax2, " + ", TF("(" + pn(p) + " + " + pn(q) + ")", COLOR_SUMA), v + " + ", TF(pn(p) + "·" + pn(q), COLOR_SUMA)],
+          reemplazo));
+      } else {
+        L.push(LnF(null, "=", ["a" + v + "² + ", TF("(p + q)", COLOR_SUMA), v + " + c"], notaF("Escribir b = p + q", COLOR_SUMA)));
+        L.push(LnF(null, "=", [ax2, " + ", TF("(" + pn(p) + " + " + pn(q) + ")", COLOR_SUMA), v + sig(Cq, 0)],
+          notaF(["Reemplazar a = " + A + ", c = " + frTexto(fr(Cq)) + ",", "p = " + frTexto(fr(p)) + " y q = " + frTexto(fr(q))], COLOR_SUMA)));
+      }
+    }
+    // a'x² + px + qx + c' y factor comun por grupos
+    L.push(LnF(null, "=", [ax2, TF(sig(p, 1) + sig(q, 1), COLOR_SUMA), sig(Cq, 0)],
+      notaF("Aplicar la propiedad distributiva", COLOR_SUMA)));
+    var g1 = mcdAbs(A, p), g2 = (q < 0 ? -1 : 1) * mcdAbs(q, Cq);
+    b1 = bin(A / g1, p / g1); b2t = bin(q / g2, Cq / g2);
+    var m1 = (g1 === 1 ? "" : g1) + v;
+    L.push(LnF(null, "=", [TF(m1 + "(" + b1 + ")", COLOR_PRODUCTO), sig(q, 1) + sig(Cq, 0)],
+      notaF("Sacar factor común " + m1, COLOR_PRODUCTO)));
+    L.push(LnF(null, "=", [m1 + "(" + b1 + ") + ", TF(pn(g2) + "(" + b2t + ")", COLOR_PRODUCTO)],
+      notaF("Sacar factor común " + frTexto(fr(g2)), COLOR_PRODUCTO)));
+    var crudo = "(" + m1 + " + " + pn(g2) + ")", limpio = "(" + textoPoli([[fr(g1), 1], [fr(g2), 0]], v) + ")";
+    L.push(LnF(null, "=", [TF("(" + b1 + ")", COLOR_PRODUCTO), crudo], notaF("Sacar factor común (" + b1 + ")", COLOR_PRODUCTO)));
+    if (limpio !== crudo) L.push(LnF(null, "=", "(" + b1 + ")" + limpio, notaF("Resolver los signos", COLOR_SUMA)));
+    fin = pre + ("(" + b1 + ")" === limpio ? "(" + b1 + ")²" : "(" + b1 + ")" + limpio);
+    L.push(LnF(nom, "=", fin, pre ? notaF("Volver a multiplicar por " + frTexto(k), COLOR_PRODUCTO) : null, color));
+    cortar();
+    return L;
+  }
+
+  var METODOS_F = [
+    { clave: "mFormula", titulo: "Fórmula cuadrática", hacer: metodoFormula },
+    { clave: "mCompletar", titulo: "Completar el cuadrado", hacer: metodoCompletar },
+    { clave: "mDescomposicion", titulo: "Factorización por descomposición", hacer: metodoDescomposicion },
+  ];
+  function nombrePoli(i) { return "PQRSTUVW"[i % 8]; }
+
+  function generarFactorizacion(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh;
+    var y = oy;
+    op.filas.forEach(function (fila, i) {
+      var P = leerPoli(fila.texto);
+      if (P.error) return;
+      var n = String(fila.nombre || "").trim() || nombrePoli(i);
+      var nom = /\(/.test(n) ? n : n + "(" + P.vari + ")";
+      METODOS_F.forEach(function (m) {
+        if (!op[m.clave]) return;
+        if (op.titulos) {
+          var ts = tamTitulo(tam);
+          agregar(texto(ox, y, m.titulo, ts, fuente, fila.color, "left"));
+          y += ts * fuente.lh + lh * 0.4;
+        }
+        y = dibujarBloqueF(m.hacer(P, nom, fila.color, op), ox + (op.titulos ? tam : 0), y, op, agregar) + lh * 1.3;
+      });
+      y += lh;
+    });
+  }
+
+  // ============================================= RAZONAMIENTOS DEDUCTIVOS
+  // Cada fila es un razonamiento: premisas separadas por coma y la conclusion
+  // despues de ∴ (p → q, ¬q ∴ ¬p). Se muestra si es valido por tres metodos
+  // (tabla de verdad, condicional asociado y metodo abreviado) y se busca una
+  // demostracion con reglas de inferencia.
+  var SUB_RAZ = "₀₁₂₃₄₅₆₇₈₉";
+  function subRaz(n) { return String(n).split("").map(function (d) { return SUB_RAZ[d]; }).join(""); }
+
+  function leerRazonamiento(txt) {
+    var t = String(txt || "").trim();
+    if (!t) return { error: "Escribí las premisas y la conclusión: p → q, ¬q ∴ ¬p" };
+    var partes = t.split(/∴|⊢|\//);
+    if (partes.length < 2) return { error: "Falta la conclusión: escribila después de ∴ (p → q, p ∴ q)" };
+    if (partes.length > 2) return { error: "Va un solo ∴ (antes de la conclusión)" };
+    var prem = partes[0].split(/[,;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    var conc = partes[1].trim();
+    if (!prem.length) return { error: "Falta al menos una premisa antes de ∴" };
+    if (!conc) return { error: "Falta la conclusión después de ∴" };
+    // variables: los nombres que aparecen (sin las palabras de los conectivos)
+    var vars = [];
+    (t.match(/[A-Za-zÀ-ÿ_][A-Za-zÀ-ÿ_0-9]*/g) || []).forEach(function (w) {
+      if (PALABRAS[w.toLowerCase()] || w === "V" || w === "F") return;
+      if (vars.indexOf(w) < 0) vars.push(w);
+    });
+    vars.sort();
+    if (vars.length > 6) return { error: "Hay demasiadas variables (" + vars.length + "): como máximo 6" };
+    var premisas = [];
+    for (var i = 0; i < prem.length; i++) {
+      var r = analizarLogica(prem[i], vars);
+      if (r.error) return { error: "Premisa " + (i + 1) + ": " + r.error };
+      premisas.push(sinParRaz(r.arbol));
+    }
+    var c = analizarLogica(conc, vars);
+    if (c.error) return { error: "Conclusión: " + c.error };
+    return { vars: vars, premisas: premisas, conclusion: sinParRaz(c.arbol) };
+  }
+
+  // copia del arbol sin las marcas de parentesis del autor
+  function sinParRaz(n) {
+    if (n.t === "var") return { t: "var", n: n.n };
+    if (n.t === "const") return { t: "const", v: n.v, txt: n.v ? "V" : "F" };
+    if (n.t === "no") return { t: "no", a: sinParRaz(n.a) };
+    return { t: "bin", op: n.op, a: sinParRaz(n.a), b: sinParRaz(n.b) };
+  }
+  function noRaz(a) { return { t: "no", a: a }; }
+  function binRaz(op, a, b) { return { t: "bin", op: op, a: a, b: b }; }
+  // la negacion "opuesta": ¬A -> A, A -> ¬A
+  function oppRaz(n) { return n.t === "no" ? n.a : noRaz(n); }
+  function esOpRaz(n, op) { return n.t === "bin" && n.op === op; }
+
+  // texto con parentesis segun la precedencia (∧ y ∨ encadenados a la
+  // izquierda sin parentesis: p ∧ q ∧ r)
+  function txtRaz(n, env) {
+    if (n.t === "var") return env && env[n.n] !== undefined ? (env[n.n] ? "V" : "F") : n.n;
+    if (n.t === "const") return n.v ? "V" : "F";
+    if (n.t === "no") { var s = txtRaz(n.a, env); return "¬" + (n.a.t === "bin" ? "(" + s + ")" : s); }
+    var izq = txtRaz(n.a, env), der = txtRaz(n.b, env);
+    if (n.a.t === "bin" && !(n.a.op === n.op && (n.op === "y" || n.op === "o"))) izq = "(" + izq + ")";
+    if (n.b.t === "bin") der = "(" + der + ")";
+    return izq + " " + CONECTIVOS[n.op] + " " + der;
+  }
+
+  // todas las combinaciones de valores (fila 0: todas V)
+  function filasRaz(vars) {
+    var envs = [];
+    for (var r = 0; r < Math.pow(2, vars.length); r++) {
+      var env = {};
+      vars.forEach(function (v, j) { env[v] = ((r >> (vars.length - 1 - j)) & 1) === 0; });
+      envs.push(env);
+    }
+    return envs;
+  }
+  function esValidoRaz(R) {
+    return filasRaz(R.vars).every(function (env) {
+      return !R.premisas.every(function (p) { return valorLogico(p, env); }) || valorLogico(R.conclusion, env);
+    });
+  }
+
+  // ------------------------------------------------------------- dibujo
+  // ✓ verde o ✗ roja dibujadas, empezando en x y centradas en mid
+  function marcaRaz(ok, x, mid, tam, agregar) {
+    if (ok) {
+      var t = tam * 0.85;
+      agregar(trazo([[x, mid], [x + t * 0.35, mid + t * 0.35], [x + t, mid - t * 0.45]], { strokeColor: COLOR_SUMA, strokeWidth: 3 }));
+    } else {
+      var u = tam * 0.55, y0 = mid - u / 2;
+      agregar(trazo([[x, y0], [x + u, y0 + u]], { strokeColor: COLOR_MAL, strokeWidth: 3 }));
+      agregar(trazo([[x + u, y0], [x, y0 + u]], { strokeColor: COLOR_MAL, strokeWidth: 3 }));
+    }
+  }
+
+  // Tabla de verdad. cols: [{ titulo, valores, color, sep }] (sep: linea
+  // gruesa a la izquierda); marcas: [{ fila, ok }] = recuadro de la fila y
+  // ✓/✗ a la derecha. Devuelve la y de abajo.
+  function tablaRaz(cols, marcas, x, y, c) {
+    var tam = c.tam, fuente = c.fuente, lh = tam * fuente.lh, ag = c.agregar;
+    var pad = tam * 0.7, hF = lh * 1.15, hC = lh * 1.4, xs = [], xx = x, nF = cols[0].valores.length;
+    cols.forEach(function (col) {
+      col.w = Math.max(medir(col.titulo, tam, fuente), medir("V", tam, fuente)) + pad * 2;
+      xs.push(xx); xx += col.w;
+    });
+    var W = xx - x, H = hC + nF * hF;
+    ag(base("rectangle", { x: x, y: y, width: W, height: H, strokeColor: TINTA, strokeWidth: 1.5 }));
+    ag(trazo([[x, y + hC], [x + W, y + hC]], { strokeColor: TINTA, strokeWidth: 1.5 }));
+    cols.forEach(function (col, j) {
+      if (j) ag(trazo([[xs[j], y], [xs[j], y + H]], { strokeColor: TINTA, strokeWidth: col.sep ? 3 : 1 }));
+    });
+    cols.forEach(function (col, j) {
+      var cc = col.color || TINTA;
+      ag(texto(xs[j] + col.w / 2, y + (hC - lh) / 2, col.titulo, tam, fuente, cc, "center"));
+      col.valores.forEach(function (v, i) {
+        ag(texto(xs[j] + col.w / 2, y + hC + i * hF + (hF - lh) / 2, v ? c.V : c.F, tam, fuente, cc, "center"));
+      });
+    });
+    marcas.forEach(function (m) {
+      var yr = y + hC + m.fila * hF;
+      ag(base("rectangle", { x: x + 3, y: yr + 2, width: W - 6, height: hF - 4, strokeColor: m.ok ? COLOR_SUMA : COLOR_MAL,
+        strokeWidth: 2, roundness: { type: 3 } }));
+      marcaRaz(m.ok, x + W + tam * 0.4, yr + hF / 2, tam, ag);
+    });
+    return y + H;
+  }
+
+  // renglon de texto (con marca ✓/✗ al final si `marca` no es undefined)
+  function renglonRaz(t, x, y, c, color, marca) {
+    var lh = c.tam * c.fuente.lh;
+    c.agregar(texto(x, y, t, c.tam, c.fuente, color || TINTA, "left"));
+    if (marca !== undefined) marcaRaz(marca, x + medir(t, c.tam, c.fuente) + c.tam * 0.5, y + lh / 2, c.tam, c.agregar);
+    return y + lh * 1.25;
+  }
+
+  // ------------------------------------------- 1) tabla de verdad
+  function metodoTablaRaz(R, x, y, c) {
+    if (R.vars.length > 5) return renglonRaz("Con " + R.vars.length + " variables la tabla tiene " +
+      Math.pow(2, R.vars.length) + " filas: es demasiado grande para dibujarla.", x, y, c);
+    var envs = filasRaz(R.vars), marcas = [];
+    var cols = R.vars.map(function (v) { return { titulo: v, valores: envs.map(function (e) { return e[v]; }) }; });
+    R.premisas.forEach(function (p, i) {
+      cols.push({ titulo: txtRaz(p), valores: envs.map(function (e) { return valorLogico(p, e); }), sep: !i });
+    });
+    cols.push({ titulo: txtRaz(R.conclusion), valores: envs.map(function (e) { return valorLogico(R.conclusion, e); }), sep: true });
+    var valido = true;
+    envs.forEach(function (e, i) {
+      if (!R.premisas.every(function (p) { return valorLogico(p, e); })) return;
+      var ok = valorLogico(R.conclusion, e);
+      if (!ok) valido = false;
+      marcas.push({ fila: i, ok: ok });
+    });
+    y = renglonRaz("Se marcan las filas en las que todas las premisas son verdaderas:", x, y, c);
+    y = tablaRaz(cols, marcas, x, y + c.tam * 0.3, c) + c.tam * 0.6;
+    if (!marcas.length) return renglonRaz("Las premisas nunca son verdaderas a la vez: el razonamiento es válido", x, y, c, TINTA, true);
+    return renglonRaz(valido ? "En esas filas la conclusión siempre es verdadera: el razonamiento es válido"
+      : "Hay una fila con las premisas verdaderas y la conclusión falsa: el razonamiento no es válido", x, y, c, TINTA, valido);
+  }
+
+  // ------------------------------------------- 2) condicional asociado
+  function antecedenteRaz(R) {
+    return R.premisas.reduce(function (a, p) { return a ? binRaz("y", a, p) : p; }, null);
+  }
+  function metodoCondicionalRaz(R, x, y, c) {
+    var ant = antecedenteRaz(R), cond = binRaz("entonces", ant, R.conclusion);
+    var gen = R.premisas.map(function (p, i) { return "P" + subRaz(i + 1); }).join(" ∧ ");
+    var conTxt = (R.conclusion.t === "bin" ? "(" + txtRaz(R.conclusion) + ")" : txtRaz(R.conclusion));
+    var antTxt = R.premisas.length > 1 || ant.t === "bin" ? "[" + txtRaz(ant) + "]" : txtRaz(ant);
+    y = renglonRaz("El razonamiento es válido si (" + gen + ") → C es una tautología:", x, y, c);
+    y = renglonRaz(antTxt + " → " + conTxt, x + c.tam, y, c);
+    if (R.vars.length > 5) return renglonRaz("Con " + R.vars.length + " variables la tabla es demasiado grande para dibujarla.", x, y, c);
+    var envs = filasRaz(R.vars);
+    var cols = R.vars.map(function (v) { return { titulo: v, valores: envs.map(function (e) { return e[v]; }) }; });
+    var col = function (n, titulo, sep, color) {
+      cols.push({ titulo: titulo || txtRaz(n), valores: envs.map(function (e) { return valorLogico(n, e); }), sep: sep, color: color });
+    };
+    if (R.premisas.length > 1) R.premisas.forEach(function (p, i) { col(p, null, !i); });
+    col(ant, R.premisas.length > 1 ? antTxt : null, R.premisas.length === 1);
+    col(R.conclusion, null, false);
+    col(cond, antTxt + " → " + conTxt, true, c.color);
+    var marcas = [];
+    cols[cols.length - 1].valores.forEach(function (v, i) { if (!v) marcas.push({ fila: i, ok: false }); });
+    y = tablaRaz(cols, marcas, x, y + c.tam * 0.3, c) + c.tam * 0.6;
+    return renglonRaz(marcas.length ? "No es una tautología (hay filas con F): el razonamiento no es válido"
+      : "Es una tautología (en todas las filas da V): el razonamiento es válido", x, y, c, TINTA, !marcas.length);
+  }
+
+  // ------------------------------------------- 3) metodo abreviado
+  // Se supone premisas V y conclusion F y se deducen valores hasta llegar a
+  // una contradiccion (valido) o a una asignacion posible (no valido). Si
+  // no se puede deducir nada mas, se prueban los dos valores de una variable.
+  function parcialRaz(n, env) {
+    if (n.t === "var") return env[n.n];
+    if (n.t === "const") return n.v;
+    if (n.t === "no") { var v = parcialRaz(n.a, env); return v === undefined ? undefined : !v; }
+    var a = parcialRaz(n.a, env), b = parcialRaz(n.b, env);
+    switch (n.op) {
+      case "y": return a === false || b === false ? false : a && b ? true : undefined;
+      case "o": return a === true || b === true ? true : a === false && b === false ? false : undefined;
+      case "entonces": return a === false || b === true ? true : a === true && b === false ? false : undefined;
+      default:
+        if (a === undefined || b === undefined) return undefined;
+        return n.op === "xo" ? a !== b : a === b;
+    }
+  }
+  function vfRaz(v) { return v ? "V" : "F"; }
+
+  function abreviadoRaz(R) {
+    var L = [];
+    var poner = function (t, nivel, marca) { L.push({ t: t, nivel: nivel, marca: marca }); };
+    poner("Suponemos que no es válido: las premisas V y la conclusión F.", 0);
+    var metas = R.premisas.map(function (p, i) { return { n: p, v: true, nom: "P" + subRaz(i + 1) }; })
+      .concat([{ n: R.conclusion, v: false, nom: "C" }]);
+    // devuelve true si se llego a una contradiccion en todos los casos
+    function resolver(metas, env, nivel) {
+      metas = metas.slice();
+      for (;;) {
+        var avance = false;
+        for (var k = 0; k < metas.length; k++) {
+          var g = metas[k], nom = g.nom ? g.nom + ": " : "", txt = txtRaz(g.n);
+          var val = parcialRaz(g.n, env);
+          if (val !== undefined) {
+            metas.splice(k--, 1);
+            avance = true;
+            if (val !== g.v) {
+              poner(nom + txt + " = " + txtRaz(g.n, env) + " = " + vfRaz(val) + ", pero debía ser " + vfRaz(g.v) +
+                ": contradicción", nivel, false);
+              return true;
+            }
+            continue;
+          }
+          var n = g.n, v = g.v, nuevas = null, dato = "";
+          var a = n.a ? parcialRaz(n.a, env) : undefined, b = n.b ? parcialRaz(n.b, env) : undefined;
+          // `dato`: el valor ya conocido que se usa para deducir
+          var conA = function () { dato = " y " + txtRaz(n.a) + " = " + vfRaz(a); };
+          var conB = function () { dato = " y " + txtRaz(n.b) + " = " + vfRaz(b); };
+          if (n.t === "var") nuevas = [[n, v]];
+          else if (n.t === "no") nuevas = [[n.a, !v]];
+          else if (n.op === "y" && v) nuevas = [[n.a, true], [n.b, true]];
+          else if (n.op === "o" && !v) nuevas = [[n.a, false], [n.b, false]];
+          else if (n.op === "entonces" && !v) nuevas = [[n.a, true], [n.b, false]];
+          else if (n.op === "y" && a === true) { conA(); nuevas = [[n.b, false]]; }
+          else if (n.op === "y" && b === true) { conB(); nuevas = [[n.a, false]]; }
+          else if (n.op === "o" && a === false) { conA(); nuevas = [[n.b, true]]; }
+          else if (n.op === "o" && b === false) { conB(); nuevas = [[n.a, true]]; }
+          else if (n.op === "entonces" && a === true) { conA(); nuevas = [[n.b, true]]; }
+          else if (n.op === "entonces" && b === false) { conB(); nuevas = [[n.a, false]]; }
+          else if ((n.op === "sii" || n.op === "xo") && (a !== undefined || b !== undefined)) {
+            var conocido = a !== undefined ? a : b, otro = a !== undefined ? n.b : n.a;
+            if (a !== undefined) conA(); else conB();
+            nuevas = [[otro, n.op === "sii" ? (v ? conocido : !conocido) : (v ? !conocido : conocido)]];
+          }
+          if (!nuevas) continue;
+          metas.splice(k--, 1);
+          avance = true;
+          // las variables se asignan en el mismo renglon
+          var partes = [], choque = null;
+          nuevas.forEach(function (q) {
+            partes.push(txtRaz(q[0]) + " = " + vfRaz(q[1]));
+            if (q[0].t === "var") {
+              if (env[q[0].n] !== undefined && env[q[0].n] !== q[1]) choque = q[0].n;
+              else env[q[0].n] = q[1];
+            } else metas.push({ n: q[0], v: q[1] });
+          });
+          var porQue = n.t === "var" ? "" : dato + "  ⇒  " + partes.join(" y ");
+          if (choque) {
+            poner(nom + txt + " = " + vfRaz(v) + porQue + ", pero " + choque + " ya era " + vfRaz(env[choque]) +
+              ": contradicción", nivel, false);
+            return true;
+          }
+          poner(nom + txt + " = " + vfRaz(v) + porQue, nivel);
+        }
+        if (!metas.length) {
+          var asig = R.vars.filter(function (x) { return env[x] !== undefined; })
+            .map(function (x) { return x + " = " + vfRaz(env[x]); }).join(", ");
+          poner("No hay contradicción (" + asig + "): las premisas pueden ser V con la conclusión F", nivel, false);
+          return false;
+        }
+        if (avance) continue;
+        // no se puede deducir mas: se prueban los dos valores de una variable
+        var libre = null;
+        metas.forEach(function (g) {
+          (function buscar(n) {
+            if (libre) return;
+            if (n.t === "var" && env[n.n] === undefined) libre = n.n;
+            if (n.a) buscar(n.a);
+            if (n.b) buscar(n.b);
+          })(g.n);
+        });
+        if (!libre) return false;
+        poner("No se puede deducir más: probamos los dos valores de " + libre + ".", nivel);
+        var todos = true;
+        [true, false].forEach(function (val) {
+          if (!todos) return;
+          poner("Caso " + libre + " = " + vfRaz(val) + ":", nivel + 1);
+          var e2 = {};
+          for (var q in env) e2[q] = env[q];
+          e2[libre] = val;
+          if (!resolver(metas, e2, nivel + 2)) todos = false;
+        });
+        return todos;
+      }
+    }
+    var valido = resolver(metas, {}, 0);
+    poner(valido ? "Siempre se llega a una contradicción: el razonamiento es válido"
+      : "Se encontró un caso con las premisas V y la conclusión F: el razonamiento no es válido", 0, valido);
+    return L;
+  }
+  function metodoAbreviadoRaz(R, x, y, c) {
+    abreviadoRaz(R).forEach(function (l) { y = renglonRaz(l.t, x + l.nivel * c.tam, y, c, TINTA, l.marca); });
+    return y;
+  }
+
+  // ------------------------------------------- 4) demostracion
+  var REGLAS_RAZ = {
+    MP: "Modus Ponens: A → B, A ⊢ B",
+    MT: "Modus Tollens (tollendo tollens): A → B, ¬B ⊢ ¬A",
+    SH: "Silogismo hipotético: A → B, B → C ⊢ A → C",
+    SD: "Silogismo disyuntivo (tollendo ponens): A ∨ B, ¬A ⊢ B",
+    Simp: "Simplificación: A ∧ B ⊢ A",
+    Conj: "Conjunción: A, B ⊢ A ∧ B",
+    Adic: "Adición: A ⊢ A ∨ B",
+    DC: "Dilema constructivo: A → B, C → D, A ∨ C ⊢ B ∨ D",
+    TE: "Tercero excluido: ⊢ A ∨ ¬A",
+    DN: "Doble negación: ¬¬A ⊢ A",
+    Idem: "Idempotencia: A ∨ A ⊢ A",
+    Cond: "Definición del condicional: A → B ≡ ¬A ∨ B",
+    CR: "Contrarrecíproco: A → B ≡ ¬B → ¬A",
+    DM: "De Morgan: ¬(A ∧ B) ≡ ¬A ∨ ¬B,  ¬(A ∨ B) ≡ ¬A ∧ ¬B",
+    Conm: "Conmutativa: A ∨ B ≡ B ∨ A,  A ∧ B ≡ B ∧ A",
+    Bic: "Bicondicional: A ↔ B ⊢ A → B,  A ↔ B ⊢ B → A",
+  };
+
+  // Busqueda por rondas (en cada una se aplican todas las reglas a lo que
+  // ya se tiene). Para que no crezca sin fin, lo nuevo tiene que ser una
+  // parte de las premisas o de la conclusion (o su negacion), salvo los
+  // resultados de SH y DC. Devuelve las lineas de la deduccion o null.
+  function demostrarRaz(R) {
+    var K = [], porClave = {}, U = {}, objetivo = txtRaz(R.conclusion);
+    function enU(n) { return !!U[txtRaz(n)]; }
+    (function partes(lista) {
+      lista.forEach(function sub(n) {
+        U[txtRaz(n)] = true; U[txtRaz(oppRaz(n))] = true;
+        if (n.a) sub(n.a);
+        if (n.b) sub(n.b);
+      });
+    })(R.premisas.concat([R.conclusion]));
+    function sumar(n, regla, deps) {
+      var k = txtRaz(n);
+      if (porClave[k]) return;
+      var it = { n: n, k: k, regla: regla, deps: deps, orden: K.length };
+      porClave[k] = it; K.push(it);
+    }
+    R.premisas.forEach(function (p) { sumar(p, "Premisa", []); });
+    var claveDe = function (n) { return txtRaz(n); }, tiene = function (n) { return porClave[claveDe(n)]; };
+    for (var ronda = 0; ronda < 10 && !porClave[objetivo] && K.length < 400; ronda++) {
+      var nuevos = [], snap = K.slice();
+      var prop = function (n, regla, deps) { nuevos.push([n, regla, deps]); };
+      var siU = function (n, regla, deps) { if (enU(n) || txtRaz(n) === objetivo) prop(n, regla, deps); };
+      snap.forEach(function (f) {
+        var n = f.n;
+        if (esOpRaz(n, "y")) { prop(n.a, "Simp", [f]); prop(n.b, "Simp", [f]); }
+        if (n.t === "no" && n.a.t === "no") prop(n.a.a, "DN", [f]);
+        if (esOpRaz(n, "o") && txtRaz(n.a) === txtRaz(n.b)) prop(n.a, "Idem", [f]);
+        if (esOpRaz(n, "sii")) { prop(binRaz("entonces", n.a, n.b), "Bic", [f]); prop(binRaz("entonces", n.b, n.a), "Bic", [f]); }
+        if (esOpRaz(n, "entonces")) {
+          siU(binRaz("o", oppRaz(n.a), n.b), "Cond", [f]);
+          siU(binRaz("entonces", oppRaz(n.b), oppRaz(n.a)), "CR", [f]);
+        }
+        if (esOpRaz(n, "o")) { siU(binRaz("entonces", oppRaz(n.a), n.b), "Cond", [f]); siU(binRaz("o", n.b, n.a), "Conm", [f]); }
+        if (esOpRaz(n, "y")) siU(binRaz("y", n.b, n.a), "Conm", [f]);
+        // De Morgan siempre (solo se aplica a negaciones que ya se tienen)
+        if (n.t === "no" && esOpRaz(n.a, "y")) prop(binRaz("o", oppRaz(n.a.a), oppRaz(n.a.b)), "DM", [f]);
+        if (n.t === "no" && esOpRaz(n.a, "o")) prop(binRaz("y", oppRaz(n.a.a), oppRaz(n.a.b)), "DM", [f]);
+      });
+      snap.forEach(function (f) {
+        snap.forEach(function (g) {
+          if (f === g) return;
+          var a = f.n, b = g.n;
+          if (esOpRaz(a, "entonces")) {
+            if (txtRaz(b) === txtRaz(a.a)) prop(a.b, "MP", [f, g]);
+            if (txtRaz(b) === txtRaz(oppRaz(a.b))) prop(oppRaz(a.a), "MT", [f, g]);
+            if (esOpRaz(b, "entonces") && txtRaz(b.a) === txtRaz(a.b)) prop(binRaz("entonces", a.a, b.b), "SH", [f, g]);
+            // tercero excluido: si se tiene A → B y ¬A → D, se agrega A ∨ ¬A
+            if (esOpRaz(b, "entonces") && txtRaz(b.a) === txtRaz(oppRaz(a.a)) && a.a.t !== "no")
+              prop(binRaz("o", a.a, oppRaz(a.a)), "TE", []);
+            // dilema constructivo
+            if (esOpRaz(b, "entonces")) {
+              var d = tiene(binRaz("o", a.a, b.a));
+              if (d) prop(binRaz("o", a.b, b.b), "DC", [f, g, d]);
+            }
+          }
+          if (esOpRaz(a, "o")) {
+            if (txtRaz(b) === txtRaz(oppRaz(a.a))) prop(a.b, "SD", [f, g]);
+            if (txtRaz(b) === txtRaz(oppRaz(a.b))) prop(a.a, "SD", [f, g]);
+          }
+        });
+      });
+      // conjuncion y adicion: solo para armar partes que hacen falta
+      var metas = [R.conclusion];
+      R.premisas.forEach(function (p) { (function sub(n) { metas.push(n); if (n.a) sub(n.a); if (n.b) sub(n.b); })(p); });
+      (function sub(n) { metas.push(n); if (n.a) sub(n.a); if (n.b) sub(n.b); })(R.conclusion);
+      metas.forEach(function (m) {
+        if (esOpRaz(m, "y") && tiene(m.a) && tiene(m.b)) prop(m, "Conj", [tiene(m.a), tiene(m.b)]);
+        if (esOpRaz(m, "o") && (tiene(m.a) || tiene(m.b))) prop(m, "Adic", [tiene(m.a) || tiene(m.b)]);
+      });
+      nuevos.forEach(function (q) { sumar(q[0], q[1], q[2]); });
+      if (K.length === snap.length) break;
+    }
+    var fin = porClave[objetivo];
+    if (!fin) return null;
+    var usados = {};
+    (function marcar(it) { if (usados[it.k]) return; usados[it.k] = true; it.deps.forEach(marcar); })(fin);
+    var lineas = [], num = {};
+    K.forEach(function (it) {
+      if (it.regla !== "Premisa" && !usados[it.k]) return;
+      num[it.k] = lineas.length + 1;
+      lineas.push({ n: it.n, regla: it.regla, deps: it.deps.map(function (d) { return num[d.k]; }), fin: it === fin });
+    });
+    return lineas;
+  }
+
+  function metodoDemostracionRaz(R, x, y, c, op) {
+    if (!esValidoRaz(R)) {
+      return renglonRaz("El razonamiento no es válido: no existe una demostración.", x, y, c, TINTA, false);
+    }
+    var lineas = demostrarRaz(R);
+    if (!lineas) {
+      y = renglonRaz("No se encontró una deducción con las reglas disponibles.", x, y, c, TINTA, false);
+      return renglonRaz("Puede existir igual: el razonamiento es válido (lo muestran los otros métodos).", x, y, c);
+    }
+    var tam = c.tam, fuente = c.fuente, lh = tam * fuente.lh, hF = lh * 1.25;
+    var wN = Math.max.apply(null, lineas.map(function (l, i) { return medir((i + 1) + ".", tam, fuente); }));
+    var wF = Math.max.apply(null, lineas.map(function (l) { return medir(txtRaz(l.n), tam, fuente); }));
+    var xF = x + wN + tam * 0.8, xJ = xF + wF + tam * 2, usadas = [];
+    var nPrem = lineas.filter(function (l) { return l.regla === "Premisa"; }).length;
+    lineas.forEach(function (l, i) {
+      var col = l.fin ? c.color : TINTA, yy = y + i * hF;
+      c.agregar(texto(x + wN, yy, (i + 1) + ".", tam, fuente, col, "right"));
+      c.agregar(texto(xF, yy, txtRaz(l.n), tam, fuente, col, "left"));
+      var j = l.regla === "Premisa" ? "Premisa" : l.regla + (l.deps.length ? " " + l.deps.join(", ") : "");
+      c.agregar(texto(xJ, yy, j, tam, fuente, l.regla === "Premisa" ? TINTA : COLOR_PRODUCTO, "left"));
+      if (l.fin) marcaRaz(true, xJ + medir(j, tam, fuente) + tam * 0.5, yy + lh / 2, tam, c.agregar);
+      if (l.regla !== "Premisa" && usadas.indexOf(l.regla) < 0) usadas.push(l.regla);
+      // linea que separa las premisas de lo deducido
+      if (i === nPrem - 1) c.agregar(trazo([[x, yy + hF - 2], [xJ - tam, yy + hF - 2]], { strokeColor: TINTA, strokeWidth: 1 }));
+    });
+    y += lineas.length * hF + tam * 0.4;
+    y = renglonRaz("Puede haber demostraciones más cortas que esta.", x, y, c);
+    if (op.reglas && usadas.length) {
+      y += tam * 0.3;
+      y = renglonRaz("Reglas usadas:", x, y, c);
+      usadas.forEach(function (r) { y = renglonRaz(r + " — " + REGLAS_RAZ[r], x + tam, y, c, COLOR_PRODUCTO); });
+    }
+    return y;
+  }
+
+  var METODOS_RAZ = [
+    { clave: "mTabla", titulo: "Tabla de verdad", hacer: metodoTablaRaz },
+    { clave: "mCondicional", titulo: "Condicional asociado", hacer: metodoCondicionalRaz },
+    { clave: "mAbreviado", titulo: "Método abreviado", hacer: metodoAbreviadoRaz },
+    { clave: "mDemostracion", titulo: "Demostración con reglas de inferencia", hacer: metodoDemostracionRaz },
+  ];
+
+  function generarRazonamientos(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh;
+    var y = oy;
+    op.filas.forEach(function (fila) {
+      var R = leerRazonamiento(fila.texto);
+      if (R.error) return;
+      var c = { tam: tam, fuente: fuente, agregar: agregar, color: fila.color,
+        V: op.valores === "10" ? "1" : "V", F: op.valores === "10" ? "0" : "F" };
+      // el razonamiento: premisas numeradas, una raya y la conclusion con ∴
+      var wE = Math.max(medir("P" + subRaz(R.premisas.length) + ": ", tam, fuente), medir("∴ ", tam, fuente));
+      var wMax = 0;
+      R.premisas.forEach(function (p, i) {
+        agregar(texto(ox, y, "P" + subRaz(i + 1) + ":", tam, fuente, fila.color, "left"));
+        agregar(texto(ox + wE, y, txtRaz(p), tam, fuente, TINTA, "left"));
+        wMax = Math.max(wMax, medir(txtRaz(p), tam, fuente));
+        y += lh * 1.2;
+      });
+      wMax = Math.max(wMax, medir(txtRaz(R.conclusion), tam, fuente));
+      agregar(trazo([[ox, y + 2], [ox + wE + wMax + tam * 0.5, y + 2]], { strokeColor: TINTA, strokeWidth: 1.5 }));
+      y += tam * 0.3;
+      agregar(texto(ox, y, "∴", tam, fuente, fila.color, "left"));
+      agregar(texto(ox + wE, y, txtRaz(R.conclusion), tam, fuente, TINTA, "left"));
+      y += lh * 2;
+      METODOS_RAZ.forEach(function (m) {
+        if (!op[m.clave]) return;
+        if (op.titulos) {
+          var ts = tamTitulo(tam);
+          agregar(texto(ox, y, m.titulo, ts, fuente, fila.color, "left"));
+          y += ts * fuente.lh + lh * 0.4;
+        }
+        y = m.hacer(R, ox + (op.titulos ? tam : 0), y, c, op) + lh * 1.3;
+      });
+      y += lh;
     });
   }
 
@@ -3590,21 +5481,21 @@
     return p.length ? p.join(" · ") : "1";
   }
   function factorialDesarrollado(d) { return d <= 1 ? "1" : producto(d, 1); }
-  function unir(lista) { return lista.join(" · "); }
+  function unirProducto(lista) { return lista.join(" · "); }
   function paren(s, muchos) { return muchos && / /.test(s) ? "(" + s + ")" : s; }
 
   // pasos de N! / (d1! · d2! · ...) despues del reemplazo
   function resolverFactoriales(N, ds, modo, tachar) {
     var lineas = [], valor = factorialBig(N);
     ds.forEach(function (d) { valor /= factorialBig(d); });
-    var denFact = function (lst) { return unir(lst.map(function (d) { return d + "!"; })); };
+    var denFact = function (lst) { return unirProducto(lst.map(function (d) { return d + "!"; })); };
     if (!ds.length) {
       if (N >= 2) lineas.push(plano(producto(N, 1)));
       lineas.push(plano(miles(valor)));
       return lineas;
     }
     var expDen = function (lst) {
-      return unir(lst.map(function (d) { return paren(factorialDesarrollado(d), lst.length > 1); }));
+      return unirProducto(lst.map(function (d) { return paren(factorialDesarrollado(d), lst.length > 1); }));
     };
     var valDen = function (lst) { return lst.reduce(function (a, d) { return a * factorialBig(d); }, 1n); };
     var numFact = [], resto = ds.slice();
@@ -3624,13 +5515,13 @@
         lineas.push(fraccion(num, den));
         resto.splice(i, 1);
         for (var x = N; x > d; x--) numFact.push(x);
-        if (resto.length) lineas.push(fraccion(numFact.length ? unir(numFact) : "1", denFact(resto)));
-        else lineas.push(plano(numFact.length ? unir(numFact) : "1"));
+        if (resto.length) lineas.push(fraccion(numFact.length ? unirProducto(numFact) : "1", denFact(resto)));
+        else lineas.push(plano(numFact.length ? unirProducto(numFact) : "1"));
       } else {
         numFact = null; // nada para cancelar: se desarrolla N!
       }
       if (resto.length) {
-        var numTxt = numFact === null ? factorialDesarrollado(N) : numFact.length ? unir(numFact) : "1";
+        var numTxt = numFact === null ? factorialDesarrollado(N) : numFact.length ? unirProducto(numFact) : "1";
         lineas.push(fraccion(numTxt, expDen(resto)));
       }
     }
@@ -3638,7 +5529,7 @@
     if (resto.length) {
       var dv = resto.map(function (x) { return factorialBig(x); });
       if (dv.length > 1 && dv.some(function (v) { return v > 1n; })) {
-        lineas.push(fraccion(miles(numVal), unir(dv.map(miles))));
+        lineas.push(fraccion(miles(numVal), unirProducto(dv.map(miles))));
       }
       if (valDen(resto) !== 1n) lineas.push(fraccion(miles(numVal), miles(valDen(resto))));
     }
@@ -3649,7 +5540,7 @@
   // formula general, reemplazo y pasos de un calculo
   function desarrollarComb(c, op) {
     var res = { nombre: NOMBRES_COMB[c.tipo], simboloGral: simboloComb(c, op, true), simbolo: simboloComb(c, op) };
-    var den = function (l) { return unir(l); };
+    var den = function (l) { return unirProducto(l); };
     if (c.tipo === "P") {
       res.general = plano("n!");
       res.pasos = [plano(c.n + "!")].concat(resolverFactoriales(c.n, [], op.desarrollo, op.tachar));
@@ -3676,7 +5567,7 @@
       res.general = plano("n" + SUP.k);
       var v = BigInt(c.n) ** BigInt(c.k);
       res.pasos = [plano(c.n + superindice(c.k))];
-      if (c.k >= 2 && c.k <= 12) res.pasos.push(plano(unir(Array(c.k).fill(c.n))));
+      if (c.k >= 2 && c.k <= 12) res.pasos.push(plano(unirProducto(Array(c.k).fill(c.n))));
       res.pasos.push(plano(miles(v)));
     }
     // sin renglones repetidos seguidos
@@ -4001,6 +5892,119 @@
     return { re: re, im: im, forma: "binomica" };
   }
 
+  // Expresion con numeros de filas anteriores y reales: 2 · z₁ / z₂,
+  // (z₁ + z₂) · z₃, 3z₁ − z₂... (· y / antes que + y −; 2z₁ es 2 · z₁).
+  // Devuelve null si no nombra ninguna fila (es un numero escrito), { error }
+  // o { pasos: [operaciones en el orden en que se hacen], texto }.
+  var SIMBOLOS_OP_C = { "+": "+", "-": "−", "−": "−", "·": "·", "*": "·", "×": "·", "/": "/", "÷": "/", ":": "/" };
+  function leerExpresionC(t, defs) {
+    if (/\b(cos|sen|sin)\b/i.test(t)) return null; // forma trigonometrica
+    var toks = [], i = 0, hayNombre = false, m;
+    var reNum = /^\d+(?:[.,]\d+)?/, reNom = new RegExp("^" + NOMBRE_C);
+    while (i < t.length) {
+      var c = t[i], resto = t.slice(i);
+      if (/\s/.test(c)) { i++; continue; }
+      if ((m = reNum.exec(resto))) { toks.push({ k: "num", v: parseFloat(m[0].replace(",", ".")), txt: m[0] }); i += m[0].length; continue; }
+      if ((m = reNom.exec(resto))) {
+        if (m[0] === "i") return null; // numero en forma binomica
+        hayNombre = true; toks.push({ k: "nom", txt: m[0] }); i += m[0].length; continue;
+      }
+      if (SIMBOLOS_OP_C[c]) { toks.push({ k: "op", s: SIMBOLOS_OP_C[c] }); i++; continue; }
+      if (c === "(" || c === ")" || c === "|") { toks.push({ k: c }); i++; continue; }
+      return hayNombre ? { error: "No entiendo «" + c + "» en la operación" } : null;
+    }
+    if (!hayNombre) return null;
+    var pos = 0, pasos = [], enBarra = false;
+    function err(e) { throw { msjC: e }; }
+    function hoja(tk) {
+      if (tk.k === "num") return { hoja: { nombre: tk.txt.replace(".", ","), re: tk.v, im: 0, forma: "binomica" } };
+      var d = defs[normNombreC(tk.txt)];
+      if (!d) err("No hay un número llamado " + tk.txt + " en las filas de arriba");
+      return { hoja: d };
+    }
+    function expr() {
+      var a = term();
+      while (toks[pos] && toks[pos].k === "op" && (toks[pos].s === "+" || toks[pos].s === "−")) {
+        var s2 = toks[pos++].s; a = { s: s2, a: a, b: term() };
+      }
+      return a;
+    }
+    function term() {
+      var a = factor();
+      for (;;) {
+        var tk = toks[pos];
+        if (tk && tk.k === "op" && (tk.s === "·" || tk.s === "/")) { pos++; a = { s: tk.s, a: a, b: factor() }; }
+        else if (tk && (tk.k === "nom" || tk.k === "num" || tk.k === "(" || tk.k === "|" && !enBarra)) a = { s: "·", a: a, b: factor() }; // 2z₁
+        else return a;
+      }
+    }
+    function factor() {
+      var tk = toks[pos];
+      if (tk && tk.k === "op" && tk.s === "−") { pos++; return { s: "·", a: { hoja: { nombre: "−1", re: -1, im: 0, forma: "binomica" } }, b: factor() }; }
+      if (!tk) err("Falta un número al final");
+      pos++;
+      if (tk.k === "num" || tk.k === "nom") return hoja(tk);
+      if (tk.k === "(") {
+        var e = expr();
+        if (!toks[pos] || toks[pos].k !== ")") err("Falta cerrar un paréntesis");
+        pos++;
+        return e;
+      }
+      if (tk.k === "|") {
+        // modulo: |z₁|, |z₁ + z₂| (adentro no se toma | como multiplicacion implicita)
+        var antes = enBarra;
+        enBarra = true;
+        var dentro = expr();
+        enBarra = antes;
+        if (!toks[pos] || toks[pos].k !== "|") err("Falta cerrar el módulo con |");
+        pos++;
+        return { mod: dentro };
+      }
+      err(tk.k === ")" ? "Sobra un paréntesis de cierre" : "Falta un número antes de «" + tk.s + "»");
+    }
+    // texto de un nodo (con parentesis donde hacen falta)
+    function texto(n, padre, der) {
+      if (n.hoja) return n.hoja.nombre;
+      if (n.mod) return "|" + texto(n.mod) + "|";
+      var t2 = texto(n.a, n.s, false) + " " + n.s + " " + texto(n.b, n.s, true);
+      var bajo = n.s === "+" || n.s === "−", padreAlto = padre === "·" || padre === "/";
+      return padre && (bajo && padreAlto || der && padre === "−" && bajo || der && padre === "/") ? "(" + t2 + ")" : t2;
+    }
+    // cada operacion es una "fila" auxiliar con su resultado
+    function calcular(n) {
+      if (n.hoja) return n.hoja;
+      if (n.mod) {
+        // el modulo es un numero real: ρ = √(a² + b²)
+        var z = calcular(n.mod), m = { forma: "mod", arg: z, re: Math.hypot(z.re, z.im), im: 0, nombre: texto(n) };
+        pasos.push(m);
+        return m;
+      }
+      var A = calcular(n.a), B = calcular(n.b), r = { forma: "op", op: { a: A, b: B, s: n.s } };
+      var ar = A.re, ai = A.im, br = B.re, bi = B.im;
+      if (n.s === "+") { r.re = ar + br; r.im = ai + bi; }
+      else if (n.s === "−") { r.re = ar - br; r.im = ai - bi; }
+      else if (n.s === "·") { r.re = ar * br - ai * bi; r.im = ar * bi + ai * br; }
+      else {
+        var d = br * br + bi * bi;
+        if (d < EPS_C) err("No se puede dividir por 0 (" + B.nombre + " = 0)");
+        r.re = (ar * br + ai * bi) / d; r.im = (ai * br - ar * bi) / d;
+      }
+      r.nombre = "(" + texto(n) + ")"; // como operando de la operacion siguiente
+      pasos.push(r);
+      return r;
+    }
+    try {
+      var arbol = expr();
+      if (pos < toks.length) err(toks[pos].k === ")" ? "Sobra un paréntesis de cierre" : "Falta un operador entre dos números");
+      if (arbol.hoja) err("Escribí una operación (z₁ · z₂, 2 · z₁ / z₂, |z₁| / |z₂|...) o un número (3 + 4i)");
+      calcular(arbol);
+      return { pasos: pasos, texto: texto(arbol) };
+    } catch (e) {
+      if (e && e.msjC) return { error: e.msjC };
+      throw e;
+    }
+  }
+
   // filas: numeros y operaciones, con sus valores y errores
   function analizarComplejos(op) {
     var defs = {}, filas = [];
@@ -4028,9 +6032,19 @@
           }
         }
       } else {
-        var c = leerComplejo(t);
-        if (c.error) r.errores.push(c.error);
-        else for (var k in c) r[k] = c[k];
+        // expresion con varias operaciones o con numeros reales
+        var ex = leerExpresionC(t, defs);
+        if (ex && ex.error) r.errores.push(ex.error);
+        else if (ex) {
+          var ult = ex.pasos[ex.pasos.length - 1];
+          r.forma = "op"; r.op = ult.op || null; r.re = ult.re; r.im = ult.im;
+          if (ult.forma === "mod") r.modulo = ult;
+          r.pasosPrevios = ex.pasos.slice(0, -1); r.textoExpr = ex.texto;
+        } else {
+          var c = leerComplejo(t);
+          if (c.error) r.errores.push(c.error);
+          else for (var k in c) r[k] = c[k];
+        }
       }
       if (defs[clave]) r.errores.push("Ya hay otro número llamado " + nombre);
       if (!r.errores.length) defs[clave] = r;
@@ -4173,6 +6187,16 @@
     return { lineas: L, re: a, im: b };
   }
 
+  // modulo de un complejo como paso: |z₁| = √(a² + b²) = ... = 5
+  function pasosModuloC(m, H) {
+    var re = m.arg.re, im = m.arg.im, a2 = re * re, b2 = im * im, s = a2 + b2, rho = Math.sqrt(s);
+    return [{ titulo: "Módulo de " + m.arg.nombre.replace(/^\((.*)\)$/, "$1"), cadena: cadenaC(m.nombre, [{ t: "√(a² + b²)" },
+      { t: "√(" + H.sq(re) + " + " + H.sq(im) + ")", ap: !H.ex(re) || !H.ex(im) },
+      { t: "√(" + H.n(a2) + " + " + H.n(b2) + ")", ap: !H.ex(a2) || !H.ex(b2) },
+      { t: "√" + (/[ ,]/.test(H.n(s)) ? "(" + H.n(s) + ")" : H.n(s)), ap: !H.ex(s) },
+      { t: H.n(rho), ap: !H.ex(rho) }]) }];
+  }
+
   // pasos de una operacion: [{ titulo, cadena (en varios renglones) }]
   function pasosOperacionC(r, H, op) {
     var A = r.op.a, B = r.op.b, s = r.op.s, out = [];
@@ -4182,6 +6206,11 @@
     var verBin = s === "+" || s === "−" || op.operarEn !== "polar";
     var verPol = (s === "·" || s === "/") && op.operarEn !== "binomica";
     var nombres = { "+": "Suma", "−": "Resta", "·": "Producto", "/": "Cociente" };
+    // dos numeros reales (por ejemplo dos modulos): la cuenta directa
+    if (Math.abs(A.im) < EPS_C && Math.abs(B.im) < EPS_C) {
+      return [{ titulo: nombres[s] + " de números reales", cadena: cadenaC(izq, [{ t: H.n(A.re) + " " + s + " " + H.p(B.re),
+        ap: !H.ex(A.re) || !H.ex(B.re) }, fin]) }];
+    }
     if (verBin) {
       var p = [{ t: ba + " " + s + " " + bb, ap: apOps }];
       if (s === "+" || s === "−") {
@@ -4257,7 +6286,15 @@
     var hecho = {}, pol = null, bin = null;
     var origen = r.forma;
     if (origen === "op") {
-      pasosOperacionC(r, H, op).forEach(function (b) {
+      (r.pasosPrevios || []).forEach(function (q, k) {
+        (q.forma === "mod" ? pasosModuloC(q, H) : pasosOperacionC(q, H, op)).forEach(function (b) {
+          bloques.push({ titulo: "Paso " + (k + 1) + ": " + b.titulo.charAt(0).toLowerCase() + b.titulo.slice(1),
+            lineas: [b.cadena], varias: true });
+        });
+      });
+      var nPrev = (r.pasosPrevios || []).length;
+      (r.modulo ? pasosModuloC(r.modulo, H) : pasosOperacionC(r, H, op)).forEach(function (b) {
+        if (nPrev) b.titulo = "Paso " + (nPrev + 1) + ": " + b.titulo.charAt(0).toLowerCase() + b.titulo.slice(1);
         bloques.push({ titulo: b.titulo, lineas: [b.cadena], varias: true });
         if (b.polar) { pol = b.polar; pol.ap = !H.ex(pol.rho) || !H.angEx(pol.phi); hecho.polar = true; }
         else hecho.binomica = true;
@@ -4304,7 +6341,7 @@
 
   // como se escribio el numero, en su forma
   function entradaComplejo(r, H) {
-    if (r.forma === "op") return r.op.a.nombre + " " + r.op.s + " " + r.op.b.nombre;
+    if (r.forma === "op") return r.textoExpr || r.op.a.nombre + " " + r.op.s + " " + r.op.b.nombre;
     if (r.forma === "par") return H.par(r.re, r.im);
     if (r.forma === "polar") return H.polar(r.rho, r.phi);
     if (r.forma === "trig") return H.trig(r.rho, r.phi);
@@ -4322,12 +6359,13 @@
     var m = /^z([₀-₉]+)$/.exec(nombre);
     return m ? "φ" + m[1] : "φ(" + nombre + ")";
   }
-  function dibujarPlanoComplejo(nums, H, op, x0, y0, tam, fuente, agregar) {
+  // extra (opcional): { pts: puntos que tienen que entrar, dibujar(X, Y, s) }
+  function dibujarPlanoComplejo(nums, H, op, x0, y0, tam, fuente, agregar, extra) {
     if (!nums.length) return;
     var tamN = Math.max(12, Math.round(tam * 0.7)), lhN = tamN * fuente.lh;
-    var restas = op.paralelogramo ? nums.filter(function (r) { return r.forma === "op" && r.op.s === "−"; }) : [];
+    var restas = op.paralelogramo ? nums.filter(function (r) { return r.forma === "op" && r.op && !(r.pasosPrevios || []).length && r.op.s === "−"; }) : [];
     var pts = [[0, 0]].concat(nums.map(function (r) { return [r.re, r.im]; }),
-      restas.map(function (r) { return [-r.op.b.re, -r.op.b.im]; }));
+      restas.map(function (r) { return [-r.op.b.re, -r.op.b.im]; }), extra && extra.pts || []);
     var xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; });
     var span = Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), Math.max.apply(null, ys) - Math.min.apply(null, ys), 1);
     var paso = pasoLindo(span * 1.6, span >= 4);
@@ -4372,6 +6410,7 @@
       agregar(texto(X0 - 8, Y(v) - lhN / 2, H.imag(v), tamN, fuente, TINTA, "right"));
     }
     agregar(texto(X0 - 6, Y0 + 4, "0", tamN, fuente, TINTA, "right"));
+    if (extra && extra.dibujar) extra.dibujar(X, Y, s);
 
     // etiqueta junto a la punta de un vector, hacia afuera
     function etiqueta(re, im, txt, color) {
@@ -4385,7 +6424,7 @@
     var k = 0, leyenda = [];
     nums.forEach(function (r) {
       var color = r.color;
-      if (r.forma === "op" && op.paralelogramo && (r.op.s === "+" || r.op.s === "−")) {
+      if (r.forma === "op" && r.op && !(r.pasosPrevios || []).length && op.paralelogramo && (r.op.s === "+" || r.op.s === "−")) {
         var A = r.op.a, B = r.op.b, bre = r.op.s === "+" ? B.re : -B.re, bim = r.op.s === "+" ? B.im : -B.im;
         if (r.op.s === "−") { vector(bre, bim, B.color, true); etiqueta(bre, bim, "−" + B.nombre, B.color); }
         agregar(trazo([[X(A.re), Y(A.im)], [X(r.re), Y(r.im)]], { strokeColor: GUIA, strokeWidth: 1, strokeStyle: "dashed" }));
@@ -4405,7 +6444,7 @@
       }
       agregar(linea(X0 + rad, Y0, arco, { type: "arrow", endArrowhead: "arrow", strokeColor: color, strokeWidth: 1 }));
       var rel = "";
-      if (r.forma === "op" && (r.op.s === "·" || r.op.s === "/")) {
+      if (r.forma === "op" && r.op && !(r.pasosPrevios || []).length && (r.op.s === "·" || r.op.s === "/")) {
         rel = " = " + phiDe(r.op.a.nombre) + (r.op.s === "·" ? " + " : " − ") + phiDe(r.op.b.nombre);
       }
       // sobre el arco solo el nombre del angulo; el valor va en la lista de abajo
@@ -4472,6 +6511,111 @@
       dibujarPlanoComplejo(filas.filter(function (r) { return !r.errores.length; }), H, op,
         abajo ? ox : b.x1 + tam * 3, abajo ? b.y1 + tam * 2 : oy, tam, fuente, agregarFinal);
     }
+  }
+
+  // ================================== RAICES N-ESIMAS DE UN COMPLEJO
+  // Cada fila es un numero complejo (en cualquier forma) y el indice n. Se
+  // pasa a forma polar y se aplica la formula de De Moivre:
+  //   wₖ = ⁿ√ρ · [cos((φ + k · 360°)/n) + i sen((φ + k · 360°)/n)], k = 0..n−1
+  // con el modulo de las raices, el argumento de cada una y cada raiz en las
+  // formas elegidas. El grafico muestra las n raices sobre la circunferencia
+  // de radio ⁿ√ρ, formando un poligono regular.
+  var NOMBRES_RAIZ = { 2: "cuadradas", 3: "cúbicas", 4: "cuartas", 5: "quintas", 6: "sextas", 7: "séptimas",
+    8: "octavas", 9: "novenas", 10: "décimas" };
+  function leerIndiceRaiz(t) {
+    var s = String(t === undefined ? "" : t).trim();
+    if (!s) return { error: "Falta el índice n (2, 3, 4...)" };
+    var n = Number(s);
+    if (!Number.isInteger(n) || n < 2) return { error: "El índice n tiene que ser un número natural mayor o igual que 2" };
+    if (n > 12) return { error: "El índice n puede ser como máximo 12" };
+    return { n: n };
+  }
+  function nombreRaizC(i) { return "z" + subindice(i + 1); }
+
+  function generarRaicesC(op, ox, oy, agregarFinal) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
+    var lh = tam * fuente.lh, y = oy, H = herramientasC(op), sangria = Math.round(tam * 1.5);
+    var tamTit = Math.round(tam * 0.8), lhTit = tamTit * fuente.lh;
+    op.filas.forEach(function (f, i) {
+      var z = leerComplejo(f.texto), ni = leerIndiceRaiz(f.n);
+      if (z.error || ni.error) return;
+      var n = ni.n, nom = String(f.nombre || "").trim() || nombreRaizC(i), color = f.color;
+      var hechos = [], agregar = function (e) { hechos.push(e); return agregarFinal(e); };
+      var y0 = y, x = ox + sangria;
+      var linea = function (t, col, xx) { agregar(texto(xx === undefined ? x : xx, y, t, tam, fuente, col || TINTA, "left")); y += lh + 4; };
+      var titulo = function (t) { if (op.titulos) { agregar(texto(x, y, t, tamTit, fuente, GUIA, "left")); y += lhTit + 4; } };
+      // una cadena de igualdades en un renglon (≈ si el valor es aproximado)
+      var cadena = function (c, col) {
+        linea(c.izq + c.partes.map(function (p) { return (p.ap ? " ≈ " : " = ") + p.t; }).join(""), col);
+      };
+      linea("Raíces " + (NOMBRES_RAIZ[n] || "de índice " + n) + " de " + nom + " = " + entradaComplejo(z, H), color, ox);
+      y += 4;
+      // 1) forma polar
+      var rho, phi;
+      if (z.forma === "polar" || z.forma === "trig") { rho = z.rho; phi = z.phi; }
+      else {
+        titulo("Forma polar de " + nom);
+        var pp = pasosPolarC(z.re, z.im, H, nom);
+        pp.lineas.forEach(function (l) { if (typeof l === "string") linea(l); else cadena(l); });
+        rho = pp.rho; phi = pp.phi;
+        linea(nom + (H.ex(rho) && H.angEx(phi) ? " = " : " ≈ ") + H.polar(rho, phi));
+        y += lh * 0.4;
+      }
+      if (rho < EPS_C) { linea("Si " + nom + " = 0, su única raíz es 0", color); y += lh; return; }
+      // 2) formula de De Moivre
+      var vuelta = H.vuelta, giro = function (k) { return k + " · " + vuelta; };
+      titulo("Fórmula de De Moivre");
+      linea("wₖ = √[n](ρ) · [cos((φ + k · " + vuelta + ") / n) + i sen((φ + k · " + vuelta + ") / n)]");
+      linea("con k = 0, 1" + (n > 2 ? ", …, " + (n - 1) : "") + "   (n = " + n + ": hay " + n + " raíces)");
+      y += lh * 0.4;
+      // 3) modulo de las raices
+      var r = Math.pow(rho, 1 / n);
+      titulo("Módulo de las raíces");
+      cadena({ izq: "|wₖ|", partes: [{ t: "√[n](ρ)" }, { t: "√[" + n + "](" + H.n(rho) + ")", ap: !H.ex(rho) }, { t: H.n(r), ap: !H.ex(r) }] });
+      y += lh * 0.4;
+      // 4) argumentos
+      titulo("Argumentos de las raíces");
+      var raices = [];
+      for (var k = 0; k < n; k++) {
+        var suma = phi + 2 * Math.PI * k, ang = suma / n;
+        var partes = [{ t: "(" + H.ang(phi) + " + " + giro(k) + ") / " + n, ap: !H.angEx(phi) }];
+        if (k) partes.push({ t: H.ang(suma) + " / " + n, ap: !H.angEx(suma) });
+        partes.push({ t: H.ang(ang), ap: !H.angEx(ang) });
+        cadena({ izq: "φ" + subindice(k), partes: partes });
+        raices.push({ nombre: "w" + subindice(k), re: r * Math.cos(ang), im: r * Math.sin(ang), rho: r, phi: ang, color: color });
+      }
+      linea("(las raíces quedan separadas por " + vuelta + " / " + n + " = " + H.ang(2 * Math.PI / n) + ")", GUIA);
+      y += lh * 0.4;
+      // 5) cada raiz en las formas elegidas
+      titulo("Raíces");
+      raices.forEach(function (w) {
+        var t = w.nombre + ((H.ex(r) && H.angEx(w.phi)) ? " = " : " ≈ ") + H.polar(r, w.phi);
+        if (op.fTrig) t += " = " + H.trig(r, w.phi);
+        if (op.fBinomica) t += ((H.ex(w.re) && H.ex(w.im)) ? " = " : " ≈ ") + H.binom(w.re, w.im);
+        linea(t, color);
+      });
+      // grafico a la derecha de esta fila (o abajo)
+      if (op.grafico) {
+        var b = cajaDe(hechos), abajo = op.posGrafico === "abajo";
+        var antes = y;
+        var dib = [];
+        dibujarPlanoComplejo(raices, H, op, abajo ? ox : b.x1 + tam * 3, abajo ? y + tam : y0, tam, fuente,
+          function (e) { dib.push(e); return agregarFinal(e); }, {
+            pts: [[r, 0], [-r, 0], [0, r], [0, -r]],
+            dibujar: function (X, Y, s) {
+              // circunferencia de radio ⁿ√ρ y poligono regular de las raices
+              agregarFinal(base("ellipse", { x: X(-r), y: Y(r), width: 2 * r * s, height: 2 * r * s,
+                strokeColor: GUIA, strokeWidth: 1, strokeStyle: "dashed" }));
+              if (n >= 3) {
+                agregarFinal(trazo(raices.concat([raices[0]]).map(function (w) { return [X(w.re), Y(w.im)]; }),
+                  { strokeColor: color, strokeWidth: 1, strokeStyle: "dashed" }));
+              }
+            },
+          });
+        if (dib.length) y = Math.max(antes, cajaDe(dib).y1 + tam);
+      }
+      y += lh * 1.5;
+    });
   }
 
   // ======================================== SIMPLIFICACION PASO A PASO
@@ -5236,7 +7380,11 @@
           ui.seg("Circuito de", "circuitoDe", [["original", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]], true);
         }
         if (op.simplificar || (op.interruptores && op.circuitoDe !== "original")) {
-          ui.seg("Simplificar como", "forma", [["fnd", "∨ de ∧ (FND)"], ["fnc", "∧ de ∨ (FNC)"]]);
+          ui.seg("Simplificar como", "forma", [
+            ["fnd", "∨ de ∧ (FND)", "FND: forma normal disyuntiva. Una disyunción (∨) de conjunciones (∧) " +
+              "de variables o sus negaciones. Ej: (p ∧ q) ∨ (¬p ∧ r)"],
+            ["fnc", "∧ de ∨ (FNC)", "FNC: forma normal conjuntiva. Una conjunción (∧) de disyunciones (∨) " +
+              "de variables o sus negaciones. Ej: (p ∨ q) ∧ (¬p ∨ r)"]]);
         }
       },
     },
@@ -5596,44 +7744,252 @@
     },
 
     valorAbsoluto: {
-      titulo: "Ecuaciones con valor absoluto",
+      titulo: "Expresiones con valor absoluto",
       dibujo: "plantilla", femenino: true,
       clave: "pizarra-generador-valor-absoluto",
       defecto: {
         filas: [{ texto: "|x + 7/4| = 9/4", color: "#e64980" }],
-        casos: "noEstricto", renglones: 4, tamTexto: "L", fuente: "codigo", colorLineas: true,
+        modoAbs: "resolver", casos: "noEstricto", renglones: 4, notas: true, recta: true,
+        tamTexto: "L", fuente: "codigo", colorLineas: true,
       },
       contenido: ["filas"],
       ejemplo: {
         filas: [
-          { texto: "|2x − 1| = 5", color: "#e64980" },
+          { texto: "|1 − x| + 7 ≥ 2", color: "#e64980" },
           { texto: "3 + |x − 4| = 2x", color: COLORES[0] },
         ],
       },
-      textoEjemplo: "Inserta dos plantillas de ejemplo: |2x − 1| = 5 y 3 + |x − 4| = 2x",
+      textoEjemplo: "Inserta dos ejemplos: |1 − x| + 7 ≥ 2 y 3 + |x − 4| = 2x",
       agregarFila: "+ Ecuación",
       placeholder: "Ej: |x + 7/4| = 9/4",
       simbolos: [["|", "|", "Barra del valor absoluto: |x + 1|"], ["−", " − ", "Resta"], ["·", "·", "Producto"],
         ["≤", " ≤ ", "Menor o igual"], ["≥", " ≥ ", "Mayor o igual"]],
-      ayuda: "Cada fila es una ecuación (o inecuación) con valor absoluto: |x + 7/4| = 9/4. No se resuelve: " +
-        "se arma la plantilla con los dos casos del valor absoluto de más a la izquierda (E ≥ 0 → |E| = E y " +
-        "E < 0 → |E| = −(E)), dejando espacio debajo de cada caso para resolverlo paso a paso. " +
-        "Seleccioná una plantilla ya insertada para editarla.",
-      erroresFila: function (t) { var a = leerEcuacionAbs(t); return a.error ? [a.error] : []; },
+      ayuda: "Cada fila es una ecuación (o inecuación) con valor absoluto: |x + 7/4| = 9/4. Se separa en los " +
+        "dos casos del valor absoluto de más a la izquierda (E ≥ 0 → |E| = E y E < 0 → |E| = −(E)). " +
+        "«Plantilla» deja espacio debajo de cada caso para resolverlo en clase; «Resolver paso a paso» resuelve " +
+        "la condición y el caso (lineales, hasta 3 valores absolutos: si queda otro, se vuelve a separar en casos) escribiendo cada paso de la propiedad " +
+        "uniforme en color, interseca y da el conjunto solución. Seleccioná una ya insertada para editarla.",
+      erroresFila: function (t, op) {
+        var a = leerEcuacionAbs(t);
+        if (a.error) return [a.error];
+        if (op && op.modoAbs !== "plantilla") {
+          var r = resolverAbs(a, op.casos === "estricto");
+          if (r.error) return [r.error];
+        }
+        return [];
+      },
       posicion: function (op, cx, cy) { return { x: cx - 250, y: cy - 200 }; },
       generar: generarAbs,
-      opciones: function (ui) {
+      opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
         ui.arriba(function () {
+          // «modoAbs» (y no «modo»): las opciones guardadas antes, con la plantilla
+          // por defecto, no cuentan como elegidas; resolver es lo de fabrica
+          ui.seg("Modo", "modoAbs", [["resolver", "Resolver paso a paso"], ["plantilla", "Plantilla"]], true);
           ui.seg("Casos", "casos", [["noEstricto", "E ≥ 0 y E < 0"], ["estricto", "E > 0 y E ≤ 0"]]);
-          ui.campos("Espacio para resolver", [
-            { clave: "renglones", prefijo: "", sufijo: "renglones por caso", numero: [0, 20], ancho: 52,
-              titulo: "Renglones en blanco debajo de cada caso" },
-          ]);
+          if (op.modoAbs !== "plantilla") {
+            ui.chk("Escribir qué se hizo en cada paso", "notas");
+            ui.chk("Recta real en cada caso", "recta");
+          } else {
+            ui.campos("Espacio para resolver", [
+              { clave: "renglones", prefijo: "", sufijo: "renglones por caso", numero: [0, 20], ancho: 52,
+                titulo: "Renglones en blanco debajo de cada caso" },
+            ]);
+          }
         });
         ui.seg("Texto", "tamTexto", tam);
         ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
         ui.chk("Llave y flechas en el color de la fila", "colorLineas");
+      },
+    },
+
+    inecuaciones2: {
+      titulo: "Inecuaciones de segundo grado",
+      dibujo: "resolución", femenino: true,
+      clave: "pizarra-generador-inecuaciones2",
+      defecto: {
+        filas: [{ texto: "0 < (5x − 2)(3 − 6x)", color: "#e64980" }],
+        notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo",
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { texto: "0 < (5x − 2)(3 − 6x)", color: "#e64980" },
+          { texto: "x² − 5x + 6 ≤ 0", color: COLORES[0] },
+        ],
+      },
+      textoEjemplo: "Inserta dos ejemplos: 0 < (5x − 2)(3 − 6x) y x² − 5x + 6 ≤ 0",
+      agregarFila: "+ Inecuación",
+      placeholder: "Ej: (5x − 2)(3 − 6x) > 0  ·  x² − 5x + 6 ≤ 0",
+      simbolos: [["x²", "x²", "x al cuadrado (también x^2)"], ["−", " − ", "Resta"], ["<", " < ", "Menor"], [">", " > ", "Mayor"],
+        ["≤", " ≤ ", "Menor o igual"], ["≥", " ≥ ", "Mayor o igual"]],
+      ayuda: "Cada fila es una inecuación de segundo grado: factorizada, (5x − 2)(3 − 6x) > 0 o 0 < (5x − 2)(3 − 6x) " +
+        "(puede tener un número adelante: 2(x − 1)(x + 3) ≤ 0), o desarrollada, x² − 5x + 6 ≤ 0 (se factoriza con la fórmula " +
+        "cuadrática; también con raíces irracionales). Con la regla de los signos se separa en dos casos (+·+ ∨ −·− o +·− ∨ −·+); en cada uno se " +
+        "resuelven las dos inecuaciones lineales paso a paso, se intersecan y al final se unen. " +
+        "Seleccioná una ya insertada para editarla.",
+      erroresFila: function (t) { var I = leerInecuacion2(t); return I.error ? [I.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarInecuaciones2,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.chk("Escribir qué se hizo en cada paso", "notas");
+          ui.chk("Recta real en cada caso", "recta");
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Llave y flechas en el color de la fila", "colorLineas");
+      },
+    },
+
+    racionales: {
+      titulo: "Inecuaciones racionales",
+      dibujo: "resolución", femenino: true,
+      clave: "pizarra-generador-racionales",
+      defecto: {
+        filas: [{ texto: "(2x + 1)/(3 − 4x) < −2", color: "#e64980" }],
+        notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo",
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { texto: "(2x + 1)/(3 − 4x) < −2", color: "#e64980" },
+          { texto: "(x − 1)/(x + 2) ≥ 0", color: COLORES[0] },
+        ],
+      },
+      textoEjemplo: "Inserta dos ejemplos: (2x + 1)/(3 − 4x) < −2 y (x − 1)/(x + 2) ≥ 0",
+      agregarFila: "+ Inecuación",
+      placeholder: "Ej: (2x + 1)/(3 − 4x) < −2",
+      simbolos: [["/", "/", "Fracción: (2x + 1)/(3 − 4x)"], ["−", " − ", "Resta"], ["<", " < ", "Menor"], [">", " > ", "Mayor"],
+        ["≤", " ≤ ", "Menor o igual"], ["≥", " ≥ ", "Mayor o igual"]],
+      ayuda: "Cada fila es una inecuación racional: una fracción con numerador y denominador lineales y del otro lado " +
+        "un número, (2x + 1)/(3 − 4x) < −2 (la fracción puede ir a cualquier lado). Si el número no es 0 se pasa al " +
+        "otro miembro, se suman las fracciones con el denominador común y se simplifica el numerador; después, con la " +
+        "regla de los signos (+/+ ∨ −/− o +/− ∨ −/+, el denominador nunca 0) se resuelven los dos casos paso a paso, " +
+        "se intersecan y se unen. Seleccioná una ya insertada para editarla.",
+      erroresFila: function (t) { var I = leerInecuacionRacional(t); return I.error ? [I.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarRacionales,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.chk("Escribir qué se hizo en cada paso", "notas");
+          ui.chk("Recta real en cada caso", "recta");
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Llave y flechas en el color de la fila", "colorLineas");
+      },
+    },
+
+    factorizacion: {
+      titulo: "Factorización de polinomios de 2.º grado",
+      dibujo: "factorización", femenino: true,
+      clave: "pizarra-generador-factorizacion",
+      defecto: {
+        filas: [{ nombre: "", texto: "6x² − 7x − 3", color: COLORES[0] }],
+        mFormula: true, mCompletar: true, mDescomposicion: true, discriminante: true, notas: true, titulos: true,
+        tamTexto: "L", fuente: "codigo",
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { nombre: "", texto: "x² − 8x + 12", color: COLORES[0] },
+          { nombre: "", texto: "x² + 3x + 1", color: COLORES[1] },
+        ],
+      },
+      textoEjemplo: "Inserta dos ejemplos: x² − 8x + 12 (se factoriza por los tres métodos) y x² + 3x + 1 (raíces irracionales)",
+      agregarFila: "+ Polinomio",
+      placeholder: "Ej: 6x² − 7x − 3",
+      nombreFila: { porDefecto: nombrePoli, titulo: "Nombre del polinomio: P, Q, R... o P(x)" },
+      simbolos: [["x²", "x²", "x al cuadrado (también x^2 o x2)"], ["−", " − ", "Resta"], ["/", "/", "Fracción: 5/2x²"]],
+      ayuda: "Cada fila es un polinomio de segundo grado: 6x² − 7x − 3 (también 6x^2 - 7x - 3 o 6x2 - 7x - 3; " +
+        "con fracciones: 5/2x² + 14/3x + 2). Se factoriza por los métodos marcados, con cada paso y lo que se " +
+        "hace en el renglón anterior, en el color del paso: fórmula cuadrática, completar el cuadrado y " +
+        "descomposición (caso 1: b = a + c; caso 2: a = 1; caso 3: p + q = b y p · q = a · c, previo factor común " +
+        "y análisis del discriminante). Al final de cada método se escribe el polinomio factorizado. " +
+        "Seleccioná una factorización ya insertada para editarla.",
+      erroresFila: function (t, op) {
+        var P = leerPoli(t);
+        if (P.error) return [P.error];
+        return op && !op.mFormula && !op.mCompletar && !op.mDescomposicion ? ["Marcá al menos un método"] : [];
+      },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarFactorizacion,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.grupo("Métodos", ["mFormula", "mCompletar", "mDescomposicion"]);
+          ui.chk("Fórmula cuadrática", "mFormula");
+          ui.chk("Completar el cuadrado", "mCompletar");
+          ui.chk("Descomposición", "mDescomposicion", true);
+          if (op.mDescomposicion) ui.chk("Analizar el discriminante (descomposición)", "discriminante");
+          ui.chk("Escribir qué se hace en cada paso", "notas");
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Nombre de cada método", "titulos");
+      },
+    },
+
+    raicesC: {
+      titulo: "Raíces n-ésimas",
+      dibujo: "cálculo", femenino: false,
+      clave: "pizarra-generador-raices-complejas",
+      defecto: {
+        filas: [{ nombre: "z", texto: "8i", n: "3", color: COLORES[0] }],
+        fBinomica: true, fTrig: false, grafico: true, angulosC: false, cuadriculaC: true, paralelogramo: false,
+        tamGrafico: "medio", posGrafico: "derecha", unidad: "grados", rango: "360", decimales: 2,
+        notacionPolar: "corchetes", tamTexto: "M", fuente: "normal", titulos: true,
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { nombre: "z", texto: "8i", n: "3", color: COLORES[0] },
+          { nombre: "w", texto: "-16", n: "4", color: COLORES[1] },
+          { nombre: "u", texto: "1 + i", n: "2", color: COLORES[2] },
+        ],
+      },
+      textoEjemplo: "Inserta tres ejemplos: raíces cúbicas de 8i, cuartas de −16 y cuadradas de 1 + i",
+      agregarFila: "+ Raíz",
+      placeholder: "Número: 8i  ·  1 + i  ·  [16; 60°]",
+      nombreFila: { porDefecto: nombreRaizC, titulo: "Nombre del número: z, w, z₁..." },
+      extrasFila: [
+        { clave: "n", etiqueta: "Índice n", placeholder: "Ej: 3 (raíces cúbicas)",
+          titulo: "Cuántas raíces: 2 = cuadradas, 3 = cúbicas, 4 = cuartas... (de 2 a 12)",
+          errores: function (f) { var r = leerIndiceRaiz(f.n); return r.error ? [r.error] : []; } },
+      ],
+      simbolos: [["i", "i", "Unidad imaginaria"], ["°", "°", "Grados"], ["π", "π", "Pi, para ángulos en radianes"],
+        ["∠", "∠", "Forma polar: 8∠90°"], ["√", "√", "Raíz: √3"]],
+      ayuda: "Cada fila es un número complejo en cualquier forma (8i, 1 + i, (3, 4), [16; 60°], " +
+        "2(cos 30° + i sen 30°)) y debajo el índice n. Se pasa a forma polar y con la fórmula de De Moivre se " +
+        "calculan las n raíces: el módulo √[n](ρ), el argumento de cada una ((φ + k · 360°) / n, k = 0, …, n − 1) " +
+        "y cada raíz en forma polar (y binómica o trigonométrica). El gráfico las muestra sobre la circunferencia " +
+        "de radio √[n](ρ). Seleccioná un cálculo ya insertado para editarlo.",
+      erroresFila: function (t) { var c = leerComplejo(t); return c.error ? [c.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarRaicesC,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.chk("Escribir las raíces en forma binómica", "fBinomica");
+          ui.chk("Escribir las raíces en forma trigonométrica", "fTrig");
+          ui.chk("Graficar en el plano complejo", "grafico", true);
+          if (op.grafico) {
+            ui.chk("Ángulos (arco del argumento)", "angulosC");
+            ui.chk("Cuadrícula", "cuadriculaC");
+            ui.seg("Gráfico", "tamGrafico", [["chico", "Chico"], ["medio", "Medio"], ["grande", "Grande"]]);
+            ui.seg("Ubicación", "posGrafico", [["derecha", "A la derecha"], ["abajo", "Abajo"]]);
+          }
+        });
+        ui.seg("Ángulos", "unidad", [["grados", "Grados"], ["rad", "Radianes"]]);
+        ui.seg("Argumento", "rango", [["360", "0 a 360°"], ["180", "−180° a 180°"]]);
+        ui.seg("Decimales", "decimales", [[2, "2"], [3, "3"], [4, "4"]]);
+        ui.seg("Forma polar", "notacionPolar", [["corchetes", "[ρ; φ]"], ["angulo", "ρ∠φ"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Títulos de los pasos", "titulos");
       },
     },
 
@@ -5674,7 +8030,8 @@
       ayuda: "Cada fila es un número complejo en cualquier forma: binómica 3 + 4i, par ordenado (3, 4) " +
         "(con decimales con coma: (0,5; 2)), polar [5; 53,13°] o 5∠53,13°, trigonométrica 5(cos 30° + i sen 30°). " +
         "Los ángulos con ° van en grados; sin °, en radianes (π/4). O una operación entre filas de arriba: " +
-        "z₁ + z₂, z₁ − z₂, z₁ · z₂, z₁ / z₂ (se puede escribir z1 en vez de z₁). Se escribe el pasaje a las " +
+        "z₁ + z₂, z₁ − z₂, z₁ · z₂, z₁ / z₂ (se puede escribir z1 en vez de z₁), o con varias operaciones y " +
+        "números reales: 2 · z₁ / z₂, (z₁ + z₂) · z₃, |z₁| / |z₂| (cada operación y cada módulo se resuelven en un paso aparte). Se escribe el pasaje a las " +
         "formas elegidas paso a paso, con el módulo y el argumento (arctg(b/a) según el cuadrante). " +
         "Seleccioná un cálculo ya insertado para editarlo.",
       erroresFila: erroresComplejo,
@@ -5712,6 +8069,54 @@
     },
 
     // simplificacion paso a paso: el mismo motor con la notacion de cada seccion
+    razonamientos: {
+      titulo: "Razonamiento deductivo",
+      dibujo: "razonamiento", femenino: false,
+      clave: "pizarra-generador-razonamientos",
+      defecto: {
+        filas: [{ texto: "p → q, ¬q ∴ ¬p", color: COLORES[0] }],
+        mTabla: true, mCondicional: true, mAbreviado: true, mDemostracion: true, reglas: true, titulos: true,
+        valores: "VF", tamTexto: "M", fuente: "codigo",
+      },
+      contenido: ["filas"],
+      ejemplo: {
+        filas: [
+          { texto: "p → q, q → r, p ∴ r", color: COLORES[0] },
+          { texto: "p ∨ q, ¬p ∴ q", color: COLORES[2] },
+          { texto: "p → q, q ∴ p", color: COLORES[1] },
+        ],
+      },
+      textoEjemplo: "Inserta tres razonamientos: dos válidos y uno que no lo es (afirmación del consecuente)",
+      agregarFila: "+ Razonamiento",
+      placeholder: "Ej: p → q, ¬q ∴ ¬p",
+      simbolos: [["¬", "¬", "Negación"], ["∧", " ∧ ", "Conjunción"], ["∨", " ∨ ", "Disyunción"],
+        ["→", " → ", "Condicional"], ["↔", " ↔ ", "Bicondicional"], [",", ", ", "Separa las premisas"],
+        ["∴", " ∴ ", "Antes de la conclusión (también ⊢ o /)"]],
+      ayuda: "Cada fila es un razonamiento: las premisas separadas por coma y la conclusión después de ∴ " +
+        "(p → q, ¬q ∴ ¬p). Las variables son las letras que aparecen; los conectivos como en las tablas de " +
+        "verdad (¬ ~, ∧ &, ∨ |, → ->, ↔ <->). Se muestra si es válido con la tabla de verdad, el condicional " +
+        "asociado y el método abreviado, y se busca una demostración con reglas de inferencia (MP, MT, SH, SD...). " +
+        "Seleccioná uno ya insertado para editarlo.",
+      erroresFila: function (t) { var R = leerRazonamiento(t); return R.error ? [R.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarRazonamientos,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.grupo("Validez", ["mTabla", "mCondicional", "mAbreviado"]);
+          ui.chk("Tabla de verdad", "mTabla");
+          ui.chk("Condicional asociado", "mCondicional");
+          ui.chk("Método abreviado", "mAbreviado");
+          ui.chk("Demostración con reglas de inferencia", "mDemostracion", true);
+          if (op.mDemostracion) ui.chk("Escribir las reglas usadas", "reglas");
+        });
+        ui.seg("Valores", "valores", [["VF", "V / F"], ["10", "1 / 0"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Nombre de cada método", "titulos");
+      },
+    },
+
     simpLogica: genSimp("logica", {
       clave: "pizarra-generador-simp-logica",
       filas: [{ texto: "¬(p → q) ∨ (p ∧ q)", color: COLORES[0] }],
@@ -5797,7 +8202,7 @@
   };
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "boole", "conjuntos", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "valorAbsoluto", "complejos", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
+  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
   // nombre e icono (un simbolo) de cada generador en el menu desplegable
   // panel: titulo del panel cuando no es el nombre del item (los items solos
   // en su seccion no repiten el nombre de la seccion)
@@ -5811,23 +8216,28 @@
     estructuras: { nombre: "Estructuras algebraicas", icono: "∘" },
     combinatoria: { nombre: "Combinatoria", icono: "n!" },
     mcm: { nombre: "MCM y MCD", icono: "÷" },
-    valorAbsoluto: { nombre: "Ecuaciones con valor absoluto", icono: "|x|" },
+    valorAbsoluto: { nombre: "Expresiones con valor absoluto", icono: "|x|" },
+    factorizacion: { nombre: "Factorización de polinomios", icono: "x²" },
+    inecuaciones2: { nombre: "Inecuaciones de segundo grado", icono: "+·−" },
+    racionales: { nombre: "Inecuaciones racionales", icono: "+/−" },
     complejos: { nombre: "Formas y operaciones", panel: "Números complejos", icono: "ℂ" },
+    raicesC: { nombre: "Raíces n-ésimas", panel: "Números complejos: raíces n-ésimas", icono: "ⁿ√" },
     simpLogica: { nombre: "Simplificación paso a paso", panel: "Simplificación: lógica proposicional", icono: "≡" },
     simpBoole: { nombre: "Simplificación paso a paso", panel: "Simplificación: álgebra de Boole", icono: "=" },
     simpConjuntos: { nombre: "Simplificación paso a paso", panel: "Simplificación: teoría de conjuntos", icono: "=" },
     plantillas: { nombre: "Plantillas", icono: "≡" },
+    razonamientos: { nombre: "Razonamiento deductivo", icono: "∴" },
   };
   // como se ordenan en el menu: los sueltos arriba y despues las secciones,
   // con la unidad del programa de la materia a la que pertenecen
   var MENU_ORDEN = [
     "plantillas",
-    { grupo: "Lógica proposicional", unidad: 1, items: ["tabla", "simpLogica"] },
+    { grupo: "Lógica proposicional", unidad: 1, items: ["tabla", "simpLogica", "razonamientos"] },
     { grupo: "Teoría de conjuntos", unidad: 2, items: ["conjuntos", "relaciones", "estructuras", "simpConjuntos"] },
     { grupo: "Álgebra de Boole", unidad: 3, items: ["boole", "simpBoole"] },
-    { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto"] },
+    { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
-    { grupo: "Números complejos", unidad: 7, items: ["complejos"] },
+    { grupo: "Números complejos", unidad: 7, items: ["complejos", "raicesC"] },
   ];
 
   // ------------------------------------------------- insertar / reemplazar
@@ -5903,9 +8313,12 @@
 
       var nuevos = [];
       gen.generar(op, ox, oy, function (e) {
-        e.groupIds = [gid];
-        e.customData = { pizarra: { tipo: tipo, gid: gid } };
-        nuevos.push(e);
+        // regla general: las raices cuadradas se dibujan (ver expandirRaices)
+        expandirRaices(e).forEach(function (p) {
+          p.groupIds = [gid];
+          p.customData = { pizarra: { tipo: tipo, gid: gid } };
+          nuevos.push(p);
+        });
         return e;
       });
       if (!nuevos.length) return;
@@ -6257,6 +8670,7 @@
           opciones.forEach(function (o) {
             var b = document.createElement("button");
             b.textContent = o[1];
+            if (o[2]) b.title = o[2]; // tercer elemento opcional: tooltip
             b.className = op[clave] === o[0] ? "activo" : "";
             b.onclick = function () {
               op[clave] = o[0];
@@ -6519,7 +8933,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: lógica proposicional, álgebra de Boole, conjuntos, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, ecuaciones con valor absoluto, números complejos, simplificación paso a paso y plantillas";
+      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.setAttribute("aria-haspopup", "menu");

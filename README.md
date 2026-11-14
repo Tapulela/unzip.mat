@@ -23,11 +23,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   herramientas», así hereda el estilo y el tema) con un ítem por generador,
   ordenados en secciones con la unidad del programa de la materia
   (`MENU_ORDEN`): Plantillas suelta; «Lógica proposicional (Unidad 1)»
-  (Tablas de verdad, Simplificación paso a paso); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Relaciones
+  (Tablas de verdad, Simplificación paso a paso, Razonamiento deductivo); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Relaciones
   binarias, Estructuras algebraicas, Simplificación paso a paso); «Álgebra de
   Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, MCM y
-  MCD, Ecuaciones con valor absoluto); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
-  (Unidad 7)» (Formas y operaciones). Al elegir uno se abre el panel
+  MCD, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
+  (Unidad 7)» (Formas y operaciones, Raíces n-ésimas). Al elegir uno se abre el panel
   con ese generador. Uno de ellos genera una recta real con intervalos (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
   (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
   con la sala y se puede editar. Las opciones quedan en `customData` del grupo:

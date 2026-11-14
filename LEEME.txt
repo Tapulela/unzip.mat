@@ -61,6 +61,12 @@ SI ACTUALIZAS A UNA VERSION NUEVA
 3. En cada navegador que uses, abri http://localhost:3000 y apreta F5 una o
    dos veces. Asi descarta la version vieja que tenia guardada.
 
+RAICES DIBUJADAS (en todos los generadores)
+- Ningun dibujo generado usa el caracter √: la raiz cuadrada se dibuja
+  completa (el gancho y la linea por encima del radicando), por ejemplo en
+  √5, √(a² + b²) o en las notas al costado de los pasos. En los campos del
+  panel se sigue escribiendo √ (o sqrt) como siempre.
+
 RECTA REAL CON INTERVALOS (prototipo)
 - Boton de la recta con corchetes, al final de la barra de herramientas:
   abre un menu desplegable (como el de los puntos suspensivos) con todos los
@@ -68,16 +74,19 @@ RECTA REAL CON INTERVALOS (prototipo)
   materia:
       Plantillas
       Logica proposicional (Unidad 1):  Tablas de verdad, Simplificacion
-                                        paso a paso
+                                        paso a paso, Razonamiento deductivo
       Teoria de conjuntos (Unidad 2):   Conjuntos, Relaciones binarias,
                                         Estructuras algebraicas,
                                         Simplificacion paso a paso
       Algebra de Boole (Unidad 3):      Funciones booleanas, Simplificacion
                                         paso a paso
       Sistemas numericos (Unidad 5):    Recta real, Combinatoria, MCM y MCD,
-                                        Ecuaciones con valor absoluto
+                                        Expresiones con valor absoluto,
+                                        Factorizacion de polinomios,
+                                        Inecuaciones de segundo grado,
+                                        Inecuaciones racionales
       Funciones (Unidad 6):             Grafico de funciones
-      Numeros complejos (Unidad 7):     Formas y operaciones
+      Numeros complejos (Unidad 7):     Formas y operaciones, Raices n-esimas
   Al elegir uno se abre el panel a la derecha con ese generador (su nombre
   queda arriba del panel; en las secciones de un solo generador, el de la
   seccion: "Logica proposicional", "Algebra de Boole", "Numeros
@@ -249,6 +258,43 @@ LOGICA PROPOSICIONAL: TABLAS DE VERDAD (prototipo)
   "Restablecer", y si seleccionas una tabla ya insertada se edita en vivo.
 - Al animar, aparece en este orden: el marco y las lineas, los encabezados
   y despues los valores columna por columna, de izquierda a derecha.
+
+RAZONAMIENTO DEDUCTIVO (prototipo)
+- En el menu del boton, en "Logica proposicional", elegi "Razonamiento
+  deductivo".
+- Cada fila es un razonamiento: las premisas separadas por coma y la
+  conclusion despues de ∴ (tambien ⊢ o /):
+      p → q, ¬q ∴ ¬p
+  Las variables son las letras que aparecen (hasta 6); los conectivos se
+  escriben como en las tablas de verdad (¬ ~, ∧ &, ∨ |, → ->, ↔ <->).
+- Arriba se escribe el razonamiento: P₁, P₂... una raya y ∴ conclusion.
+- Metodos (cada uno con su titulo; se marcan los que se quieran):
+  - Tabla de verdad: columnas para las variables, cada premisa y la
+    conclusion. Se recuadran las filas con todas las premisas V: en verde
+    con ✓ si la conclusion es V, en rojo con ✗ si es F. Es valido si no
+    hay ninguna roja.
+  - Condicional asociado: (P₁ ∧ P₂ ∧ ...) → C, con su tabla (premisas, su
+    conjuncion, la conclusion y el condicional). Es valido si es una
+    tautologia; las filas con F se marcan en rojo.
+  - Metodo abreviado: se suponen las premisas V y la conclusion F y se
+    deducen valores renglon por renglon (C: ¬p = F ⇒ p = V...) hasta llegar
+    a una contradiccion (valido) o a un caso posible (no valido). Si no se
+    puede deducir mas, se prueban los dos valores de una variable (casos).
+  - Demostracion con reglas de inferencia: renglones numerados con su
+    justificacion (MP 1, 3). Reglas: Modus Ponens, Modus Tollens (tollendo
+    tollens), silogismo hipotetico, silogismo disyuntivo (tollendo
+    ponens), simplificacion, conjuncion, adicion, dilema constructivo,
+    tercero excluido, doble negacion, idempotencia, definicion del
+    condicional, contrarreciproco, De Morgan, conmutativa y bicondicional.
+    "Escribir las reglas usadas" agrega debajo cada regla con su esquema.
+    La demostracion se busca automaticamente: puede haber demostraciones
+    mas cortas (lo dice debajo), y en razonamientos complicados puede no
+    encontrar ninguna aunque el razonamiento sea valido (tambien lo dice).
+    Si el razonamiento no es valido, aclara que no existe demostracion.
+- Opciones: valores V/F o 1/0, tamaño de texto, fuente y nombre de cada
+  metodo.
+- Igual que los otros: "Ejemplo" (dos validos y uno que no lo es),
+  "Restablecer", y si seleccionas uno ya insertado se edita en vivo.
 
 ALGEBRA DE BOOLE (prototipo)
 - En el menu del boton, en "Algebra de Boole", elegi "Funciones booleanas".
@@ -473,11 +519,11 @@ MCM Y MCD (prototipo)
 - Igual que los otros: "Ejemplo" (tres listas), "Restablecer", y si
   seleccionas un calculo ya insertado se edita en vivo.
 
-ECUACIONES CON VALOR ABSOLUTO (prototipo)
-- En el menu del boton, en "Sistemas numericos", elegi "Ecuaciones con
+EXPRESIONES CON VALOR ABSOLUTO (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Expresiones con
   valor absoluto".
-- No resuelve la ecuacion: arma la plantilla para resolverla en clase.
-  Cada fila es una ecuacion (o inecuacion) con valor absoluto:
+- "Modo": Resolver paso a paso (por defecto, ver mas abajo) o Plantilla
+  (arma la plantilla para resolverla en clase). Cada fila es una ecuacion (o inecuacion) con valor absoluto:
       |x + 7/4| = 9/4
   Se escribe la ecuacion con una llave debajo; de la llave baja una linea
   que se abre en los dos casos del valor absoluto de MAS A LA IZQUIERDA,
@@ -487,8 +533,9 @@ ECUACIONES CON VALOR ABSOLUTO (prototipo)
   Debajo de cada caso queda espacio en blanco para resolverlo paso a paso
   ("Espacio para resolver": renglones por caso, 4 por defecto). Los "=" de
   los dos casos quedan alineados.
-- Si hay otros valores absolutos, quedan como estan en los dos casos
-  (|x − 1| = |2x + 3| se abre solo en |x − 1|).
+- En la plantilla, si hay otros valores absolutos quedan como estan en los
+  dos casos (|x − 1| = |2x + 3| se abre solo en |x − 1|). Al resolver se
+  siguen separando (ver abajo).
 - Se agregan parentesis cuando hacen falta: 2|x − 1| = 4 queda 2(x − 1) = 4
   y 2[−(x − 1)] = 4.
 - "Casos": E ≥ 0 y E < 0 (por defecto) o E > 0 y E ≤ 0.
@@ -497,6 +544,138 @@ ECUACIONES CON VALOR ABSOLUTO (prototipo)
   fila (o en negro).
 - Igual que los otros: "Ejemplo", "Restablecer", y si seleccionas una
   plantilla ya insertada se edita en vivo.
+- Modo "Resolver paso a paso" (ecuaciones e inecuaciones lineales, con
+  hasta 3 valores absolutos y una sola variable): en cada caso resuelve la
+  condicion (columna de la izquierda) y la ecuacion del caso (columna de la
+  derecha), con las relaciones alineadas:
+  - quita parentesis (−(1 − x) + 7 ≥ 2 -> −1 + x + 7 ≥ 2) y junta
+    semejantes (x + 6 ≥ 2);
+  - aplica la propiedad uniforme escribiendo lo que se agrega en los dos
+    miembros en color: sumar o restar en verde (x + 6 − 6 ≥ 2 − 6) y
+    multiplicar o dividir en violeta (−x·(−1) ≤ −6·(−1)). Si es por un
+    negativo se invierte la desigualdad;
+  - cada paso se anuncia antes de hacerlo: a la derecha de la expresion
+    actual se escribe que se va a hacer, en el mismo color ("Restar 6 en
+    ambos miembros", "Multiplicar por −1 en ambos miembros (se invierte la
+    desigualdad)"), y en el renglon siguiente va la expresion con el paso
+    en ese color. Al animar, el anuncio aparece antes que el paso. Se puede
+    quitar con "Escribir qué se hizo en cada paso";
+  - interseca la condicion (subrayada en naranja) con lo que dio el caso
+    (subrayado en azul): (−∞, 1] ∩ (−∞, 6] = (−∞, 1];
+  - dibuja una recta real con los dos conjuntos rayados ("Recta real en
+    cada caso");
+  - al final: Conjunto solución: (−∞, 1] ∪ (1, ∞) = ℝ.
+  Si queda sin la variable (x + 1 ≥ x + 3 -> 1 ≥ 3) dice si se cumple
+  siempre o nunca. Si hay x², otra variable o mas de 3 valores absolutos,
+  la fila avisa que en este modo no se puede resolver.
+- Con varios valores absolutos (|x| + |x − 2| = 4, |x − 1| = |2x + 3|,
+  ||x| − 1| = 2) se separa en casos de forma recursiva: si la ecuacion de un
+  caso (o su condicion) todavia tiene un valor absoluto, se vuelve a abrir
+  ahi mismo en dos subcasos, con su llave, sus flechas, sus intersecciones
+  y sus rectas. Al terminar cada subcaso se escribe su solucion ("Solución
+  de x + |x − 2| = 4: {3} ∪ ∅ = {3}") y esa es la que se interseca con la
+  condicion del caso de arriba. Al final, el conjunto solucion de todo.
+
+INECUACIONES DE SEGUNDO GRADO (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Inecuaciones de
+  segundo grado".
+- Cada fila es una inecuacion (<, >, ≤ o ≥):
+  - factorizada: (5x − 2)(3 − 6x) > 0, 0 < (5x − 2)(3 − 6x), o con un
+    numero adelante: 2(x − 1)(x + 3) ≤ 0 (primero se divide por ese numero;
+    si es negativo, se invierte la desigualdad);
+  - desarrollada: x² − 5x + 6 ≤ 0, x² > 9, x² − 3x + 1 ≥ 0 (se pasa todo
+    al primer miembro y se factoriza SIEMPRE con la formula cuadratica, con
+    los mismos pasos que en "Factorizacion de polinomios": a, b y c, la
+    formula, las raices con la bifurcacion y la forma factorizada; se
+    aclara que tambien se puede completando el cuadrado o por
+    descomposicion). Si Δ < 0 no hay raices: el polinomio tiene siempre el
+    signo de a y el conjunto solucion es ℝ o ∅.
+  - Las raices irracionales tambien se resuelven: cada factor x − r se
+    resuelve sumando (o restando) r en ambos miembros, los intervalos se
+    ordenan por su valor y se escriben con la raiz dibujada:
+    x² − 3x + 1 ≥ 0 -> (−∞, (3 − √5)/2] ∪ [(3 + √5)/2, ∞).
+- Con la regla de los signos: la inecuacion se escribe con una llave y
+  "→ + · + ∨ − · −" (producto > 0) o "→ + · − ∨ − · +" (producto < 0). En
+  cada caso, las dos inecuaciones lineales van en dos columnas unidas por
+  ∧, resueltas paso a paso como en valor absoluto (lo que se hace,
+  anunciado y en color); despues la interseccion (subrayada en naranja y
+  azul), la recta real y, al final, el conjunto solucion (union de los dos
+  casos).
+- Opciones: escribir que se hizo en cada paso, recta real en cada caso,
+  tamaño de texto, fuente y color de la llave y las flechas.
+- El motor de la regla de los signos es el mismo de "Inecuaciones
+  racionales".
+
+INECUACIONES RACIONALES (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Inecuaciones
+  racionales".
+- Cada fila es una fraccion con numerador y denominador lineales (el
+  denominador con x) comparada con un numero: (2x + 1)/(3 − 4x) < −2,
+  (x − 1)/(x + 2) ≥ 0, 3 > (x + 1)/x (la fraccion puede ir de cualquier
+  lado).
+- Si el numero no es 0: se suma (o resta) en ambos miembros (+ 2/1 en
+  verde), se suman las fracciones con el denominador comun, se aplica la
+  distributiva y se juntan los semejantes, cada paso anunciado a la
+  derecha. Despues se escribe la restriccion (3 − 4x ≠ 0 ⇒ x ≠ 3/4).
+- La regla de los signos con fracciones dibujadas: → +/+ ∨ −/− (cociente
+  > 0) o +/− ∨ −/+ (cociente < 0). El denominador nunca es 0, asi que su
+  condicion es siempre estricta (≥ 0 da numerador ≥ 0 y denominador > 0).
+  Cada caso, como en las de segundo grado: dos columnas con ∧, la
+  interseccion, la recta real y al final la union.
+
+FACTORIZACION DE POLINOMIOS DE 2.º GRADO (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Factorizacion de
+  polinomios".
+- Cada fila es un polinomio de segundo grado, con su nombre (P, Q, R... o
+  P(x)): 6x² − 7x − 3. Tambien se puede escribir 6x^2 - 7x - 3 o
+  6x2 - 7x - 3, y con fracciones: 5/2x² + 14/3x + 2 (es (5/2)x²).
+- "Métodos": se marcan los que se quieran; cada uno va con su nombre y
+  termina con el polinomio factorizado, en el color de la fila:
+  - Formula cuadratica: identifica a, b y c (cada uno en su color), escribe
+    la formula general, el reemplazo, las operaciones y la raiz. Debajo
+    del ultimo x₁,₂ va una llave que se bifurca en dos flechas, una a cada
+    raiz (x₁ = (8 + 4)/2 = 12/2 = 6). Despues, en un renglon propio,
+    "Forma factorizada: a(x − x₁)(x − x₂)", y el reemplazo escribiendo
+    siempre a, aunque valga 1: P(x) = 1(x − 6)(x − 2) = (x − 6)(x − 2). Si la
+    raiz no es exacta, la simplifica (√80 = 4√5) y deja las raices
+    irracionales. Si es de un numero negativo, no se factoriza en ℝ.
+  - Completar el cuadrado: saca factor comun a y suma y resta el cuadrado
+    de la mitad del coeficiente de x. Los terminos del trinomio cuadrado
+    perfecto quedan marcados con una llave, y de ella sale una flecha al
+    renglon siguiente con "Aplicar trinomio cuadrado perfecto:
+    x² − 8x + (−4)² = (x − 4)²". Las cuentas van de a una: (−4)² -> 16,
+    despues 16 + 12 (con fracciones, primero a denominador comun). Se
+    escribe el numero como un cuadrado y la diferencia de cuadrados se
+    marca igual ("Aplicar diferencia de cuadrados: u² − v² = (u − v)(u + v)").
+    Al final se resuelve cada factor (x − 4 − 2 -> x − 6; con fracciones,
+    x − 7/12 − 11/12 -> x − 18/12 -> x − 3/2).
+  - Descomposicion (como en la filmina):
+    * Seccion "Análisis del discriminante" ("Analizar el discriminante"):
+      los valores de a, b y c (cada uno en su color), Δ = b² − 4·a·c con el
+      reemplazo y las cuentas, y las dos condiciones una al lado de la otra,
+      cada una escrita en general y debajo con el valor: Δ ≥ 0 / 16 ≥ 0 y
+      √Δ ∈ ℚ / √16 = 4 ∈ ℚ. Sin colores, salvo el check verde (dibujado) si se
+      cumple o la cruz roja si no; en ese caso no se puede factorizar.
+    * Factor comun (tambien con fracciones: 5/2x² + 14/3x + 2 =
+      1/6(15x² + 28x + 12)).
+    * Debajo se escribe que caso es y que hay que buscar:
+        caso 1: b = a + c (o −(a + c)) -> b se escribe como a + c;
+        caso 2: a = 1 -> p + q = b y p · q = c;
+        caso 3: p + q = b y p · q = a · c.
+      En los casos 2 y 3 las condiciones van como sistema, con una llave
+      dibujada; debajo dice "Descomponer 12 en dos factores:" y se prueban
+      los pares: los que no sirven llevan una cruz roja y el que sirve va
+      en un recuadro con las esquinas redondeadas y un check verde.
+    * Antes de reemplazar se escribe la forma general de la que se parte
+      (x² + (p + q)x + p · q, ax² + (p + q)x + c o ax² + (a + c)x + c) y
+      despues el reemplazo con los valores. Luego se reemplaza b por p + q, se aplica la distributiva, se saca
+      factor comun en cada grupo y despues el binomio comun.
+- Igual que en valor absoluto, cada paso se anuncia en el renglon de la
+  expresion actual ("Sacar factor común 2x", "Sumar y restar (−4)²"...) y
+  en el renglon siguiente va el paso, en el mismo color. Se puede quitar
+  con "Escribir qué se hace en cada paso".
+- Igual que los otros: "Ejemplo", "Restablecer", y si seleccionas una
+  factorizacion ya insertada se edita en vivo.
 
 NUMEROS COMPLEJOS (prototipo)
 - En el menu del boton, en "Numeros complejos", elegi "Formas y operaciones".
@@ -508,7 +687,13 @@ NUMEROS COMPLEJOS (prototipo)
       trigonometrica   5(cos 30° + i sen 30°)    2(cos(π/4) + i sin(π/4))
   Los angulos con ° van en grados; sin °, en radianes (admiten π).
 - O una operacion entre filas de arriba: z₁ + z₂, z₁ − z₂, z₁ · z₂, z₁ / z₂
-  (tambien se puede escribir z1 en vez de z₁).
+  (tambien se puede escribir z1 en vez de z₁). Tambien expresiones con
+  varias operaciones, numeros reales y parentesis: 2 · z₁ / z₂, 3z₁ − z₂,
+  (z₁ + z₂) · z₃. · y / se hacen antes que + y −, y cada operacion se
+  resuelve aparte, en orden ("Paso 1: producto...", "Paso 2: cociente...").
+  Tambien con modulos: |z₁| / |z₂|, |z₁ + z₂|, 2|z₁|. Cada modulo es un paso
+  ("Módulo de z₁": |z₁| = √(a² + b²) = ... = 5) y las cuentas entre numeros
+  reales se hacen directo (5 / 1,41 ≈ 3,54).
 - Para cada numero escribe el pasaje a las formas marcadas, paso a paso,
   con un paso por renglon y los "=" alineados:
       ρ = |z| = √(a² + b²)
@@ -547,6 +732,26 @@ NUMEROS COMPLEJOS (prototipo)
   resultado en color, tamaño de texto y fuente.
 - Igual que los otros: "Ejemplo", "Restablecer", y si seleccionas un
   calculo ya insertado se edita en vivo.
+
+RAICES N-ESIMAS DE UN NUMERO COMPLEJO (prototipo)
+- En el menu del boton, en "Numeros complejos", elegi "Raices n-esimas".
+- Cada fila es un numero complejo en cualquier forma (8i, 1 + i, (3, 4),
+  [16; 60°], 2(cos 30° + i sen 30°)), con su nombre, y debajo el "Indice n"
+  (2 = cuadradas, 3 = cubicas, 4 = cuartas..., hasta 12).
+- Se resuelve paso a paso:
+  - forma polar del numero (modulo y argumento), si no estaba en polar;
+  - formula de De Moivre: wₖ = ⁿ√ρ · [cos((φ + k · 360°)/n) + i sen(...)],
+    con k = 0, 1, ..., n − 1;
+  - modulo de las raices: |wₖ| = ⁿ√ρ (la raiz con su indice, dibujada);
+  - argumento de cada raiz: φₖ = (φ + k · 360°) / n, y cuanto quedan
+    separadas (360° / n);
+  - cada raiz en forma polar y, si se marca, binomica o trigonometrica.
+- El grafico (a la derecha o abajo) muestra las n raices sobre la
+  circunferencia de radio ⁿ√ρ (de trazos), unidas por un poligono regular.
+- Opciones: grados o radianes, rango del argumento, decimales, notacion
+  polar, angulos y cuadricula del grafico, tamaño de texto y fuente.
+- "Ejemplo" inserta las raices cubicas de 8i, las cuartas de −16 y las
+  cuadradas de 1 + i.
 
 SIMPLIFICACION PASO A PASO (prototipo)
 - Esta en tres secciones del menu, cada una con su notacion: "Logica
