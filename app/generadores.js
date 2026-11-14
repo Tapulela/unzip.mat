@@ -1378,6 +1378,48 @@
     return { tipo: "or", hijos: [{ tipo: "not", hijos: [aCircuito(n.a)] }].concat(b.tipo === "or" ? b.hijos : [b]) };
   }
 
+  // Circuito con un solo tipo de compuerta universal (U = "nand" o "nor").
+  // Con NAND: X ∧ Y = ¬NAND(X, Y), X ∨ Y = NAND(¬X, ¬Y), ¬X = NAND(X, X)
+  // (entradas unidas: una compuerta con un solo hijo). Con NOR, lo dual.
+  // Cada nodo se arma en positivo (pos) o negado (neg), y las dobles negaciones
+  // NAND(NAND(X, X), NAND(X, X))... se cancelan: asi una suma de productos con
+  // NAND (o un producto de sumas con NOR) queda en dos niveles.
+  function aUniversal(arbol, U) {
+    var JUNTA = U === "nand" ? "and" : "or"; // la que es ¬U
+    function inv(g) { return g.tipo === U && g.hijos.length === 1 ? g.hijos[0] : { tipo: U, hijos: [g] }; }
+    function pos(n) {
+      switch (n.tipo) {
+        case "entrada": return n.neg ? inv({ tipo: "entrada", v: n.v, neg: false }) : n;
+        case "const": return n;
+        case "not": return neg(n.hijos[0]);
+        case "xor": case "xnor":
+          var a = n.hijos[0], b = n.hijos[1], na = { tipo: "not", hijos: [a] }, nb = { tipo: "not", hijos: [b] };
+          return pos({ tipo: "or", hijos: n.tipo === "xor"
+            ? [{ tipo: "and", hijos: [a, nb] }, { tipo: "and", hijos: [na, b] }]
+            : [{ tipo: "and", hijos: [a, b] }, { tipo: "and", hijos: [na, nb] }] });
+      }
+      // and/or: la que coincide con U es ¬U(hijos); la otra, U(hijos negados)
+      return n.tipo === JUNTA ? inv({ tipo: U, hijos: n.hijos.map(pos) }) : { tipo: U, hijos: n.hijos.map(neg) };
+    }
+    function neg(n) {
+      if (n.tipo === "const") return { tipo: "const", nombre: n.nombre === "1" ? "0" : "1" };
+      if (n.tipo === "not") return pos(n.hijos[0]);
+      if (n.tipo === JUNTA) return { tipo: U, hijos: n.hijos.map(pos) };
+      return inv(pos(n));
+    }
+    return pos(aCircuito(arbol));
+  }
+  // la expresion del circuito universal, como arbol de Boole: NAND(X, Y) = (XY)',
+  // NOR(X, Y) = (X + Y)'; con las entradas unidas, (XX)' o (X + X)'
+  function universalABoole(g) {
+    if (g.tipo === "entrada") return { t: "var", n: g.v };
+    if (g.tipo === "const") return { t: "const", v: g.nombre === "1" };
+    var hs = g.hijos.map(universalABoole);
+    if (hs.length === 1) hs.push(hs[0]);
+    var op = g.tipo === "nand" ? "y" : "o";
+    return { t: "no", a: hs.reduce(function (a, b) { return { t: "bin", op: op, a: a, b: b }; }) };
+  }
+
   function curvaCuadratica(p0, c, p1, pasos) {
     var pts = [];
     for (var i = 0; i <= pasos; i++) {
@@ -1400,7 +1442,7 @@
       agregar(trazo([[x, yc - hn / 2], [x + L, yc], [x, yc + hn / 2], [x, yc - hn / 2]], trazoG));
       return { xSalida: burbuja(x + L), pin: function () { return x; } };
     }
-    if (tipo === "and") {
+    if (tipo === "and" || tipo === "nand") {
       var w0 = 26, ra = h / 2, pts = [[x, y0], [x + w0, y0]];
       for (var i = 1; i < 16; i++) {
         var a = -Math.PI / 2 + Math.PI * i / 16;
@@ -1408,17 +1450,17 @@
       }
       pts.push([x + w0, y0 + h], [x, y0 + h], [x, y0]);
       agregar(trazo(pts, trazoG));
-      return { xSalida: x + w0 + ra, pin: function () { return x; } };
+      return { xSalida: tipo === "nand" ? burbuja(x + w0 + ra) : x + w0 + ra, pin: function () { return x; } };
     }
-    // OR, XOR y XNOR: dorso curvo hacia adentro y frente en punta
-    var ex = tipo === "or" ? 0 : 9, bx = x + ex, Lo = 34 + h * 0.4, d = h * 0.16;
+    // OR, NOR, XOR y XNOR: dorso curvo hacia adentro y frente en punta
+    var ex = tipo === "or" || tipo === "nor" ? 0 : 9, bx = x + ex, Lo = 34 + h * 0.4, d = h * 0.16;
     var forma = curvaCuadratica([bx, y0], [bx + Lo * 0.55, y0], [bx + Lo, yc], 10)
       .concat(curvaCuadratica([bx + Lo, yc], [bx + Lo * 0.55, y0 + h], [bx, y0 + h], 10).slice(1))
       .concat(curvaCuadratica([bx, y0 + h], [bx + 2 * d, yc], [bx, y0], 10).slice(1));
     agregar(trazo(forma, trazoG));
     if (ex) agregar(trazo(curvaCuadratica([x, y0 + h], [x + 2 * d, yc], [x, y0], 10), trazoG));
     var salida = bx + Lo;
-    if (tipo === "xnor") salida = burbuja(salida);
+    if (tipo === "xnor" || tipo === "nor") salida = burbuja(salida);
     return {
       xSalida: salida,
       // x del dorso a la altura y (la curva es lineal en y)
@@ -1438,8 +1480,9 @@
   // compuertas de izquierda a derecha, cada una con los cables que le llegan;
   // la salida al final.
   // negar(v): como se escribe la variable negada (A' o ¬A)
-  function dibujarCircuito(arbol, vars, etiqueta, color, tam, fuente, agregar, negar) {
-    var raiz = aCircuito(arbol), lh = tam * fuente.lh;
+  // universal: "nand" o "nor" para dibujarlo solo con ese tipo de compuerta
+  function dibujarCircuito(arbol, vars, etiqueta, color, tam, fuente, agregar, negar, universal) {
+    var raiz = universal ? aUniversal(arbol, universal) : aCircuito(arbol), lh = tam * fuente.lh;
     var SLOT = Math.max(38, tam * 1.9), COL = 150, R_SALTO = 6, R_PUNTO = 3.5, Y_NOT = 26;
     var cable = { strokeWidth: 1.5 };
 
@@ -1495,8 +1538,20 @@
       (porNivel[nv] || []).forEach(function (nd) {
         var gx = XB + 30 + (nv - 1) * COL, k = nd.hijos.length;
         var h = Math.max(36, k * 18), sp = h / k;
-        var forma = [], g = compuerta(nd.tipo, gx, nd.y, k, function (e) { forma.push(e); });
         var propios = [];
+        // NAND/NOR con las dos entradas unidas (hace de NOT): el cable llega
+        // al medio y se abre en dos, con un punto en la union
+        if (k === 1 && (nd.tipo === "nand" || nd.tipo === "nor")) {
+          var hj1 = nd.hijos[0], forma1 = [], g1 = compuerta(nd.tipo, gx, nd.y, 2, function (e) { forma1.push(e); });
+          var p1 = nd.y - 9, p2 = nd.y + 9, xu = gx - 10;
+          var c1 = { pts: [[hj1.xSalida, hj1.y], [xu, hj1.y], [xu, p1], [g1.pin(p1), p1]], desde: hj1 };
+          var c2 = { pts: [[xu, nd.y], [xu, p2], [g1.pin(p2), p2]] };
+          cables.push(c1, c2);
+          nd.xSalida = g1.xSalida;
+          gates.push({ forma: forma1, cables: [c1, c2], union: [xu, nd.y] });
+          return;
+        }
+        var forma = [], g = compuerta(nd.tipo, gx, nd.y, k, function (e) { forma.push(e); });
         nd.hijos.forEach(function (hj, i) {
           var py = nd.tipo === "not" ? nd.y : nd.y - h / 2 + sp * (i + 0.5), px = g.pin(py);
           var pts = Math.abs(hj.y - py) < 0.5 ? [[hj.xSalida, hj.y], [px, py]] : (function () {
@@ -1578,8 +1633,9 @@
       gt.cables.forEach(function (c) {
         dibujarCable(c);
         var hj = c.desde;
-        if (hj.linea && hj.y < hj.linea.bottom - 0.5) punto(hj.linea.x, hj.y);
+        if (hj && hj.linea && hj.y < hj.linea.bottom - 0.5) punto(hj.linea.x, hj.y);
       });
+      if (gt.union) punto(gt.union[0], gt.union[1]);
       gt.forma.forEach(agregar);
     });
 
@@ -2175,7 +2231,12 @@
       }
 
       // circuitos
-      if (op.circuito) {
+      // tipos de circuito: el comun (AND, OR, NOT) y los de una sola compuerta universal
+      var tipos = [];
+      if (op.circuito) tipos.push(null);
+      if (op.soloNand) tipos.push("nand");
+      if (op.soloNor) tipos.push("nor");
+      if (tipos.length) {
         var escrita = r.arbol || arbolDeCobertura((r.indices === "m" ? unos : ceros).map(function (m) {
           return { v: m, x: 0 };
         }), vars, r.indices === "M");
@@ -2187,10 +2248,13 @@
           // los dos, el otro aclara que es el de la expresion escrita
           var cual = arbol === simple && op.circuitoDe !== "escrita" && (cuales.length === 2 || op.circuitoDe === "simple")
             ? " (simplificado)" : cuales.length === 2 ? " (expresión escrita)" : "";
-          var c = colocar(function (ag) {
-            dibujarCircuito(arbol, vars, nombre + " = " + imprimirBoole(arbol, fmt), color, tam, fuente, ag, fmt.neg);
-          }, ox, y, "Circuito lógico" + cual);
-          y += c.h + 40;
+          tipos.forEach(function (U) {
+            var expr = U ? universalABoole(aUniversal(arbol, U)) : arbol;
+            var c = colocar(function (ag) {
+              dibujarCircuito(arbol, vars, nombre + " = " + imprimirBoole(expr, fmt), color, tam, fuente, ag, fmt.neg, U);
+            }, ox, y, "Circuito lógico" + (U ? " solo con " + U.toUpperCase() : "") + cual);
+            y += c.h + 40;
+          });
         });
       }
       y += 40;
@@ -6833,7 +6897,12 @@
     }
     for (i = 0; i < xs.length; i++) {
       var comp = claveSimp(complementoSimp(xs[i]));
-      for (j = 0; j < xs.length; j++) if (j !== i && claves[j] === comp) return { n: { k: "c", v: !neutro }, ley: "complemento", op: n.k };
+      // solo el par x, ¬x pasa a ser la constante (p ∧ q ∧ ¬q = p ∧ F); lo
+      // demas lo hace la dominacion en el paso siguiente
+      for (j = 0; j < xs.length; j++) if (j !== i && claves[j] === comp) {
+        var cte = { k: "c", v: !neutro }, par = i;
+        return { n: juntar(n.k, xs.map(function (x, k) { return k === par ? cte : x; }).filter(function (x, k) { return k !== j; })), ley: "complemento", op: n.k };
+      }
     }
     var dual = dualSimp(n.k), ts = xs.map(function (x) { return terminosSimp(x, dual); });
     for (i = 0; i < xs.length; i++) for (j = 0; j < xs.length; j++) {
@@ -7432,7 +7501,7 @@
         filas: [{ nombre: "F", texto: "AB + A'C + BC", color: COLORES[0] }],
         nVars: 3, nombres: "A, B, C, D, E",
         tabla: true, minterminos: true, maxiterminos: false, karnaugh: true, agrupar: "min",
-        simplificar: true, indices: true, circuito: true, circuitoDe: "ambas",
+        simplificar: true, indices: true, circuito: true, soloNand: false, soloNor: false, circuitoDe: "ambas",
         negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal", titulos: true,
       },
       contenido: ["filas", "nVars", "nombres"],
@@ -7478,7 +7547,9 @@
         ui.chk("Escribir la simplificada", "simplificar");
         ui.chk("Títulos («Tabla de verdad», «Mapa de Karnaugh», «Circuito lógico»)", "titulos");
         ui.chk("Circuito lógico", "circuito", true);
-        if (op.circuito) {
+        ui.chk("Circuito solo con compuertas NAND", "soloNand", true);
+        ui.chk("Circuito solo con compuertas NOR", "soloNor", true);
+        if (op.circuito || op.soloNand || op.soloNor) {
           ui.seg("Circuito de", "circuitoDe", [["escrita", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]]);
         }
         ui.seg("Negación", "negacion", [["prima", "A'"], ["barra", "¬A"]]);
