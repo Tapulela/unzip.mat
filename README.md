@@ -41,6 +41,16 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   la rama de portapapeles del build empieza con
   `if(window.__pizarraCopiarPng&&await window.__pizarraCopiarPng(d,u5))return;`. Si el
   servidor no responde, o en la versión online, se copia como siempre.
+- Comprimir las imágenes del archivo (menú principal → «Comprimir imágenes», también en
+  `app/compresion.js`): comprime las imágenes pegadas en la pizarra (las seleccionadas,
+  o todas si no hay ninguna seleccionada). Si una imagen se muestra a menos de la mitad
+  de su tamaño real (y no está recortada), se achica al doble de lo que se ve; después
+  se prueba el PNG con paleta y, si no alcanza (fotos), JPEG (o WebP si tiene
+  transparencia) con calidad 0,85. Solo se reemplaza si queda al menos un 10 % más
+  chica. La imagen nueva entra como archivo nuevo y se sincroniza con la sala; Ctrl+Z
+  la deshace. Requiere un ítem en el menú principal del build (`assets/index-*.js`),
+  después de `Bt.DefaultItems.SaveAsImage`, que llama a
+  `window.__pizarraComprimirImagenes()`.
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite
@@ -187,6 +197,13 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.
 
+- Los archivos `.excalidraw` (y la escena incrustada en PNG/SVG) se guardan sin los
+  elementos borrados. Excalidraw los conserva marcados con `isDeleted` para el
+  deshacer y la colaboración, pero en el archivo solo ocupan lugar (un archivo
+  llegó a pesar 6 MB con 2400 elementos borrados). El filtro se aplica solo a la
+  copia que se escribe, así que la escena en memoria y Ctrl+Z no cambian. Cambio
+  en el build (`assets/index-*.js`), en `serializeAsJSON`: `elements:e` pasa a ser
+  `elements:i==="local"?e.filter(x=>!x.isDeleted):e`.
 - Sin servicios externos: se quitó la analítica (Simple Analytics), el CDN de fuentes de Excalidraw, Google Fonts y la redirección a Excalidraw+. Estos cambios se hicieron directamente sobre `app/index.html` y `app/assets/*.css` (no están en el diff). La fuente de la interfaz (Assistant) usa solo el peso Regular local.
 
 El detalle exacto del código fuente está en [`cambios-al-codigo.diff`](cambios-al-codigo.diff).

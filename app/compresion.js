@@ -357,6 +357,170 @@
     return original(canvas);
   };
 
+  // ---------- Imagenes que ya estan en el archivo ----------
+  // Menu principal -> "Comprimir imágenes" (item editado en assets/index-*.js) llama a
+  // window.__pizarraComprimirImagenes(). Recorre las imagenes de la escena (o solo las
+  // seleccionadas, si hay alguna) y para cada una:
+  //  - si se muestra a menos de la mitad de su tamaño real, la achica al doble de lo
+  //    que se ve (sigue nitida con zoom), salvo que este recortada;
+  //  - prueba el PNG con paleta (dibujos, capturas) y, si no sirve (fotos), JPEG
+  //    (o WebP si tiene transparencia) con calidad CALIDAD_FOTO;
+  //  - solo la reemplaza si el archivo queda al menos un AHORRO_MINIMO mas chico.
+  // La imagen nueva entra como archivo nuevo (id = SHA-1, como hace Excalidraw) y los
+  // elementos pasan a usarlo: se sincroniza con la sala y Ctrl+Z la deshace.
+  var CALIDAD_FOTO = 0.85, AHORRO_MINIMO = 0.1, ESCALA_MAXIMA = 2;
+  var TIPOS = { "image/png": 1, "image/jpeg": 1, "image/webp": 1, "image/gif": 1, "image/bmp": 1 };
+
+  function cargarImagen(dataURL) {
+    return new Promise(function (ok, mal) {
+      var img = new Image();
+      img.onload = function () { ok(img); };
+      img.onerror = mal;
+      img.src = dataURL;
+    });
+  }
+
+  function bytesDeDataURL(dataURL) {
+    var i = dataURL.indexOf(",");
+    var b64 = dataURL.slice(i + 1);
+    return Math.floor((b64.length * 3) / 4) - (/==$/.test(b64) ? 2 : /=$/.test(b64) ? 1 : 0);
+  }
+
+  function aDataURL(blob) {
+    return new Promise(function (ok, mal) {
+      var r = new FileReader();
+      r.onload = function () { ok(r.result); };
+      r.onerror = mal;
+      r.readAsDataURL(blob);
+    });
+  }
+
+  async function idDeArchivo(blob) {
+    try {
+      var h = await crypto.subtle.digest("SHA-1", await blob.arrayBuffer());
+      return Array.prototype.map.call(new Uint8Array(h), function (b) {
+        return (b < 16 ? "0" : "") + b.toString(16);
+      }).join("");
+    } catch (e) {
+      return Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+  }
+
+  function aBlob(canvas, tipo, calidad) {
+    return new Promise(function (ok) { canvas.toBlob(ok, tipo, calidad); });
+  }
+
+  // Devuelve { blob, tipo, detalle } o null si no conviene cambiarla.
+  async function comprimirArchivo(archivo, anchoVisible) {
+    var antes = bytesDeDataURL(archivo.dataURL);
+    var img = await cargarImagen(archivo.dataURL);
+    var w = img.naturalWidth, h = img.naturalHeight;
+    if (!w || !h) return null;
+    var escala = 1;
+    if (anchoVisible && w > anchoVisible * ESCALA_MAXIMA) escala = (anchoVisible * ESCALA_MAXIMA) / w;
+    var cw = Math.max(1, Math.round(w * escala)), chh = Math.max(1, Math.round(h * escala));
+    var canvas = document.createElement("canvas");
+    canvas.width = cw;
+    canvas.height = chh;
+    var ctx = canvas.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, cw, chh);
+    var datos = ctx.getImageData(0, 0, cw, chh).data;
+    var opaca = true;
+    for (var i = 3; i < datos.length; i += 4) if (datos[i] !== 255) { opaca = false; break; }
+
+    var mejor = null;
+    function candidato(blob, detalle) {
+      if (blob && (!mejor || blob.size < mejor.blob.size)) mejor = { blob: blob, tipo: blob.type, detalle: detalle };
+    }
+    var r = await codificar(new Uint8ClampedArray(datos), cw, chh);
+    if (r.blob) candidato(r.blob, "paleta");
+    else {
+      var tipo = opaca ? "image/jpeg" : "image/webp";
+      var foto = await aBlob(canvas, tipo, CALIDAD_FOTO);
+      if (foto && foto.type === tipo) candidato(foto, tipo === "image/jpeg" ? "JPEG" : "WebP");
+      // con transparencia y sin WebP, queda el PNG del navegador
+      candidato(await aBlob(canvas, "image/png"), "PNG");
+    }
+    if (escala < 1) {
+      if (mejor) mejor.detalle += ", " + w + "x" + h + " → " + cw + "x" + chh;
+    }
+    if (!mejor || mejor.blob.size > antes * (1 - AHORRO_MINIMO)) return null;
+    mejor.antes = antes;
+    return mejor;
+  }
+
+  function kb(n) {
+    return n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1).replace(".", ",") + " MB" : Math.round(n / 1024) + " KB";
+  }
+
+  var comprimiendo = false;
+  window.__pizarraComprimirImagenes = async function () {
+    var A = window.__pizarraAPI;
+    if (!A || comprimiendo) return;
+    function aviso(texto, ms) { try { A.setToast({ message: texto, duration: ms || 5000, closable: true }); } catch (e) {} }
+    if (typeof CompressionStream === "undefined") return aviso("Este navegador no permite comprimir imágenes.");
+
+    var elementos = A.getSceneElements();
+    var sel = A.getAppState().selectedElementIds || {};
+    var imagenes = elementos.filter(function (e) { return e.type === "image" && e.fileId; });
+    var elegidas = imagenes.filter(function (e) { return sel[e.id]; });
+    if (elegidas.length) imagenes = elegidas;
+    var archivos = A.getFiles();
+    var porArchivo = {};
+    imagenes.forEach(function (e) {
+      var f = archivos[e.fileId];
+      if (!f || !TIPOS[f.mimeType]) return;
+      var p = porArchivo[e.fileId] || (porArchivo[e.fileId] = { archivo: f, ancho: 0, recortada: false });
+      if (e.crop) p.recortada = true;
+      p.ancho = Math.max(p.ancho, Math.abs(e.width));
+    });
+    var ids = Object.keys(porArchivo);
+    if (!ids.length) return aviso(elegidas.length ? "Las imágenes seleccionadas no se pueden comprimir." : "No hay imágenes para comprimir.");
+
+    comprimiendo = true;
+    aviso("Comprimiendo " + ids.length + (ids.length === 1 ? " imagen…" : " imágenes…"), 60000);
+    var reemplazo = {}, nuevos = [], antes = 0, despues = 0;
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        var p = porArchivo[ids[i]];
+        try {
+          var r = await comprimirArchivo(p.archivo, p.recortada ? 0 : p.ancho);
+          if (!r) continue;
+          var id = await idDeArchivo(r.blob);
+          if (id === ids[i]) continue;
+          nuevos.push({ id: id, mimeType: r.tipo, dataURL: await aDataURL(r.blob), created: Date.now() });
+          reemplazo[ids[i]] = id;
+          antes += r.antes;
+          despues += r.blob.size;
+          console.info("compresion.js: imagen " + ids[i].slice(0, 8) + " " + kb(r.antes) + " → " + kb(r.blob.size) + " (" + r.detalle + ")");
+        } catch (e) {
+          console.warn("compresion.js: no se pudo comprimir la imagen " + ids[i], e);
+        }
+      }
+      if (!nuevos.length) return aviso("Las imágenes ya están comprimidas.");
+
+      A.addFiles(nuevos);
+      var ahora = Date.now();
+      var cambiados = A.getSceneElementsIncludingDeleted().map(function (e) {
+        if (e.type !== "image" || !reemplazo[e.fileId] || (elegidas.length && !sel[e.id])) return e;
+        var d = {};
+        for (var k in e) d[k] = e[k];
+        d.fileId = reemplazo[e.fileId];
+        d.status = "pending"; // el administrador de archivos lo sube y lo marca "saved"
+        d.version = e.version + 1;
+        d.versionNonce = Math.floor(Math.random() * 2147483647);
+        d.updated = ahora;
+        return d;
+      });
+      A.updateScene({ elements: cambiados, captureUpdate: "IMMEDIATELY" });
+      aviso(nuevos.length + (nuevos.length === 1 ? " imagen comprimida" : " imágenes comprimidas") +
+        ": " + kb(antes) + " → " + kb(despues) + " (" + Math.round((1 - despues / antes) * 100) + "% menos). Ctrl+Z la deshace.");
+    } finally {
+      comprimiendo = false;
+    }
+  };
+
   // "Copiar como PNG": el navegador vuelve a codificar las imagenes que pone en el
   // portapapeles (y se pierde la compresion). Con el servidor local (no en la version
   // online) se le manda el PNG comprimido a servidor.js, que lo pone en el portapapeles
