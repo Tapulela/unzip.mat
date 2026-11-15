@@ -324,6 +324,19 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   `window.__pizarraGeneradores` (constantes, `texto`, `trazo`, `dibujarBloqueF`, `GEN`…)
   y `window.__pizarraHojas` suma `marco`, `areaUtil`, `hojasDe`, `bandasDe` y
   `separacion`.
+  Todo lo importado lleva en `customData.pizarraSolucion` la clave de la solución
+  (materia · institución · año · TP de su `meta`, o el título), y con
+  `importar(sol, { reemplazar: true })` lo importado antes con la misma clave se borra.
+- Puente para programas locales (`servidor.js` + `app/solucionario.js`): lo usa el
+  servidor MCP de los solucionarios para dibujar en la pizarra abierta. Un programa de
+  esta PC hace `POST /puente/pedido` con `{ accion, datos }`; el servidor se lo pasa
+  (por Server-Sent Events, `GET /puente/eventos`) a la ventana que se usó por última
+  vez (cada ventana avisa con `POST /puente/foco` al tocarla), que contesta con
+  `POST /puente/respuesta` y el servidor le devuelve esa respuesta al programa (espera
+  hasta 60 s). Acciones: `importar` (`{ solucion, reemplazar, ver, ancho }`, con `ver`
+  devuelve un PNG de cada hoja nueva), `ver` (`{ hojas: [n…], ancho }`) y `estado`.
+  Las imágenes salen de la misma exportación SVG que «Imprimir / PDF». Solo con el
+  servidor local, que escucha en 127.0.0.1; en la versión online no hay puente.
 
 - Los archivos `.excalidraw` (y la escena incrustada en PNG/SVG) se guardan sin los
   elementos borrados. Excalidraw los conserva marcados con `isDeleted` para el

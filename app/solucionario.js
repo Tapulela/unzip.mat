@@ -224,8 +224,16 @@
   }
 
   // ------------------------------------------------------------- importar
-  function importar(entrada) {
+  // clave de una solucion: con `reemplazar`, lo que se importo antes con la
+  // misma clave se borra (sirve para corregir y volver a importar)
+  function claveDe(sol) {
+    var m = sol.meta || {};
+    return [m.materia, m.institucion, m.anio, m.tp].filter(Boolean).join(" · ") || String(sol.titulo || "solucion");
+  }
+
+  function importar(entrada, opciones) {
     var A = api(), g = G(), h = H();
+    opciones = opciones || {};
     if (!A || !g || !h || !h.marco) return { ok: false, errores: ["La pizarra todavía no terminó de cargar"] };
     var sol = entrada;
     if (typeof entrada === "string") {
@@ -236,7 +244,20 @@
     if (sol.formato && sol.formato !== FORMATO) avisosFormato.push("Formato «" + sol.formato + "»: esta pizarra lee «" + FORMATO + "»");
     if (!Array.isArray(sol.ejercicios)) return { ok: false, errores: ["Falta la lista «ejercicios»"] };
 
-    var todos = A.getSceneElementsIncludingDeleted(), vivos = todos.filter(function (e) { return !e.isDeleted; });
+    var clave = claveDe(sol), reemplazados = 0;
+    var todos = A.getSceneElementsIncludingDeleted();
+    if (opciones.reemplazar) {
+      var ahora = Date.now();
+      todos = todos.map(function (e) {
+        if (e.isDeleted || !e.customData || e.customData.pizarraSolucion !== clave) return e;
+        reemplazados++;
+        var d = {};
+        for (var k in e) d[k] = e[k];
+        d.isDeleted = true; d.version = e.version + 1; d.versionNonce = Math.floor(Math.random() * 2147483647); d.updated = ahora;
+        return d;
+      });
+    }
+    var vivos = todos.filter(function (e) { return !e.isDeleted; });
     var hojas = h.hojasDe(todos), bandas = h.bandasDe(todos);
     // primera hoja nueva: a la derecha de todo lo que ya hay
     var sep = h.separacion(), x0 = 0, y0 = 0, n0 = hojas.length ? hojas[hojas.length - 1].customData.pizarraHoja.n : 0;
@@ -315,6 +336,14 @@
       e.groupIds = [renombre[k]];
       if (e.customData && e.customData.pizarra) delete e.customData; // un grafico partido ya no se regenera
     });
+    // todo lo importado lleva la clave de la solucion (para reemplazarlo despues)
+    nuevas.concat(listos).forEach(function (e) {
+      var cd = {};
+      for (var k in e.customData || {}) cd[k] = e.customData[k];
+      cd.pizarraSolucion = clave;
+      e.customData = cd;
+    });
+    ultimas = nuevas.map(function (f) { return f.id; });
 
     var st = A.getAppState(), z = st.zoom.value, f0 = nuevas[0];
     var zn = Math.min(st.width / f0.width, st.height / f0.height) * 0.9;
@@ -327,7 +356,105 @@
       captureUpdate: "IMMEDIATELY",
     });
     if (sol.titulo && !st.name) try { A.updateScene({ appState: { name: String(sol.titulo) } }); } catch (e) {}
-    return { ok: true, hojas: nuevas.length, elementos: listos.length, avisos: avisos, errores: [] };
+    return {
+      ok: true, hojas: nuevas.length, elementos: listos.length, reemplazados: reemplazados, clave: clave,
+      numeros: nuevas.map(function (f) { return f.customData.pizarraHoja.n; }), avisos: avisos, errores: [],
+    };
+  }
+  var ultimas = []; // ids de las hojas de la ultima importacion
+
+  // ------------------------------------------------- imagenes de las hojas
+  // Cada hoja como PNG (ancho `ancho` px), con la misma exportacion que
+  // «Imprimir / PDF»: recortada al marco, en tema claro y con las fuentes.
+  async function imagenes(cuales, ancho) {
+    var A = api(), h = H(), exportar = window.__pizarraSvg;
+    if (!exportar) throw new Error("Esta versión de la pizarra no puede exportar las hojas");
+    var elementos = A.getSceneElements(), hojas = h.hojasDe(elementos), archivos = A.getFiles();
+    var elegidas = hojas.filter(function (f) {
+      if (Array.isArray(cuales) && cuales.length) return cuales.indexOf(f.customData.pizarraHoja.n) >= 0;
+      return ultimas.length ? ultimas.indexOf(f.id) >= 0 : true;
+    });
+    var out = [];
+    for (var i = 0; i < elegidas.length; i++) {
+      var f = elegidas[i];
+      var svg = await exportar(elementos, {
+        exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false,
+        exportScale: 1, exportPadding: 0, exportEmbedScene: false,
+        frameRendering: { enabled: true, name: false, outline: false, clip: true },
+      }, archivos, { exportingFrame: f });
+      if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", "0 0 " + f.width + " " + f.height);
+      var W = ancho || 800, Hh = Math.round(W * f.height / f.width);
+      svg.setAttribute("width", W); svg.setAttribute("height", Hh);
+      var url = URL.createObjectURL(new Blob([svg.outerHTML], { type: "image/svg+xml" }));
+      try {
+        var img = await new Promise(function (ok, mal) {
+          var im = new Image();
+          im.onload = function () { ok(im); };
+          im.onerror = function () { mal(new Error("No se pudo dibujar la hoja " + f.customData.pizarraHoja.n)); };
+          im.src = url;
+        });
+        var c = document.createElement("canvas");
+        c.width = W; c.height = Hh;
+        var ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, Hh);
+        ctx.drawImage(img, 0, 0, W, Hh);
+        out.push({ n: f.customData.pizarraHoja.n, png: c.toDataURL("image/png").split(",")[1] });
+      } finally { URL.revokeObjectURL(url); }
+    }
+    return out;
+  }
+
+  // --------------------------------------------- puente (servidor.js)
+  // Con el servidor local, la pagina escucha pedidos de programas de esta PC
+  // (el servidor MCP de los solucionarios). Los atiende la ventana que se uso
+  // por ultima vez. Acciones:
+  //   importar { solucion, reemplazar, ver, ancho } → resultado (+ imagenes)
+  //   ver { hojas: [n...], ancho }                  → imagenes
+  //   estado                                        → hojas y titulo
+  async function atender(accion, datos) {
+    datos = datos || {};
+    if (accion === "importar") {
+      var r = await importarConFuentes(datos.solucion, { reemplazar: datos.reemplazar });
+      mostrarResultado(r);
+      if (r.ok && datos.ver) {
+        // esperar a que la escena nueva este en el estado de la pizarra
+        await new Promise(function (ok) { setTimeout(ok, 50); });
+        r.imagenes = await imagenes(null, datos.ancho);
+      }
+      return r;
+    }
+    if (accion === "ver") return { ok: true, imagenes: await imagenes(datos.hojas, datos.ancho) };
+    if (accion === "estado") {
+      var A = api(), hs = H().hojasDe(A.getSceneElements());
+      return { ok: true, titulo: A.getAppState().name || "", hojas: hs.map(function (f) {
+        return { n: f.customData.pizarraHoja.n, solucion: (f.customData && f.customData.pizarraSolucion) || null };
+      }) };
+    }
+    return { ok: false, errores: ["Acción desconocida: " + accion] };
+  }
+
+  function conectarPuente() {
+    if (window.PIZARRA_SIN_SERVIDOR !== false || !window.EventSource || !window.fetch) return;
+    var id = Math.random().toString(36).slice(2) + Date.now().toString(36), ultimoFoco = 0;
+    var es = new EventSource("./puente/eventos?id=" + id);
+    function foco() {
+      var t = Date.now();
+      if (t - ultimoFoco < 2000) return;
+      ultimoFoco = t;
+      fetch("./puente/foco?id=" + id, { method: "POST" }).catch(function () {});
+    }
+    window.addEventListener("focus", foco);
+    document.addEventListener("pointerdown", foco, true);
+    document.addEventListener("keydown", foco, true);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) foco(); });
+    es.onmessage = function (ev) {
+      var p;
+      try { p = JSON.parse(ev.data); } catch (e) { return; }
+      Promise.resolve().then(function () { return atender(p.accion, p.datos); })
+        .catch(function (e) { return { ok: false, errores: [String(e && e.message || e)] }; })
+        .then(function (r) { return fetch("./puente/respuesta?p=" + p.n, { method: "POST", body: JSON.stringify(r) }); })
+        .catch(function () {});
+    };
   }
 
   // -------------------------------------------------------- aviso en pantalla
@@ -362,11 +489,14 @@
     inp.click();
   }
 
-  function importarConFuentes(entrada) {
+  function importarConFuentes(entrada, opciones) {
     var g = G();
+    if (!g) return Promise.resolve({ ok: false, errores: ["La pizarra todavía no terminó de cargar"] });
     var cargas = Object.keys(g.FUENTES).map(function (k) { return document.fonts.load("20px " + g.FUENTES[k].css).catch(function () {}); });
-    return Promise.all(cargas).then(function () { return importar(entrada); });
+    return Promise.all(cargas).then(function () { return importar(entrada, opciones); });
   }
 
-  window.__pizarraSolucionario = { abrir: abrir, importar: importarConFuentes, FORMATO: FORMATO };
+  window.__pizarraSolucionario = { abrir: abrir, importar: importarConFuentes, imagenes: imagenes, FORMATO: FORMATO };
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", conectarPuente);
+  else conectarPuente();
 })();

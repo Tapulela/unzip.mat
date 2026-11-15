@@ -208,8 +208,97 @@ const copiarAlPortapapeles = (req, res) => {
   });
 };
 
+// Puente para programas locales (el servidor MCP de los solucionarios): mandan un
+// pedido por HTTP y lo resuelve la ventana de la pizarra que se uso por ultima vez
+// (app/solucionario.js), que contesta con el resultado.
+//   GET  /puente/eventos?id=X     la pagina escucha los pedidos (Server-Sent Events)
+//   POST /puente/foco?id=X        la pagina avisa que se esta usando
+//   POST /puente/pedido           { accion, datos } → espera la respuesta de la pagina
+//   POST /puente/respuesta?p=N    la pagina contesta el pedido N
+// Solo acepta conexiones de esta PC (el servidor escucha en 127.0.0.1).
+const ventanas = new Map(); // id → { res, foco }
+const pendientes = new Map(); // n → { res, timer }
+let ultimoPedido = 0;
+const MAX_PEDIDO = 20 * 1024 * 1024;
+const ESPERA_PEDIDO = 60 * 1000;
+
+const leerCuerpo = (req, max, listo) => {
+  const partes = [];
+  let total = 0, cortado = false;
+  req.on("data", (c) => {
+    total += c.length;
+    if (total > max) { cortado = true; req.destroy(); return; }
+    partes.push(c);
+  });
+  req.on("end", () => { if (!cortado) listo(Buffer.concat(partes).toString("utf8")); });
+};
+const responderJson = (res, codigo, obj) => {
+  if (res.writableEnded) return;
+  res.writeHead(codigo, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-cache" });
+  res.end(JSON.stringify(obj));
+};
+
+const puente = (req, res) => {
+  const url = new URL(req.url, "http://localhost");
+  const ruta = url.pathname, id = url.searchParams.get("id");
+  if (ruta === "/puente/eventos" && req.method === "GET" && id) {
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+    res.write(": hola\n\n");
+    const v = { res, foco: Date.now() };
+    ventanas.set(id, v);
+    const latido = setInterval(() => res.write(": .\n\n"), 25000);
+    req.on("close", () => { clearInterval(latido); if (ventanas.get(id) === v) ventanas.delete(id); });
+    return;
+  }
+  if (ruta === "/puente/foco" && req.method === "POST" && id) {
+    const v = ventanas.get(id);
+    if (v) v.foco = Date.now();
+    res.writeHead(204);
+    return res.end();
+  }
+  if (ruta === "/puente/estado" && req.method === "GET") {
+    return responderJson(res, 200, { ventanas: ventanas.size });
+  }
+  if (ruta === "/puente/pedido" && req.method === "POST") {
+    return leerCuerpo(req, MAX_PEDIDO, (txt) => {
+      let pedido;
+      try { pedido = JSON.parse(txt); } catch (e) { return responderJson(res, 400, { error: "El pedido no es JSON" }); }
+      let elegida = null;
+      for (const v of ventanas.values()) if (!elegida || v.foco > elegida.foco) elegida = v;
+      if (!elegida) {
+        return responderJson(res, 503, { error: "No hay ninguna pizarra abierta en este servidor. Abrí la pizarra en el navegador y volvé a intentar." });
+      }
+      const n = ++ultimoPedido;
+      const timer = setTimeout(() => {
+        pendientes.delete(n);
+        responderJson(res, 504, { error: "La pizarra no contestó a tiempo (¿la pestaña está en segundo plano o cargando?)" });
+      }, ESPERA_PEDIDO);
+      pendientes.set(n, { res, timer });
+      elegida.res.write("data: " + JSON.stringify({ n, accion: pedido.accion, datos: pedido.datos }) + "\n\n");
+    });
+  }
+  if (ruta === "/puente/respuesta" && req.method === "POST") {
+    const n = Number(url.searchParams.get("p"));
+    return leerCuerpo(req, MAX_PEDIDO * 2, (txt) => {
+      const p = pendientes.get(n);
+      res.writeHead(204);
+      res.end();
+      if (!p) return;
+      pendientes.delete(n);
+      clearTimeout(p.timer);
+      if (!p.res.writableEnded) {
+        p.res.writeHead(200, { "Content-Type": "application/json; charset=utf-8" });
+        p.res.end(txt);
+      }
+    });
+  }
+  res.writeHead(404);
+  res.end();
+};
+
 const server = http.createServer((req, res) => {
   if (req.url === "/portapapeles") return copiarAlPortapapeles(req, res);
+  if (req.url.startsWith("/puente/")) return puente(req, res);
   if (req.url.startsWith("/archivos/")) {
     return manejarArchivo(req, res, req.url.split("?")[0]);
   }
