@@ -42,6 +42,10 @@
     "#pz-imagen .calco label span{width:82px;flex:none}" +
     "#pz-imagen .calco input[type=range]{flex:1;min-width:0;accent-color:#6965db}" +
     "#pz-imagen .calco input[type=checkbox]{margin:0 2px;accent-color:#6965db}" +
+    "#pz-imagen .calco select{font:inherit;color:inherit;background:transparent;border:1px solid #e0dfe6;border-radius:6px;padding:1px 4px}" +
+    "#pz-imagen .calco .sub{padding-left:22px}" +
+    "#pz-imagen.oscuro .calco select{border-color:#3a3a43}" +
+    "#pz-imagen.oscuro .calco select option{background:#232329}" +
     "#pz-imagen .calco .hacer{display:block;width:100%;margin-top:6px;background:#6965db;color:#fff;padding:6px}" +
     "#pz-imagen .calco .hacer:hover{background:#5b57d1}" +
     "#pz-imagen .calco .hacer:disabled{background:#6965db}" +
@@ -157,6 +161,10 @@
         '<label title="Más suavizado: menos puntos por trazo, curvas más limpias"><span>Suavizado</span>' +
         '<input type="range" class="suav" min="0" max="4" step="1"></label>' +
         '<label><input type="checkbox" class="col"> Mantener los colores</label>' +
+        '<label title="Reconoce letras de imprenta (con tildes y ñ), números y signos comunes. Con letra manuscrita casi no reconoce nada; lo que no reconoce se calca.">' +
+        '<input type="checkbox" class="tex"> Pasar a texto lo que reconozca</label>' +
+        '<label class="sub"><span>Letra</span><select class="letra">' +
+        '<option value="normal">Normal</option><option value="mano">A mano</option></select></label>' +
         '<label title="El calco va en el lugar de la imagen y la imagen se borra (Ctrl+Z lo deshace)">' +
         '<input type="checkbox" class="reemp"> Reemplazar la imagen</label>' +
         '<button class="hacer">Calcar</button>' +
@@ -290,7 +298,7 @@
 
   // ---------------------------------------------------------------- calcado
   // ajustes del calco (se recuerdan mientras la pizarra esta abierta)
-  var opCalco = { sensibilidad: 0, detalle: 3, suavizado: 2, colores: true, reemplazar: false };
+  var opCalco = { sensibilidad: 0, detalle: 3, suavizado: 2, colores: true, reemplazar: false, texto: true, letra: "normal" };
 
   var calco = {
     el: null, lienzo: null, elEstado: null, bHacer: null,
@@ -306,7 +314,10 @@
         input.value = opCalco[par[1]];
         input.oninput = function () { opCalco[par[1]] = Number(input.value); barra.refrescar(); };
       });
-      [["col", "colores"], ["reemp", "reemplazar"]].forEach(function (par) {
+      var letra = el.querySelector(".letra");
+      letra.value = opCalco.letra;
+      letra.onchange = function () { opCalco.letra = letra.value; barra.refrescar(); };
+      [["col", "colores"], ["reemp", "reemplazar"], ["tex", "texto"]].forEach(function (par) {
         var input = el.querySelector("." + par[0]);
         input.checked = opCalco[par[1]];
         input.onchange = function () { opCalco[par[1]] = input.checked; barra.refrescar(); };
@@ -331,7 +342,9 @@
       var cr = e.crop;
       var clave = [e.id, s.fileId, f.dataURL.length, Math.round(e.width), Math.round(e.height),
         cr ? [cr.x, cr.y, cr.width, cr.height].join(",") : "", opCalco.sensibilidad, opCalco.detalle,
-        opCalco.suavizado, opCalco.colores].join("|");
+        opCalco.suavizado, opCalco.colores, opCalco.texto, opCalco.letra].join("|");
+      this.el.querySelector(".sub").style.display = opCalco.texto && window.__pizarraGlifos ? "" : "none";
+      this.el.querySelector(".tex").parentNode.style.display = window.__pizarraGlifos ? "" : "none";
       if (clave === this.clave) { this.boton(); return; }
       this.clave = clave;
       this.res = null;
@@ -353,10 +366,11 @@
           self.res = res;
           self.elementoId = e.id;
           window.__pizarraCalcado.dibujarVista(self.lienzo, res);
-          var n = res.trazos.length;
-          if (!n) self.aviso("No se encontraron trazos. Probá con más sensibilidad.", true);
-          else if (res.demasiados) self.aviso(n + " trazos: son demasiados. Bajá el detalle o la sensibilidad.", true);
-          else self.aviso(n === 1 ? "1 trazo" : n + " trazos");
+          var n = res.trazos.length, nt = res.textos.length;
+          var cuenta = (n === 1 ? "1 trazo" : n + " trazos") + (nt ? (nt === 1 ? " y 1 texto" : " y " + nt + " textos") : "");
+          if (!n && !nt) self.aviso("No se encontraron trazos. Probá con más sensibilidad.", true);
+          else if (res.demasiados) self.aviso(cuenta + ": son demasiados. Bajá el detalle o la sensibilidad.", true);
+          else self.aviso(cuenta);
           self.boton();
           barra.refrescar();
         }).catch(function (err) {
@@ -367,7 +381,7 @@
     },
 
     boton: function () {
-      this.bHacer.disabled = !this.res || !this.res.trazos.length || this.res.demasiados;
+      this.bHacer.disabled = !this.res || !(this.res.trazos.length + this.res.textos.length) || this.res.demasiados;
       this.bHacer.textContent = opCalco.reemplazar ? "Calcar y reemplazar la imagen" : "Calcar al lado de la imagen";
     },
 

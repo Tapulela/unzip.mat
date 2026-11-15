@@ -16,6 +16,8 @@
 //     (Ramer-Douglas-Peucker, segun el "suavizado").
 //  6. Cada camino es una linea de Excalidraw con el grosor y el color medidos;
 //     los puntos sueltos (el punto de la i, una coma) son circulos rellenos.
+// Con op.texto, antes del paso 4 se reconoce el texto que se pueda (glifos.js,
+// alfabeto reducido): eso sale como elementos de texto y no se calca.
 // Expone window.__pizarraCalcado = { analizar, insertar, dibujarVista, MAX_TRAZOS }.
 (function () {
   "use strict";
@@ -24,6 +26,29 @@
   var LADOS = [300, 450, 650, 900, 1200];   // resolucion de trabajo segun el detalle (1..5)
   var EPS = [0.35, 0.6, 0.9, 1.4, 2.1];     // tolerancia de simplificacion segun el suavizado (0..4)
   var MAX_TRAZOS = 4000;
+  var LADO_TEXTO = 1500;   // resolucion para leer el texto
+  // letras para el texto reconocido; "base" es donde cae la linea de base dentro
+  // de la caja del texto (en fontSize), segun las metricas que usa Excalidraw
+  var LETRAS_TEXTO = {
+    normal: { id: 6, css: "Nunito", lh: 1.25, base: 0.954 },
+    mano: { id: 5, css: "Excalifont", lh: 1.25, base: 0.881 },
+  };
+  var medidor = document.createElement("canvas").getContext("2d");
+  function medirTexto(texto, tam, letra) {
+    medidor.font = tam + 'px "' + letra.css + '", sans-serif';
+    return medidor.measureText(texto).width;
+  }
+  // altura de una mayuscula, en fontSize
+  var altosDigito = {};
+  async function altoDigito(letra) {
+    if (altosDigito[letra.css]) return altosDigito[letra.css];
+    await document.fonts.load('100px "' + letra.css + '"', "H").catch(function () {});
+    medidor.font = '100px "' + letra.css + '", sans-serif';
+    var m = medidor.measureText("H");
+    var r = (m.actualBoundingBoxAscent + m.actualBoundingBoxDescent) / 100 || 0.7;
+    altosDigito[letra.css] = r;
+    return r;
+  }
 
   function rnd() { return Math.floor(Math.random() * 2147483647); }
   var LETRAS = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-";
@@ -48,7 +73,7 @@
     return promesa;
   }
 
-  function leerPixeles(img, el, lado) {
+  function leerPixeles(img, el, lado, maxK) {
     var nw = img.naturalWidth, nh = img.naturalHeight;
     var sx = 0, sy = 0, sw = nw, sh = nh, cr = el.crop;
     if (cr && cr.naturalWidth) {
@@ -56,7 +81,7 @@
       var fx = nw / cr.naturalWidth, fy = nh / cr.naturalHeight;
       sx = cr.x * fx; sy = cr.y * fy; sw = cr.width * fx; sh = cr.height * fy;
     }
-    var k = Math.min(2, lado / Math.max(sw, sh));
+    var k = Math.min(maxK || 2, lado / Math.max(sw, sh));
     var w = Math.max(8, Math.round(sw * k)), h = Math.max(8, Math.round(sh * k));
     var c = document.createElement("canvas");
     c.width = w; c.height = h;
@@ -69,13 +94,20 @@
   }
 
   // ------------------------------------------------------------ tinta / fondo
+  // el color mas frecuente de la imagen (no el del borde: la imagen puede tener
+  // un marco). Se cuentan colores redondeados y se promedia el grupo ganador.
   function colorDeFondo(d, w, h) {
-    var rs = [], gs = [], bs = [];
-    function sumar(i) { rs.push(d[i * 4]); gs.push(d[i * 4 + 1]); bs.push(d[i * 4 + 2]); }
-    for (var x = 0; x < w; x++) { sumar(x); sumar((h - 1) * w + x); }
-    for (var y = 1; y < h - 1; y++) { sumar(y * w); sumar(y * w + w - 1); }
-    function mediana(a) { a.sort(function (p, q) { return p - q; }); return a[a.length >> 1]; }
-    return [mediana(rs), mediana(gs), mediana(bs)];
+    var n = w * h, paso = Math.max(1, Math.floor(n / 200000));
+    var cuenta = new Uint32Array(4096), suma = new Float64Array(4096 * 3);
+    for (var i = 0; i < n; i += paso) {
+      var r = d[i * 4], g = d[i * 4 + 1], b = d[i * 4 + 2];
+      var k = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+      cuenta[k]++; suma[k * 3] += r; suma[k * 3 + 1] += g; suma[k * 3 + 2] += b;
+    }
+    var mejor = 0;
+    for (k = 1; k < 4096; k++) if (cuenta[k] > cuenta[mejor]) mejor = k;
+    var c = cuenta[mejor] || 1;
+    return [suma[mejor * 3] / c, suma[mejor * 3 + 1] / c, suma[mejor * 3 + 2] / c];
   }
 
   function desenfocar(v, w, h) {
@@ -316,36 +348,84 @@
     return "#" + c.map(function (v) { return ("0" + Math.round(v).toString(16)).slice(-2); }).join("");
   }
 
-  // ------------------------------------------------------------ analisis
-  // op: { sensibilidad: -50..50, detalle: 1..5, suavizado: 0..4, colores: bool }
-  async function analizar(el, archivo, op) {
-    var img = await cargar(el.fileId, archivo.dataURL);
-    var lado = LADOS[Math.max(0, Math.min(4, (op.detalle || 3) - 1))];
-    var lec = leerPixeles(img, el, lado), w = lec.w, h = lec.h, d = lec.datos, n = w * h, i;
-
+  // mascara de tinta: lo que se aleja del color del fondo, sin manchitas ni agujeritos
+  // nitida: sin desenfocar antes (para leer texto: si no, el punto de la i y las
+  // tildes se pegan a su letra)
+  function tinta(lec, op, lado, nitida) {
+    var w = lec.w, h = lec.h, d = lec.datos, n = w * h, i, x, y;
     var f = colorDeFondo(d, w, h);
-    var lumFondo = 0.299 * f[0] + 0.587 * f[1] + 0.114 * f[2];
     var dist = new Float32Array(n);
     for (i = 0; i < n; i++) {
       var dr = d[i * 4] - f[0], dg = d[i * 4 + 1] - f[1], db = d[i * 4 + 2] - f[2];
       dist[i] = Math.min(255, Math.sqrt(dr * dr + dg * dg + db * db));
     }
-    dist = desenfocar(dist, w, h);
+    if (!nitida) dist = desenfocar(dist, w, h);
     var umbral = Math.max(20, otsu(dist)) * (1 - (op.sensibilidad || 0) / 100);
     umbral = Math.max(6, Math.min(250, umbral));
-    var m = new Uint8Array(n), x, y;
+    var m = new Uint8Array(n);
     for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) { i = y * w + x; m[i] = dist[i] > umbral ? 1 : 0; }
-
-    // limpieza: agujeritos dentro de la tinta y manchitas sueltas
-    var area = lado * lado;
-    var maxAgujero = Math.max(3, Math.round(area * 0.000015));
-    var minMancha = Math.max(3, Math.round(area * 0.00001));
+    // los tamaños se miden como en la resolucion del calco
+    var esc = Math.max(1, Math.max(w, h) / lado), base = lado * lado * 0.00001 * esc * esc;
+    var maxAgujero = Math.max(3, Math.round(base * 1.5)), minMancha = Math.max(3, Math.round(base));
+    // para leer texto no se rellena nada (el ojo de la e) y solo se borran motas
+    if (nitida) { maxAgujero = 0; minMancha = 3; }
     zonas(m, w, h, 0, false, function (px, borde) {
       if (!borde && px.length <= maxAgujero) px.forEach(function (j) { m[j] = 1; });
     });
     zonas(m, w, h, 1, true, function (px) {
       if (px.length < minMancha) px.forEach(function (j) { m[j] = 0; });
     });
+    return { m: m, lumFondo: 0.299 * f[0] + 0.587 * f[1] + 0.114 * f[2] };
+  }
+
+  // ------------------------------------------------------------ analisis
+  // op: { sensibilidad: -50..50, detalle: 1..5, suavizado: 0..4, colores: bool,
+  //       texto: bool (reconocer texto), letra: "normal" | "mano" }
+  async function analizar(el, archivo, op) {
+    var img = await cargar(el.fileId, archivo.dataURL);
+    var lado = LADOS[Math.max(0, Math.min(4, (op.detalle || 3) - 1))];
+    var lec = leerPixeles(img, el, lado), w = lec.w, h = lec.h, d = lec.datos, n = w * h, i;
+
+    var t1 = tinta(lec, op, lado), m = t1.m, lumFondo = t1.lumFondo, x, y;
+
+    // texto reconocido (se borra de la mascara para no calcarlo). Se lee con mas
+    // resolucion que el calco: con letras de pocos pixeles no se reconoce nada.
+    var leidos = [];
+    if (op.texto && window.__pizarraGlifos) {
+      try {
+        var lt = leerPixeles(img, el, LADO_TEXTO, 2.5);
+        {
+          var mt = tinta(lt, op, lado, true).m, antes = new Uint8Array(mt), wt = lt.w, ht = lt.h;
+          leidos = await window.__pizarraGlifos.reconocer(mt, wt, ht, lt.datos);
+          var fs = w / wt;
+          leidos.forEach(function (t) { t.x0 *= fs; t.base *= fs; t.alto *= fs; });
+          // lo leido tambien se borra de la mascara del calco: un pixel se borra si
+          // en su zona de la imagen grande hay mas tinta leida que tinta que queda
+          if (leidos.length) {
+            for (y = 1; y < h - 1; y++) {
+              for (x = 1; x < w - 1; x++) {
+                i = y * w + x;
+                if (!m[i]) continue;
+                var bx0 = Math.max(0, Math.floor((x - 0.5) / fs)), bx1 = Math.min(wt - 1, Math.ceil((x + 1.5) / fs));
+                var by0 = Math.max(0, Math.floor((y - 0.5) / fs)), by1 = Math.min(ht - 1, Math.ceil((y + 1.5) / fs));
+                var leida = 0, queda = 0;
+                for (var yy = by0; yy <= by1; yy++) {
+                  for (var xx = bx0; xx <= bx1; xx++) {
+                    var q = yy * wt + xx;
+                    if (mt[q]) queda++; else if (antes[q]) leida++;
+                  }
+                }
+                if (leida && leida >= queda) m[i] = 0;
+              }
+            }
+            var minMancha = Math.max(3, Math.round(lado * lado * 0.00001));
+            zonas(m, w, h, 1, true, function (px) {
+              if (px.length < minMancha) px.forEach(function (j) { m[j] = 0; });
+            });
+          }
+        }
+      } catch (err) { leidos = []; }
+    }
 
     var dt = distancias(m, w, h);
     var sk = adelgazar(m, w, h);
@@ -413,7 +493,20 @@
       }
       return { pts: pts, ancho: ancho, color: color };
     });
-    return { w: w, h: h, trazos: trazos, demasiados: trazos.length > MAX_TRAZOS };
+    // el texto chico nunca llega al negro en la imagen: un gris oscuro es tinta comun
+    function colorDeTexto(rgb) {
+      var mx = Math.max(rgb[0], rgb[1], rgb[2]), mn = Math.min(rgb[0], rgb[1], rgb[2]);
+      return op.colores && !(mx < 150 && mx - mn < 40) ? colorDe(rgb) : TINTA;
+    }
+    var letra = LETRAS_TEXTO[op.letra] || LETRAS_TEXTO.normal, digito = await altoDigito(letra);
+    var textos = leidos.map(function (t) {
+      var tam = t.alto / digito;
+      return {
+        texto: t.texto, x0: t.x0, base: t.base, tam: tam, top: t.base - letra.base * tam,
+        ancho: medirTexto(t.texto, tam, letra), color: colorDeTexto(t.rgb), letra: letra,
+      };
+    });
+    return { w: w, h: h, trazos: trazos, textos: textos, demasiados: trazos.length + textos.length > MAX_TRAZOS };
   }
 
   // ------------------------------------------------------------ vista previa
@@ -438,6 +531,12 @@
       ctx.beginPath();
       t.pts.forEach(function (p, i) { (i ? ctx.lineTo : ctx.moveTo).call(ctx, p[0] * k, p[1] * k); });
       ctx.stroke();
+    });
+    ctx.textBaseline = "alphabetic";
+    (res.textos || []).forEach(function (t) {
+      ctx.fillStyle = t.color;
+      ctx.font = t.tam * k + 'px "' + t.letra.css + '", sans-serif';
+      ctx.fillText(t.texto, t.x0 * k, t.base * k);
     });
   }
 
@@ -494,6 +593,17 @@
         height: Math.max.apply(null, ys) - Math.min.apply(null, ys),
         strokeWidth: ancho, roundness: pts.length > 2 ? { type: 2 } : null,
         startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: null,
+      }));
+    });
+    (res.textos || []).forEach(function (t) {
+      var tam = Math.round(t.tam * esc * 10) / 10, L = t.letra;
+      var ancho = medirTexto(t.texto, tam, L), alto = tam * L.lh;
+      var c = P(t.x0 + t.ancho / 2, t.top + (t.tam * L.lh) / 2);
+      nuevos.push(base("text", {
+        x: c[0] - ancho / 2, y: c[1] - alto / 2, width: ancho, height: alto, angle: el.angle || 0,
+        strokeColor: t.color, groupIds: [gid], frameId: marco, customData: { pizarra: { tipo: "calcado" } },
+        text: t.texto, originalText: t.texto, fontSize: tam, fontFamily: L.id,
+        textAlign: "left", verticalAlign: "top", containerId: null, autoResize: true, lineHeight: L.lh,
       }));
     });
     if (!nuevos.length) return 0;

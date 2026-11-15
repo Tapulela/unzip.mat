@@ -70,15 +70,35 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   el tamaño. No requiere cambios en el bundle, solo el `<script>` en `index.html`.
 - Calcar una imagen (`app/calcado.js`, botón «Calcar» en la barra de la imagen
   seleccionada): convierte la imagen en trazos de la pizarra, sin internet. Toma como
-  fondo el color del borde de la imagen y como tinta lo que se aleja de él (sirve para
-  tinta sobre hoja blanca, tiza sobre pizarrón o tinta de color), la afina hasta su línea
-  central (Zhang-Suen) y cada trazo pasa a ser una línea con el grosor y el color medidos
-  (los puntos sueltos, un círculo relleno). Muestra una vista previa con «Sensibilidad»,
-  «Detalle» y «Suavizado», «Mantener los colores» y «Reemplazar la imagen». El calco va
-  agrupado al lado de la imagen (o en su lugar), con `customData.pizarra.tipo = "calcado"`;
-  Ctrl+Z lo deshace. Pensado para dibujos, esquemas y textos; el texto queda dibujado, no
-  como texto editable, y con fotos el resultado es pobre. Solo requiere el `<script>` en
-  `index.html` (antes de `imagenes.js`).
+  fondo el color más frecuente de la imagen (no el del borde: puede tener un marco) y como
+  tinta lo que se aleja de él (sirve para tinta sobre hoja blanca, tiza sobre pizarrón o
+  tinta de color), la afina hasta su línea central (Zhang-Suen) y cada trazo pasa a ser una
+  línea con el grosor y el color medidos (los puntos sueltos, un círculo relleno). Muestra
+  una vista previa con «Sensibilidad», «Detalle» y «Suavizado», «Mantener los colores» y
+  «Reemplazar la imagen». El calco va agrupado al lado de la imagen (o en su lugar), con
+  `customData.pizarra.tipo = "calcado"`; Ctrl+Z lo deshace. Pensado para dibujos, esquemas
+  y textos; con fotos el resultado es pobre. Solo requiere los `<script>` en `index.html`
+  (antes de `imagenes.js`).
+- Pasar a texto al calcar (`app/glifos.js`, opción «Pasar a texto lo que reconozca» del
+  panel de Calcar, activada por defecto): reconocimiento liviano por plantillas, sin
+  modelos entrenados ni descargas. Conoce letras de imprenta (con tildes, ñ y ü), dígitos,
+  `+ = ( ) [ ] < > / ∪ ∩ ¿ ? ¡ ! ; :`, y por su forma y su lugar en el renglón el punto, la
+  coma, el apóstrofo y el signo menos. Las plantillas se dibujan al usarlo por primera vez
+  en unas 20 fuentes (las de la pizarra, Liberation Sans y las comunes de Windows; las que
+  no están instaladas se saltean). El texto se lee sin desenfocar y a más resolución que
+  el calco (`LADO_TEXTO`). Pasos: las piezas chicas se pegan a la letra que tienen justo
+  arriba o abajo (punto de la i, tildes, ¿?¡!, dos puntos); cada renglón mide su línea de
+  base y la altura de mayúsculas (separando las alturas en minúsculas y altas); cada letra
+  se compara con las plantillas penalizando la diferencia de proporción, de lugar en el
+  renglón (o/O, p/P) y de cantidad de piezas (i/l); las manchas que no se parecen a nada se
+  prueban cortar en dos o tres letras pegadas (rt, ti); en una segunda pasada tienen una
+  pequeña ventaja las fuentes que más ganaron. Después, por el contexto de la palabra, se
+  corrigen l/I/1, o/O/0, S/5, U/∪, n/∩ e i/¡. Las letras chicas y altas pasan a
+  superíndice (x², n³), una raya con algo arriba y abajo es raya de fracción y se calca, y
+  una letra suelta tiene que tener el grosor de una letra (así una circunferencia no pasa
+  por «O»). Lo reconocido sale como texto (letra Normal o A mano) y lo demás se calca.
+  Anda bien con texto impreso o de captura de 18 px o más; con letra manuscrita casi no
+  reconoce nada, y la raíz cuadrada siempre queda dibujada.
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite
