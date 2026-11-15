@@ -359,6 +359,10 @@ ALGEBRA DE BOOLE (prototipo)
     - Cuando un cable cruza a otro sin estar unido, hace un pequeño salto
       (semicirculo). Donde estan unidos hay un punto.
     - Compuertas: AND, OR (de varias entradas), NOT, XOR y XNOR.
+    - Tamaño de las compuertas: "Altas" (crecen lo necesario para que
+      todos los cables entren en linea recta, sin pliegues), "Justas"
+      (compuertas chicas, con las entradas juntas; los cables se doblan en
+      escalera antes de entrar, sin cruzarse) o "Medianas" (a mitad de camino).
     - Al animar: primero las variables y sus NOT, despues las compuertas de
       izquierda a derecha con sus cables, y la salida.
   - Negacion: A' o ¬A. Producto: AB o A·B.

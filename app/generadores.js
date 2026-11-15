@@ -1486,9 +1486,14 @@
   // izquierda a derecha, cada una con los cables que le llegan; la salida al final.
   // negar(v): no se usa (las negaciones se dibujan con compuertas NOT)
   // universal: "nand" o "nor" para dibujarlo solo con ese tipo de compuerta
-  function dibujarCircuito(arbol, vars, etiqueta, color, tam, fuente, agregar, negar, universal) {
+  // altura: de 0 a 1, cuanto crecen las compuertas para que no haya pliegues
+  //   (1: todas las entradas en linea recta; 0: compuertas chicas y los cables
+  //   se doblan en escalera antes de entrar)
+  function dibujarCircuito(arbol, vars, etiqueta, color, tam, fuente, agregar, negar, universal, altura) {
+    if (altura == null) altura = 1;
     var lh = tam * fuente.lh;
     var SLOT = Math.max(26, tam * 1.3), PASO_VAR = Math.max(40, tam * 2), SEP = 40, GAP = 40;
+    var PIN = 14, PASO_PLIEGUE = 9; // separacion de entradas juntas y de los dobleces
     var R_SALTO = 6, R_PUNTO = 3.5, Y0 = 24, MARGEN = 6, cable = { strokeWidth: 1.5 };
 
     // copia del arbol (sin nodos compartidos), con cada variable negada como
@@ -1523,8 +1528,18 @@
       nd.rel = (k > 1 && (k - 1) * d > largo * 1.5)
         ? junto.map(function (p) { return p - largo / 2; }) // pegados, si equidistantes agranda mucho
         : hs.map(function (h, j) { return (j - (k - 1) / 2) * d; });
-      var span = nd.rel[k - 1] - nd.rel[0];
+      // donde entra cada cable a la compuerta: con altura 1, a la altura de su
+      // hijo (sin pliegues); con altura 0, entradas juntas cada PIN y el cable
+      // se dobla; en el medio, interpolado
+      nd.pin = nd.rel.map(function (p, j) { return altura * p + (1 - altura) * (j - (k - 1) / 2) * PIN; });
+      var span = nd.pin[k - 1] - nd.pin[0];
       nd.h = nd.tipo === "not" ? 28 : k === 1 ? 36 : Math.max(36, span + 18);
+      // cables que se doblan hacia abajo y hacia arriba (para el ancho del hueco)
+      nd.bajan = nd.suben = 0;
+      nd.pin.forEach(function (p, j) {
+        if (p - nd.rel[j] > 0.5) nd.bajan++;
+        else if (nd.rel[j] - p > 0.5) nd.suben++;
+      });
       nd.arriba = nd.h / 2 + MARGEN;
       nd.abajo = nd.h / 2 + MARGEN;
       hs.forEach(function (h, j) {
@@ -1569,7 +1584,11 @@
       var ancho = Math.max.apply(null, (porNivel[nv] || []).map(function (nd) {
         return compuerta(nd.tipo, 0, 0, nd.h, nada).xSalida;
       }).concat([0]));
-      colX[nv + 1] = colX[nv] + ancho + GAP;
+      // el hueco antes de la columna siguiente deja lugar a los dobleces
+      var pliegues = Math.max.apply(null, (porNivel[nv + 1] || []).map(function (nd) {
+        return Math.max(nd.bajan, nd.suben);
+      }).concat([0]));
+      colX[nv + 1] = colX[nv] + ancho + Math.max(GAP, PASO_PLIEGUE * (pliegues + 1) + 14);
     }
 
     // segmentos de cable: { pts: [[x, y]...], color }. Se arman todos antes de
@@ -1587,8 +1606,18 @@
           gates.push({ forma: forma, cables: [c1, c2], union: [xu, nd.y] });
           return;
         }
-        var propios = nd.hijos.map(function (hj) {
-          var c = { pts: [[hj.xSalida, hj.y], [g.pin(hj.y), hj.y]], desde: hj };
+        // dobleces en escalera, sin cruces: de los que bajan, el de mas arriba
+        // se dobla mas cerca de la compuerta; de los que suben, el de mas abajo
+        var kk = nd.hijos.length, iBaja = 0, iSube = 0, rango = [];
+        nd.hijos.forEach(function (hj, j) { if (nd.pin[j] - nd.rel[j] > 0.5) rango[j] = iBaja++; });
+        for (var j = kk - 1; j >= 0; j--) if (nd.rel[j] - nd.pin[j] > 0.5) rango[j] = iSube++;
+        var propios = nd.hijos.map(function (hj, j) {
+          var py = nd.y + nd.pin[j], c;
+          if (rango[j] == null) c = { pts: [[hj.xSalida, hj.y], [g.pin(hj.y), hj.y]], desde: hj };
+          else {
+            var xd = gx - PASO_PLIEGUE * (rango[j] + 1);
+            c = { pts: [[hj.xSalida, hj.y], [xd, hj.y], [xd, py], [g.pin(py), py]], desde: hj };
+          }
           cables.push(c);
           return c;
         });
@@ -2269,7 +2298,8 @@
           tipos.forEach(function (U) {
             var expr = U ? universalABoole(aUniversal(arbol, U)) : arbol;
             var c = colocar(function (ag) {
-              dibujarCircuito(arbol, vars, nombre + " = " + imprimirBoole(expr, fmt), color, tam, fuente, ag, fmt.neg, U);
+              dibujarCircuito(arbol, vars, nombre + " = " + imprimirBoole(expr, fmt), color, tam, fuente, ag, fmt.neg, U,
+                op.compuertas === "justas" ? 0 : op.compuertas === "medianas" ? 0.5 : 1);
             }, ox, y, "Circuito lógico" + (U ? " solo con " + U.toUpperCase() : "") + cual);
             y += c.h + 40;
           });
@@ -7852,7 +7882,7 @@
         nVars: 3, nombres: "A, B, C, D, E",
         tabla: true, minterminos: true, maxiterminos: false, karnaugh: true, agrupar: "min",
         simplificar: true, indices: true, circuito: true, soloNand: false, soloNor: false, circuitoDe: "ambas",
-        negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal", titulos: true,
+        compuertas: "altas", negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal", titulos: true,
       },
       contenido: ["filas", "nVars", "nombres"],
       ejemplo: {
@@ -7901,6 +7931,8 @@
         ui.chk("Circuito solo con compuertas NOR", "soloNor", true);
         if (op.circuito || op.soloNand || op.soloNor) {
           ui.seg("Circuito de", "circuitoDe", [["escrita", "La escrita"], ["simple", "La simplificada"], ["ambas", "Ambas"]]);
+          ui.seg("Compuertas", "compuertas", [["altas", "Altas (sin pliegues)"], ["medianas", "Medianas"],
+            ["justas", "Justas (con pliegues)"]]);
         }
         ui.seg("Negación", "negacion", [["prima", "A'"], ["barra", "¬A"]]);
         ui.seg("Producto", "producto", [["junto", "AB"], ["punto", "A·B"]]);
