@@ -8,6 +8,8 @@
 //    guardado, tamaño original, cantidad de copias, etc.
 //  - «Comprimir»: comprime el archivo de la imagen y pasa TODAS sus copias al
 //    archivo comprimido (window.__pizarraComprimirArchivo, de compresion.js).
+//  - «Calcar»: convierte la imagen en trazos de la pizarra, sin internet
+//    (window.__pizarraCalcado, de calcado.js), con vista previa y ajustes.
 // La barra se esconde mientras se arrastra, se cambia el tamaño, se recorta, etc.
 // Usa window.__pizarraAPI (expuesta por el bundle).
 (function () {
@@ -31,7 +33,20 @@
     "#pz-imagen .info td{padding:1px 0;vertical-align:top}" +
     "#pz-imagen .info td:first-child{opacity:.7;padding-right:12px;white-space:nowrap}" +
     "#pz-imagen .info .nota{font-size:12px;opacity:.7;margin-top:4px;max-width:300px}" +
-    "#pz-imagen.oscuro .barra,#pz-imagen.oscuro .info{background:#232329;color:#e3e3e8;border-color:#3a3a43}" +
+    "#pz-imagen .calco{display:none;pointer-events:auto;background:#fff;color:#1b1b1f;border:1px solid #e0dfe6;" +
+    "border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,.12);padding:8px 10px;width:300px;box-sizing:border-box}" +
+    "#pz-imagen .calco canvas{display:block;width:100%;border:1px solid #e0dfe6;border-radius:6px;box-sizing:border-box}" +
+    "#pz-imagen .calco .estado{font-size:12px;opacity:.75;margin:4px 0 6px;min-height:17px}" +
+    "#pz-imagen .calco .estado.mal{opacity:1;color:#c92a2a}" +
+    "#pz-imagen .calco label{display:flex;align-items:center;gap:8px;margin:3px 0}" +
+    "#pz-imagen .calco label span{width:82px;flex:none}" +
+    "#pz-imagen .calco input[type=range]{flex:1;min-width:0;accent-color:#6965db}" +
+    "#pz-imagen .calco input[type=checkbox]{margin:0 2px;accent-color:#6965db}" +
+    "#pz-imagen .calco .hacer{display:block;width:100%;margin-top:6px;background:#6965db;color:#fff;padding:6px}" +
+    "#pz-imagen .calco .hacer:hover{background:#5b57d1}" +
+    "#pz-imagen .calco .hacer:disabled{background:#6965db}" +
+    "#pz-imagen.oscuro .calco canvas{filter:invert(93%) hue-rotate(180deg);border-color:#3a3a43}" +
+    "#pz-imagen.oscuro .barra,#pz-imagen.oscuro .info,#pz-imagen.oscuro .calco{background:#232329;color:#e3e3e8;border-color:#3a3a43}" +
     "#pz-imagen.oscuro button:hover{background:#31303b}" +
     "#pz-imagen.oscuro button.activo{background:#403e6a;color:#d0ceff}";
 
@@ -109,7 +124,7 @@
 
   // ---------------------------------------------------------------- estado
   var estado = {
-    fileId: null, claveSel: "", verCopias: false, info: false, comprimiendo: false,
+    fileId: null, claveSel: "", verCopias: false, info: false, calcar: false, comprimiendo: false,
     sel: null,          // { fileId, elementos } o null
     copias: [],         // elementos que usan el mismo archivo que la seleccion
     version: 0,         // cambia con cada escena nueva (para redibujar)
@@ -117,7 +132,7 @@
 
   // ---------------------------------------------------------------- barra
   var barra = {
-    el: null, bVer: null, bInfo: null, bComp: null, elInfo: null, firmaInfo: "", firma: "",
+    el: null, bVer: null, bInfo: null, bComp: null, bCalc: null, elInfo: null, firmaInfo: "", firma: "",
     crear: function () {
       var css = document.createElement("style");
       css.textContent = ESTILO;
@@ -129,19 +144,39 @@
         '<button class="ver" title="Une con líneas todas las copias de esta imagen (las líneas no se guardan)">Ver copias</button>' +
         '<button class="inf" title="Peso y datos de la imagen">Información</button>' +
         '<button class="comp" title="Comprime el archivo de la imagen; cambian todas sus copias. Ctrl+Z lo deshace">Comprimir</button>' +
+        '<button class="calc" title="Convierte la imagen en trazos de la pizarra (sin internet)">Calcar</button>' +
         "</div>" +
-        '<div class="info"></div>';
+        '<div class="info"></div>' +
+        '<div class="calco">' +
+        "<canvas></canvas>" +
+        '<div class="estado"></div>' +
+        '<label title="Más sensibilidad: toma como tinta también los trazos claros"><span>Sensibilidad</span>' +
+        '<input type="range" class="sens" min="-50" max="50" step="5"></label>' +
+        '<label title="Más detalle: se analiza la imagen a mayor resolución (más trazos, más lento)"><span>Detalle</span>' +
+        '<input type="range" class="det" min="1" max="5" step="1"></label>' +
+        '<label title="Más suavizado: menos puntos por trazo, curvas más limpias"><span>Suavizado</span>' +
+        '<input type="range" class="suav" min="0" max="4" step="1"></label>' +
+        '<label><input type="checkbox" class="col"> Mantener los colores</label>' +
+        '<label title="El calco va en el lugar de la imagen y la imagen se borra (Ctrl+Z lo deshace)">' +
+        '<input type="checkbox" class="reemp"> Reemplazar la imagen</label>' +
+        '<button class="hacer">Calcar</button>' +
+        "</div>";
       document.body.appendChild(el);
       this.el = el;
       this.bVer = el.querySelector(".ver");
       this.bInfo = el.querySelector(".inf");
       this.bComp = el.querySelector(".comp");
       this.elInfo = el.querySelector(".info");
+      this.bCalc = el.querySelector(".calc");
+      calco.crear(el.querySelector(".calco"));
       var self = this;
-      // que los clics en la barra no lleguen al lienzo (y no deseleccionen)
+      // que los clics en la barra no lleguen al lienzo (y no deseleccionen), y que
+      // las teclas en los controles (flechas, etc.) no muevan la imagen
       el.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+      el.addEventListener("keydown", function (ev) { if (ev.key !== "Escape") ev.stopPropagation(); });
+      this.bCalc.onclick = function () { estado.calcar = !estado.calcar; if (estado.calcar) estado.info = false; self.refrescar(); };
       this.bVer.onclick = function () { estado.verCopias = !estado.verCopias; capa.firma = ""; self.pintar(); };
-      this.bInfo.onclick = function () { estado.info = !estado.info; self.refrescar(); };
+      this.bInfo.onclick = function () { estado.info = !estado.info; if (estado.info) estado.calcar = false; self.refrescar(); };
       this.bComp.onclick = async function () {
         if (!estado.sel || estado.comprimiendo || !window.__pizarraComprimirArchivo) return;
         estado.comprimiendo = true;
@@ -165,7 +200,7 @@
       var visible = s && !ocupado(st);
       var firma = visible ? [st.scrollX, st.scrollY, st.zoom.value, st.offsetLeft, st.offsetTop, st.theme,
         st.viewModeEnabled, window.innerWidth, window.innerHeight, estado.version, estado.claveSel,
-        estado.verCopias, estado.info, estado.comprimiendo, this.firmaInfo].join("|") : "oculta";
+        estado.verCopias, estado.info, estado.calcar, estado.comprimiendo, this.firmaInfo].join("|") : "oculta";
       if (firma === this.firma) return;
       this.firma = firma;
       if (!visible) { this.el.style.display = "none"; return; }
@@ -180,8 +215,13 @@
       this.bComp.style.display = st.viewModeEnabled || !window.__pizarraComprimirArchivo ? "none" : "";
       this.bComp.disabled = estado.comprimiendo;
       this.bComp.textContent = estado.comprimiendo ? "Comprimiendo…" : "Comprimir";
+      var calcar = !st.viewModeEnabled && !!window.__pizarraCalcado;
+      this.bCalc.style.display = calcar ? "" : "none";
+      this.bCalc.classList.toggle("activo", estado.calcar && calcar);
       this.elInfo.style.display = estado.info ? "block" : "none";
       if (estado.info) this.pintarInfo(A, s, n);
+      calco.el.style.display = estado.calcar && calcar ? "block" : "none";
+      if (estado.calcar && calcar) calco.revisar(A, s);
       this.el.style.display = "flex";
       this.ubicar(A, st, s);
     },
@@ -245,6 +285,100 @@
       });
       this.el.style.left = Math.round(izq) + "px";
       this.el.style.top = Math.round(arr) + "px";
+    },
+  };
+
+  // ---------------------------------------------------------------- calcado
+  // ajustes del calco (se recuerdan mientras la pizarra esta abierta)
+  var opCalco = { sensibilidad: 0, detalle: 3, suavizado: 2, colores: true, reemplazar: false };
+
+  var calco = {
+    el: null, lienzo: null, elEstado: null, bHacer: null,
+    clave: "", turno: 0, res: null, elementoId: null, temporizador: null,
+    crear: function (el) {
+      this.el = el;
+      this.lienzo = el.querySelector("canvas");
+      this.elEstado = el.querySelector(".estado");
+      this.bHacer = el.querySelector(".hacer");
+      var self = this;
+      [["sens", "sensibilidad"], ["det", "detalle"], ["suav", "suavizado"]].forEach(function (par) {
+        var input = el.querySelector("." + par[0]);
+        input.value = opCalco[par[1]];
+        input.oninput = function () { opCalco[par[1]] = Number(input.value); barra.refrescar(); };
+      });
+      [["col", "colores"], ["reemp", "reemplazar"]].forEach(function (par) {
+        var input = el.querySelector("." + par[0]);
+        input.checked = opCalco[par[1]];
+        input.onchange = function () { opCalco[par[1]] = input.checked; barra.refrescar(); };
+      });
+      this.bHacer.onclick = function () { self.hacer(); };
+    },
+
+    aviso: function (texto, mal) {
+      this.elEstado.textContent = texto;
+      this.elEstado.classList.toggle("mal", !!mal);
+    },
+
+    // vuelve a analizar la imagen si cambio algo (la imagen, su recorte o los ajustes)
+    revisar: function (A, s) {
+      var e = s.elementos[0], f = A.getFiles()[s.fileId];
+      if (!f || !f.dataURL) {
+        this.clave = ""; this.res = null;
+        this.aviso("La imagen todavía no se cargó.");
+        this.boton();
+        return;
+      }
+      var cr = e.crop;
+      var clave = [e.id, s.fileId, f.dataURL.length, Math.round(e.width), Math.round(e.height),
+        cr ? [cr.x, cr.y, cr.width, cr.height].join(",") : "", opCalco.sensibilidad, opCalco.detalle,
+        opCalco.suavizado, opCalco.colores].join("|");
+      if (clave === this.clave) { this.boton(); return; }
+      this.clave = clave;
+      this.res = null;
+      this.boton();
+      var turno = ++this.turno, self = this;
+      // el lienzo de la vista previa toma la forma de la imagen
+      var dpr = window.devicePixelRatio || 1, W = 278;
+      var H = Math.max(60, Math.min(220, Math.round((W * Math.abs(e.height)) / Math.max(1, Math.abs(e.width)))));
+      if (this.lienzo.width !== Math.round(W * dpr) || this.lienzo.height !== Math.round(H * dpr)) {
+        this.lienzo.width = Math.round(W * dpr);
+        this.lienzo.height = Math.round(H * dpr);
+        this.lienzo.style.height = H + "px";
+      }
+      this.aviso("Calculando…");
+      clearTimeout(this.temporizador);
+      this.temporizador = setTimeout(function () {
+        window.__pizarraCalcado.analizar(e, f, opCalco).then(function (res) {
+          if (turno !== self.turno) return;
+          self.res = res;
+          self.elementoId = e.id;
+          window.__pizarraCalcado.dibujarVista(self.lienzo, res);
+          var n = res.trazos.length;
+          if (!n) self.aviso("No se encontraron trazos. Probá con más sensibilidad.", true);
+          else if (res.demasiados) self.aviso(n + " trazos: son demasiados. Bajá el detalle o la sensibilidad.", true);
+          else self.aviso(n === 1 ? "1 trazo" : n + " trazos");
+          self.boton();
+          barra.refrescar();
+        }).catch(function (err) {
+          if (turno !== self.turno) return;
+          self.aviso(err && err.message ? err.message : "No se pudo calcar la imagen.", true);
+        });
+      }, 150);
+    },
+
+    boton: function () {
+      this.bHacer.disabled = !this.res || !this.res.trazos.length || this.res.demasiados;
+      this.bHacer.textContent = opCalco.reemplazar ? "Calcar y reemplazar la imagen" : "Calcar al lado de la imagen";
+    },
+
+    hacer: function () {
+      var A = api(), res = this.res, id = this.elementoId;
+      if (!A || !res || res.demasiados) return;
+      var el = A.getSceneElements().filter(function (e) { return e.id === id; })[0];
+      if (!el) return;
+      window.__pizarraCalcado.insertar(A, el, res, opCalco);
+      estado.calcar = false;
+      this.clave = "";
     },
   };
 
@@ -332,6 +466,7 @@
     if (!s || (s.fileId !== estado.fileId && clave !== estado.claveSel)) {
       estado.verCopias = false;
       estado.info = false;
+      estado.calcar = false;
     }
     estado.sel = s;
     estado.copias = s ? copiasDe(A, s.fileId) : [];

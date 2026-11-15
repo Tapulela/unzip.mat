@@ -68,6 +68,17 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   al comprimido, con `window.__pizarraComprimirArchivo(fileId)` de `compresion.js`;
   Ctrl+Z lo deshace). La barra se esconde mientras se arrastra, se recorta o se cambia
   el tamaño. No requiere cambios en el bundle, solo el `<script>` en `index.html`.
+- Calcar una imagen (`app/calcado.js`, botón «Calcar» en la barra de la imagen
+  seleccionada): convierte la imagen en trazos de la pizarra, sin internet. Toma como
+  fondo el color del borde de la imagen y como tinta lo que se aleja de él (sirve para
+  tinta sobre hoja blanca, tiza sobre pizarrón o tinta de color), la afina hasta su línea
+  central (Zhang-Suen) y cada trazo pasa a ser una línea con el grosor y el color medidos
+  (los puntos sueltos, un círculo relleno). Muestra una vista previa con «Sensibilidad»,
+  «Detalle» y «Suavizado», «Mantener los colores» y «Reemplazar la imagen». El calco va
+  agrupado al lado de la imagen (o en su lugar), con `customData.pizarra.tipo = "calcado"`;
+  Ctrl+Z lo deshace. Pensado para dibujos, esquemas y textos; el texto queda dibujado, no
+  como texto editable, y con fotos el resultado es pobre. Solo requiere el `<script>` en
+  `index.html` (antes de `imagenes.js`).
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite
