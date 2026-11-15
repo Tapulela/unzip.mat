@@ -51,6 +51,14 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   la deshace. Requiere un ítem en el menú principal del build (`assets/index-*.js`),
   después de `Bt.DefaultItems.SaveAsImage`, que llama a
   `window.__pizarraComprimirImagenes()`.
+- Al pegar, arrastrar o insertar una imagen (PNG, JPEG, WebP o BMP), se achica a 1440 px
+  de lado como máximo (lo mismo que ya hacía Excalidraw) y se comprime igual que arriba,
+  antes de calcular su id; si no queda al menos un 10 % más chica, se usa la original.
+  Se activa o desactiva en Preferencias → «Comprimir imágenes al pegar» (activada por
+  defecto). Cambios en el build (`assets/index-*.js`): al empezar `initializeImage`, antes
+  de `const s=i.type`, se agrega
+  `window.__pizarraComprimirAlPegar&&(i=await window.__pizarraComprimirAlPegar(i));`, y
+  el interruptor es otro `OPS` en el submenú Preferencias.
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite

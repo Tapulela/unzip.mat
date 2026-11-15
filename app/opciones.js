@@ -4,6 +4,7 @@
 //  - window.__ocultarPunteros: no dibuja los cursores de otros colaboradores
 //    (la URL con ?sinpuntero sigue forzando este ocultamiento).
 //  - window.__comprimirPng: comprime los PNG al exportar o copiar (compresion.js).
+//  - window.__comprimirAlPegar: comprime las imagenes al pegarlas (compresion.js).
 (function () {
   var OPCIONES = [
     { clave: "pizarra-ocultar-seleccion-remota", bandera: "__ocultarSeleccionRemota",
@@ -13,6 +14,9 @@
     // Ver compresion.js: guarda los PNG exportados/copiados con paleta de colores.
     { clave: "pizarra-comprimir-png", bandera: "__comprimirPng",
       texto: "Comprimir imágenes PNG", defecto: true },
+    // Ver compresion.js: comprime las imagenes al pegarlas o insertarlas.
+    { clave: "pizarra-comprimir-al-pegar", bandera: "__comprimirAlPegar",
+      texto: "Comprimir imágenes al pegar", defecto: true },
   ];
 
   OPCIONES.forEach(function (o) {

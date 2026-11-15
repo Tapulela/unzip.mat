@@ -411,13 +411,16 @@
   }
 
   // Devuelve { blob, tipo, detalle } o null si no conviene cambiarla.
-  async function comprimirArchivo(archivo, anchoVisible) {
-    var antes = bytesDeDataURL(archivo.dataURL);
-    var img = await cargarImagen(archivo.dataURL);
+  // src: dataURL o URL de la imagen; antes: bytes del archivo original;
+  // anchoVisible: ancho mas grande con que se muestra (0 = no achicar por eso);
+  // ladoMax: lado mas largo permitido (0 = sin limite).
+  async function comprimirArchivo(src, antes, anchoVisible, ladoMax) {
+    var img = await cargarImagen(src);
     var w = img.naturalWidth, h = img.naturalHeight;
     if (!w || !h) return null;
     var escala = 1;
     if (anchoVisible && w > anchoVisible * ESCALA_MAXIMA) escala = (anchoVisible * ESCALA_MAXIMA) / w;
+    if (ladoMax && Math.max(w, h) * escala > ladoMax) escala = ladoMax / Math.max(w, h);
     var cw = Math.max(1, Math.round(w * escala)), chh = Math.max(1, Math.round(h * escala));
     var canvas = document.createElement("canvas");
     canvas.width = cw;
@@ -485,7 +488,7 @@
       for (var i = 0; i < ids.length; i++) {
         var p = porArchivo[ids[i]];
         try {
-          var r = await comprimirArchivo(p.archivo, p.recortada ? 0 : p.ancho);
+          var r = await comprimirArchivo(p.archivo.dataURL, bytesDeDataURL(p.archivo.dataURL), p.recortada ? 0 : p.ancho, 0);
           if (!r) continue;
           var id = await idDeArchivo(r.blob);
           if (id === ids[i]) continue;
@@ -518,6 +521,36 @@
         ": " + kb(antes) + " → " + kb(despues) + " (" + Math.round((1 - despues / antes) * 100) + "% menos). Ctrl+Z la deshace.");
     } finally {
       comprimiendo = false;
+    }
+  };
+
+  // ---------- Imagenes pegadas o insertadas ----------
+  // El bundle llama a window.__pizarraComprimirAlPegar(file) al empezar initializeImage
+  // (pegar, arrastrar o la herramienta de imagen), antes de calcular el id del archivo.
+  // Se achica al mismo lado maximo que usa Excalidraw (LADO_MAX_PEGAR) y se comprime
+  // como arriba; si no queda al menos un AHORRO_MINIMO mas chica, se deja la original.
+  // La bandera window.__comprimirAlPegar la define opciones.js (Preferencias).
+  var LADO_MAX_PEGAR = 1440;
+  var TIPOS_PEGAR = { "image/png": 1, "image/jpeg": 1, "image/webp": 1, "image/bmp": 1 };
+  window.__pizarraComprimirAlPegar = async function (file) {
+    if (!window.__comprimirAlPegar || !file || !TIPOS_PEGAR[file.type] ||
+        typeof CompressionStream === "undefined") return file;
+    var url = null;
+    try {
+      var t0 = performance.now();
+      url = URL.createObjectURL(file);
+      var r = await comprimirArchivo(url, file.size, 0, LADO_MAX_PEGAR);
+      if (!r) return file;
+      var ext = r.tipo === "image/jpeg" ? ".jpg" : r.tipo === "image/webp" ? ".webp" : ".png";
+      var nombre = (file.name || "imagen").replace(/\.[^.]*$/, "") + ext;
+      console.info("compresion.js: imagen pegada " + kb(file.size) + " → " + kb(r.blob.size) +
+        " (" + r.detalle + ") en " + Math.round(performance.now() - t0) + " ms");
+      return new File([r.blob], nombre, { type: r.tipo });
+    } catch (e) {
+      console.warn("compresion.js: no se pudo comprimir la imagen pegada", e);
+      return file;
+    } finally {
+      if (url) URL.revokeObjectURL(url);
     }
   };
 
