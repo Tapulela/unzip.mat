@@ -205,6 +205,22 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.
 
+- Hojas A4 (`app/hojas.js`), para armar material que se va a imprimir (por ejemplo,
+  solucionarios): en el menú de Generadores, sección «Impresión» → «Hojas A4». «Agregar
+  hoja» crea un marco (frame) nativo con proporción A4 vertical llamado «Hoja N», a la
+  derecha de la última (la primera, en el centro de la vista sin taparse con lo que ya
+  hay). Escala: al 100 % la hoja mide una A4 a 96 ppp (794 × 1123) y el texto M sale de
+  unos 15 pt; al 80 % (predeterminada) mide 1,25 veces más y el texto M sale de unos
+  12 pt. Los márgenes (arriba, abajo, lomo y afuera, en mm; predeterminados 20, 20, 25
+  y 15) y el doble faz (el lomo va a la izquierda en las hojas impares y a la derecha
+  en las pares) se guardan en `customData.pizarraHoja` de cada marco, así los ve toda
+  la sala. Las guías de los márgenes no son elementos: se dibujan en una capa encima
+  del lienzo, así que no se mueven ni se imprimen. Lo que toca una hoja y se sale del
+  área útil se marca en rojo y el panel lo lista («Ver» lo selecciona). «Aplicar a
+  todas» pasa la escala, los márgenes y el doble faz del panel a las hojas existentes;
+  «Renumerar» las numera por su lugar (por filas, de arriba abajo y de izquierda a
+  derecha). La exportación a PDF todavía no está.
+
 - Los archivos `.excalidraw` (y la escena incrustada en PNG/SVG) se guardan sin los
   elementos borrados. Excalidraw los conserva marcados con `isDeleted` para el
   deshacer y la colaboración, pero en el archivo solo ocupan lugar (un archivo
@@ -263,6 +279,7 @@ Dibujar, guardar, exportar y todos los generadores funcionan igual.
 
 - `app/` — build compilado de Excalidraw (con las modificaciones).
 - `app/entorno.js` — detecta si hay servidor y oculta la marca y los enlaces de Excalidraw/Excalidraw+.
+- `app/hojas.js` — hojas A4 con márgenes para preparar material imprimible.
 - `servidor.js` — servidor HTTP + Socket.IO.
 - `build/armar-exe.mjs` — arma `dist/unzip.mat.exe` (`npm run exe`).
 - `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).

@@ -8720,6 +8720,8 @@
     simpConjuntos: { nombre: "Simplificación paso a paso", panel: "Simplificación: teoría de conjuntos", icono: "=" },
     plantillas: { nombre: "Plantillas", icono: "≡" },
     razonamientos: { nombre: "Razonamiento deductivo", icono: "∴" },
+    // no es un generador: abre el panel de hojas.js
+    hojas: { nombre: "Hojas A4", icono: "A4", externo: true },
   };
   // como se ordenan en el menu: los sueltos arriba y despues las secciones,
   // con la unidad del programa de la materia a la que pertenecen
@@ -8731,6 +8733,7 @@
     { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
     { grupo: "Números complejos", unidad: 7, items: ["complejos", "raicesC"] },
+    { grupo: "Impresión", items: ["hojas"] },
   ];
 
   // ------------------------------------------------- insertar / reemplazar
@@ -9395,6 +9398,7 @@
       this.abierto = abrir === undefined ? !this.abierto : abrir;
       this.el.style.display = this.abierto ? "" : "none";
       if (!this.abierto) selectorColor.cerrar();
+      else if (window.__pizarraHojas) window.__pizarraHojas.cerrar();
       boton.actualizar();
       if (this.abierto) seleccionado = undefined, seleccionCambio();
     },
@@ -9523,6 +9527,12 @@
     },
     elegir: function (t) {
       this.alternar(false);
+      if (MENU_GEN[t].externo) {
+        // panel de otro archivo (hojas.js), en el mismo lugar que el de generadores
+        if (panel.abierto) panel.alternar(false);
+        if (window.__pizarraHojas) window.__pizarraHojas.abrir();
+        return;
+      }
       if (t !== panel.tipo) {
         clearTimeout(panel.temporizador);
         vinculo = null; // el dibujo seleccionado es de otro tipo
