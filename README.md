@@ -219,7 +219,16 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   área útil se marca en rojo y el panel lo lista («Ver» lo selecciona). «Aplicar a
   todas» pasa la escala, los márgenes y el doble faz del panel a las hojas existentes;
   «Renumerar» las numera por su lugar (por filas, de arriba abajo y de izquierda a
-  derecha). La exportación a PDF todavía no está.
+  derecha). «Imprimir / PDF» exporta cada hoja como SVG con la exportación de
+  Excalidraw (recortada al marco, en tema claro, con fuentes e imágenes incrustadas;
+  entran los elementos que tocan la hoja y no están en otro marco, aunque no estén
+  enganchados al marco), las arma en un iframe con `@page` A4 sin márgenes (una página
+  por hoja, opcionalmente numerada) y abre el diálogo de impresión, desde donde se
+  imprime o se guarda como PDF (papel A4, márgenes «Ninguno», escala 100 %). El
+  «Título» del panel es el nombre que propone el PDF. Requiere un cambio en el build
+  (`assets/index-*.js`): `window.__pizarraAPI=this.api,` pasa a ser
+  `window.__pizarraAPI=this.api,window.__pizarraSvg=xE,` (`xE` es la `exportToSvg`
+  interna, la que usa «Exportar imagen» → SVG; el nombre cambia si se recompila).
 
 - Los archivos `.excalidraw` (y la escena incrustada en PNG/SVG) se guardan sin los
   elementos borrados. Excalidraw los conserva marcados con `isDeleted` para el

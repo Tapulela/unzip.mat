@@ -9,6 +9,8 @@
 //    y a la derecha en las pares.
 //  - Los elementos que tocan una hoja y se salen del area util se marcan en rojo,
 //    y el panel los lista.
+//  - «Imprimir / PDF» exporta cada hoja como SVG y abre el dialogo de impresion
+//    con una pagina A4 por hoja (de ahi se imprime o se guarda como PDF).
 // El panel se abre desde el menu de Generadores (seccion «Impresión»).
 // Usa window.__pizarraAPI (expuesta por el bundle). Expone window.__pizarraHojas.
 (function () {
@@ -22,6 +24,8 @@
     margenes: { sup: 20, inf: 20, ext: 15, lomo: 25 },
     dobleFaz: true,
     guias: true,
+    numerar: true,                         // numero de pagina abajo, al imprimir
+    titulo: "",                            // titulo del documento (nombre del PDF)
   };
   var ESCALAS = [
     { v: 1, texto: "100 %", nota: "el texto M (20) sale de unos 15 pt" },
@@ -40,6 +44,8 @@
       if (g.margenes) for (var k in op.margenes) if (isFinite(g.margenes[k])) op.margenes[k] = +g.margenes[k];
       if (typeof g.dobleFaz === "boolean") op.dobleFaz = g.dobleFaz;
       if (typeof g.guias === "boolean") op.guias = g.guias;
+      if (typeof g.numerar === "boolean") op.numerar = g.numerar;
+      if (typeof g.titulo === "string") op.titulo = g.titulo;
     }
   } catch (e) {}
   function guardar() { try { localStorage.setItem(CLAVE, JSON.stringify(op)); } catch (e) {} }
@@ -221,6 +227,123 @@
     A.updateScene({ elements: todos, captureUpdate: "IMMEDIATELY" });
   }
 
+  // ------------------------------------------------------------- impresion
+  // Cada hoja se exporta como SVG con la exportacion de Excalidraw
+  // (window.__pizarraSvg, ver README): recortada al marco, en tema claro, con
+  // las fuentes y las imagenes incrustadas. Entran los elementos que tocan la
+  // hoja y no estan en otro marco. Las paginas se arman en un iframe con
+  // @page A4 sin margenes y se abre el dialogo de impresion del navegador
+  // (de ahi se imprime o se guarda como PDF).
+  var imprimiendo = false;
+  async function imprimir(avisar) {
+    var A = api(), exportar = window.__pizarraSvg;
+    if (!A || imprimiendo) return;
+    if (!exportar) { avisar("Esta versión de la pizarra no puede exportar las hojas.", true); return; }
+    var elementos = A.getSceneElements(), hojas = hojasDe(elementos), archivos = A.getFiles();
+    if (!hojas.length) { avisar("No hay hojas para imprimir.", true); return; }
+    imprimiendo = true;
+    try {
+      var paginas = [];
+      for (var i = 0; i < hojas.length; i++) {
+        avisar("Preparando " + (hojas.length === 1 ? "la hoja" : "la hoja " + (i + 1) + " de " + hojas.length) + "…");
+        var f = hojas[i];
+        var svg = await exportar(elementos, {
+          exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false,
+          exportScale: 1, exportPadding: 0, exportEmbedScene: false,
+          frameRendering: { enabled: true, name: false, outline: false, clip: true },
+        }, archivos, { exportingFrame: f });
+        idsPropios(svg, "h" + (i + 1) + "-");
+        if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", "0 0 " + f.width + " " + f.height);
+        svg.setAttribute("width", "210mm");
+        svg.setAttribute("height", "297mm");
+        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+        var m = datosHoja(f).margenes || DEFECTO.margenes;
+        paginas.push({ svg: svg.outerHTML, n: i + 1, inf: m.inf });
+      }
+      await imprimirPaginas(paginas);
+      avisar(hojas.length === 1 ? "Se mandó 1 hoja a imprimir." : "Se mandaron " + hojas.length + " hojas a imprimir.");
+    } catch (e) {
+      console.warn("hojas.js: no se pudo imprimir", e);
+      avisar("No se pudieron preparar las hojas: " + (e && e.message || e), true);
+    } finally {
+      imprimiendo = false;
+    }
+  }
+
+  // Cada SVG define un clipPath por marco con el id del marco, en las
+  // coordenadas de esa hoja. Con todas las paginas en un mismo documento los
+  // ids se repetirian y url(#id) tomaria la definicion de la primera hoja (con
+  // otro corrimiento): lo enganchado a las demas hojas quedaba recortado afuera.
+  // Se les pone un prefijo por pagina a los ids y a sus referencias.
+  function idsPropios(svg, prefijo) {
+    var ids = {};
+    [].forEach.call(svg.querySelectorAll("[id]"), function (n) {
+      ids[n.id] = true;
+      n.id = prefijo + n.id;
+    });
+    function cambiar(v) {
+      return v.replace(/url\(\s*(['"]?)#([^'")\s]+)\1\s*\)/g, function (t, q, id) {
+        return ids[id] ? "url(" + q + "#" + prefijo + id + q + ")" : t;
+      });
+    }
+    [].forEach.call(svg.querySelectorAll("*"), function (n) {
+      [].slice.call(n.attributes).forEach(function (a) {
+        if (a.value.indexOf("url(") >= 0) n.setAttribute(a.name, cambiar(a.value));
+        else if ((a.name === "href" || a.name === "xlink:href") && a.value[0] === "#" && ids[a.value.slice(1)]) {
+          n.setAttribute(a.name, "#" + prefijo + a.value.slice(1));
+        }
+      });
+      if (n.tagName.toLowerCase() === "style") n.textContent = cambiar(n.textContent);
+    });
+  }
+
+  function imprimirPaginas(paginas) {
+    return new Promise(function (listo, fallo) {
+      var marcoImp = document.createElement("iframe");
+      marcoImp.setAttribute("aria-hidden", "true");
+      marcoImp.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
+      document.body.appendChild(marcoImp);
+      var titulo = (op.titulo || "").trim() || "Hojas";
+      var html = "<!doctype html><html><head><meta charset='utf-8'><title></title><style>" +
+        "@page{size:A4 portrait;margin:0}" +
+        "html,body{margin:0;padding:0;background:#fff}" +
+        ".hoja{position:relative;width:210mm;height:297mm;overflow:hidden;break-after:page;page-break-after:always}" +
+        ".hoja:last-child{break-after:auto;page-break-after:auto}" +
+        ".hoja svg{display:block}" +
+        ".num{position:absolute;left:0;right:0;text-align:center;font:10pt Assistant,Nunito,system-ui,sans-serif;color:#555}" +
+        "</style></head><body>" +
+        paginas.map(function (p) {
+          var num = op.numerar
+            ? "<div class='num' style='bottom:" + Math.max(4, p.inf / 2 - 2) + "mm'>" + p.n + "</div>" : "";
+          return "<div class='hoja'>" + p.svg + num + "</div>";
+        }).join("") + "</body></html>";
+      var doc = marcoImp.contentDocument;
+      doc.open(); doc.write(html); doc.close();
+      doc.title = titulo;
+      var win = marcoImp.contentWindow;
+      var imagenes = [].slice.call(doc.querySelectorAll("image")).map(function (im) {
+        var src = im.getAttribute("href") || im.getAttribute("xlink:href");
+        if (!src) return Promise.resolve();
+        return new Promise(function (r) { var img = new Image(); img.onload = img.onerror = r; img.src = src; });
+      });
+      Promise.all(imagenes.concat([doc.fonts ? doc.fonts.ready : Promise.resolve()])).then(function () {
+        // el nombre del PDF sale del titulo de la pagina
+        var tituloViejo = document.title;
+        document.title = titulo;
+        var limpiar = function () {
+          document.title = tituloViejo;
+          setTimeout(function () { marcoImp.remove(); }, 1000);
+        };
+        try {
+          win.focus();
+          win.print(); // bloquea hasta que se cierra el dialogo
+          limpiar();
+          listo();
+        } catch (e) { limpiar(); fallo(e); }
+      }, function (e) { marcoImp.remove(); fallo(e); });
+    });
+  }
+
   // selecciona los elementos de una hoja que se salen del area util y la muestra
   function verProblemas(r) {
     var A = api();
@@ -337,7 +460,12 @@
     ".pz-hojas .lista{margin-top:10px;font-size:12px;line-height:1.5}" +
     ".pz-hojas .lista .mal{color:#e03131}" +
     ".pz-hojas .lista button.enlace{border:0;background:none;color:#6965db;cursor:pointer;padding:0 0 0 4px;font:inherit}" +
-    ".pz-hojas .lista button.enlace:hover{text-decoration:underline}";
+    ".pz-hojas .lista button.enlace:hover{text-decoration:underline}" +
+    ".pz-hojas .opc input.titulo{font:13px Assistant,system-ui,sans-serif}" +
+    ".pz-hojas .estado{font-size:12px;margin-top:6px;opacity:.8}" +
+    ".pz-hojas .estado.mal{color:#e03131;opacity:1}" +
+    ".pz-hojas .imprimir-sec{margin-top:12px;border-top:1px solid #e0dfe6;padding-top:4px}" +
+    ".pz-gen.oscuro.pz-hojas .imprimir-sec{border-color:#3a3a43}";
 
   var panel = {
     el: null, abierto: false,
@@ -366,9 +494,16 @@
         '<button class="b todas" title="Pasa la escala, los márgenes y el doble faz a las hojas que ya están en la pizarra">Aplicar a todas</button>' +
         '<button class="b renumerar" title="Numera las hojas según su lugar: por filas, de arriba abajo y de izquierda a derecha">Renumerar</button></div>' +
         '<div class="lista"></div>' +
+        '<div class="imprimir-sec"><div class="opc">' +
+        '<span>Título</span><input type="text" class="titulo" placeholder="Nombre del PDF" spellcheck="false">' +
+        '<label class="chk"><input type="checkbox" class="numerar"> Numerar las páginas</label>' +
+        "</div>" +
+        '<div class="botones"><button class="b principal imprimir" title="Abre el diálogo de impresión: ahí se imprime o se elige «Guardar como PDF»">Imprimir / PDF</button></div>' +
+        '<div class="estado"></div></div>' +
         '<div class="ayuda">Cada hoja es un marco: lo que sueltes adentro se mueve con ella. ' +
         "La línea punteada marca el área útil; las guías no se imprimen. " +
-        "Las hojas nuevas usan la escala y los márgenes de este panel.</div>";
+        "Las hojas nuevas usan la escala y los márgenes de este panel. " +
+        "Al imprimir, elegí papel A4, márgenes «Ninguno» y escala 100 %.</div>";
       document.body.appendChild(el);
       this.el = el;
       var self = this;
@@ -395,6 +530,15 @@
       el.querySelector(".agregar").onclick = agregarHoja;
       el.querySelector(".todas").onclick = aplicarATodas;
       el.querySelector(".renumerar").onclick = renumerar;
+      el.querySelector(".titulo").oninput = function () { op.titulo = this.value; guardar(); };
+      el.querySelector(".numerar").onchange = function () { op.numerar = this.checked; guardar(); };
+      var estado = el.querySelector(".estado");
+      el.querySelector(".imprimir").onclick = function () {
+        imprimir(function (texto, mal) {
+          estado.textContent = texto;
+          estado.classList.toggle("mal", !!mal);
+        });
+      };
       ["keydown", "keyup", "wheel", "paste", "copy", "cut"].forEach(function (ev) {
         el.addEventListener(ev, function (e) { e.stopPropagation(); });
       });
@@ -413,6 +557,8 @@
       });
       el.querySelector(".doble").checked = op.dobleFaz;
       el.querySelector(".guias").checked = op.guias;
+      el.querySelector(".numerar").checked = op.numerar;
+      el.querySelector(".titulo").value = op.titulo;
     },
     // resumen de las hojas y de lo que se sale de cada una
     lista: function () {
