@@ -207,7 +207,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
 
 - Hojas A4 (`app/hojas.js`), para armar material que se va a imprimir (por ejemplo,
   solucionarios): en el menú de Generadores, sección «Impresión» → «Hojas A4». «Agregar
-  hoja» crea un marco (frame) nativo con proporción A4 vertical llamado «Hoja N», a la
+  hoja» crea un marco (frame) nativo con proporción A4 (vertical o apaisada) llamado «Hoja N», a la
   derecha de la última (la primera, en el centro de la vista sin taparse con lo que ya
   hay). Escala: al 100 % la hoja mide una A4 a 96 ppp (794 × 1123) y el texto M sale de
   unos 15 pt; al 80 % (predeterminada) mide 1,25 veces más y el texto M sale de unos
@@ -228,7 +228,39 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   «Título» del panel es el nombre que propone el PDF. Requiere un cambio en el build
   (`assets/index-*.js`): `window.__pizarraAPI=this.api,` pasa a ser
   `window.__pizarraAPI=this.api,window.__pizarraSvg=xE,` (`xE` es la `exportToSvg`
-  interna, la que usa «Exportar imagen» → SVG; el nombre cambia si se recompila).
+  interna, la que usa «Exportar imagen» → SVG; el nombre cambia si se recompila). Los
+  ids de cada SVG llevan un prefijo por página, porque los recortes de los marcos usan
+  el id del marco y se pisarían entre hojas.
+  Orientación: las hojas nuevas pueden ser apaisadas, y «Girar hoja» pasa las hojas
+  seleccionadas de vertical a apaisada o al revés. Una hoja apaisada se imprime girada
+  90° a la izquierda dentro de una página vertical, para encuadernarla con las demás: su
+  borde de arriba va al lado izquierdo del papel (el lomo en las hojas impares) y sus
+  márgenes se reparten según ese giro. Si el centro de la vista cae en una hoja, los
+  generadores insertan el dibujo nuevo dentro de ella: al comienzo del área útil o 8 mm
+  debajo de lo que ya tiene, enganchado a su marco (al redibujarlo sigue enganchado).
+  «Repartir en hojas» corta lo seleccionado en renglones (lo que se superpone en
+  vertical va junto; los grupos propios y el texto de sus contenedores no se separan),
+  deja en su hoja lo que entra en el área útil y pasa el resto a las hojas siguientes,
+  al comienzo de su área útil. Usa las hojas siguientes si están vacías; si no, inserta
+  hojas nuevas después y corre a la derecha, con su contenido y renumeradas, las que
+  siguen. El grupo común a toda la selección (un dibujo de los generadores) se parte en
+  un grupo por hoja y deja de estar vinculado a su generador.
+  Cabecera y pie de página: «Crear cabecera y pie» agrega dos marcos especiales
+  («Cabecera» y «Pie de página», con `customData.pizarraBanda`) del ancho del área útil
+  del papel y del alto elegido (predeterminados 15 y 12 mm), arriba de la Hoja 1. Se
+  arman con un contenido inicial (el título y una línea; una línea y el número de hoja)
+  y se dibujan con las herramientas de la pizarra. Se repiten en todas las hojas, salvo
+  en la primera si está marcada «Sin cabecera ni pie en la primera hoja (portada)»: se
+  descuentan del área útil (con 4 mm de separación), en la pizarra se ven como una imagen
+  tenue en cada hoja (generada con la misma exportación a SVG, en segundo plano) y al
+  imprimir se pegan en cada página. Siguen al papel: en una hoja apaisada quedan sobre su
+  borde derecho, girados. En sus textos, `{n}` se reemplaza por el número de hoja,
+  `{total}` por la cantidad de hojas y `{titulo}` por el título del panel. Con pie de
+  página, el número centrado de «Numerar las páginas» no se agrega.
+  El contenido sigue a su hoja: si una hoja (o la cabecera o el pie) se mueve sin su
+  contenido, como al alinear o distribuir con Ctrl+Shift+flechas, lo enganchado a su
+  marco y lo suelto cuyo centro estaba en ella se mueve lo mismo. Ese ajuste no queda
+  como un paso aparte del historial: al deshacer, el contenido vuelve con la hoja.
 
 - Los archivos `.excalidraw` (y la escena incrustada en PNG/SVG) se guardan sin los
   elementos borrados. Excalidraw los conserva marcados con `isDeleted` para el

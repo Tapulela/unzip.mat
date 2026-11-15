@@ -8782,11 +8782,15 @@
       var todos = A.getSceneElementsIncludingDeleted();
       var gid = nueva ? null : vinculo, ox, oy, viejos = [];
       var st = A.getAppState(), z = st.zoom.value;
-      var recien = false, vista = {};
+      var recien = false, vista = {}, marcoAncla = null;
       if (gid) {
         viejos = elementosDe(gid, todos);
         var ancla = viejos.filter(function (e) { return datosDe(e).eje; })[0];
         if (ancla && datosDe(ancla).tipo === tipo) {
+          // al redibujar sigue enganchado al mismo marco (hoja A4), si existe
+          if (ancla.frameId && todos.some(function (e) { return e.id === ancla.frameId && !e.isDeleted; })) {
+            marcoAncla = ancla.frameId;
+          }
           var o = datosDe(ancla).origen || [0, 0]; // las rectas viejas no lo guardaban
           ox = ancla.x - o[0]; oy = ancla.y - o[1];
         } else gid = null, viejos = [];
@@ -8823,9 +8827,18 @@
       datos.opciones = copiar(op);
       datos.origen = [nuevos[0].x - ox, nuevos[0].y - oy];
 
+      if (marcoAncla) nuevos.forEach(function (e) { e.frameId = marcoAncla; });
+      // si se esta mirando una hoja A4 (hojas.js), el dibujo nuevo va dentro de
+      // ella, debajo de lo que ya tiene, y enganchado a su marco
+      var enHoja = recien && window.__pizarraHojas && window.__pizarraHojas.lugarPara
+        ? window.__pizarraHojas.lugarPara(cajaDe(nuevos), resto.filter(function (e) { return !e.isDeleted; }), st)
+        : null;
+      if (enHoja) {
+        nuevos.forEach(function (e) { e.x += enHoja.dx; e.y += enHoja.dy; e.frameId = enHoja.frameId; });
+      }
       // un dibujo nuevo no se encima a lo que ya hay: baja hasta un lugar libre
       if (recien) {
-        var ocupados = resto.filter(function (e) { return !e.isDeleted; }).map(caja);
+        var ocupados = enHoja ? [] : resto.filter(function (e) { return !e.isDeleted; }).map(caja);
         for (var vuelta = 0; vuelta < 50; vuelta++) {
           var b = cajaDe(nuevos), choque = null;
           ocupados.forEach(function (o) {
