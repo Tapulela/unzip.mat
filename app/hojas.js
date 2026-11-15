@@ -129,6 +129,14 @@
     return r;
   }
 
+  // cuanto hay que correr el contenido de una hoja que pasa de `antes` a
+  // `despues` (otro lugar u otro numero): lo que se mueve el area util, asi
+  // que con doble faz, al cambiar de par a impar, sigue al lomo
+  function corrimiento(antes, despues, bandas) {
+    var a = areaUtil(antes, bandas), b = areaUtil(despues, bandas);
+    return { dx: b.x0 - a.x0, dy: b.y0 - a.y0 };
+  }
+
   // rectangulo que ocupa un elemento (con su rotacion)
   function caja(e) {
     var x0 = e.x, y0 = e.y, x1 = e.x + e.width, y1 = e.y + e.height;
@@ -314,12 +322,13 @@
       var ult = siguientes.length ? siguientes[siguientes.length - 1] : f0;
       return { x: ult.x + ult.width + gap, y: ult.y };
     }
-    var nueva = marco(lugarDe(0).x, lugarDe(0).y, n0 + 1, f0), cambios = {};
+    var nueva = marco(lugarDe(0).x, lugarDe(0).y, n0 + 1, f0), cambios = {}, bandas = bandasDe(todos);
     siguientes.forEach(function (f, i) {
-      var l = lugarDe(i + 1), dx = l.x - f.x, dy = l.y - f.y, nn = datosHoja(f).n + 1;
+      var l = lugarDe(i + 1), nn = datosHoja(f).n + 1;
       cambios[f.id] = conDatos(f, { n: nn }, { name: "Hoja " + nn, x: l.x, y: l.y });
+      var c = corrimiento(f, cambios[f.id], bandas);
       contenidoDe(f, todos).forEach(function (e) {
-        if (!cambios[e.id] && !esHoja(e)) cambios[e.id] = modificado(e, { x: e.x + dx, y: e.y + dy });
+        if (!cambios[e.id] && !esHoja(e)) cambios[e.id] = modificado(e, { x: e.x + c.dx, y: e.y + c.dy });
       });
     });
     var marcados = {};
@@ -623,8 +632,9 @@
       hojas.filter(function (f) { return datosHoja(f).n > nRef; }).forEach(function (f) {
         var nn = datosHoja(f).n + faltan;
         cambios[f.id] = conDatos(f, { n: nn }, { name: "Hoja " + nn, x: f.x + dx });
+        var c = corrimiento(f, cambios[f.id], bandas);
         contenidoDe(f, todos).forEach(function (e) {
-          if (!enSel[e.id] && !cambios[e.id]) cambios[e.id] = modificado(e, { x: e.x + dx });
+          if (!enSel[e.id] && !cambios[e.id]) cambios[e.id] = modificado(e, { x: e.x + c.dx, y: e.y + c.dy });
         });
       });
       for (var j = 0; j < faltan; j++) {

@@ -263,7 +263,9 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   seleccionada (o de la hoja de lo seleccionado), con su tamaño y sus márgenes: ocupa el
   lugar de la siguiente, cada una de las que siguen pasa al lugar de la que le sigue
   (con su contenido, así se respeta el acomodo en filas), la última se corre a la
-  derecha y todas suben un número; Ctrl+Z lo deshace en un paso. «Imprimir / PDF» exporta cada hoja como SVG con la exportación de
+  derecha y todas suben un número; con doble faz, como cambian de par a impar, su
+  contenido se corre con el área útil para seguir al lomo (lo mismo al insertar hojas
+  con «Repartir en hojas»). Ctrl+Z lo deshace en un paso. «Imprimir / PDF» exporta cada hoja como SVG con la exportación de
   Excalidraw (recortada al marco, en tema claro, con fuentes e imágenes incrustadas;
   entran los elementos que tocan la hoja y no están en otro marco, aunque no estén
   enganchados al marco), las arma en un iframe con `@page` A4 sin márgenes (una página
