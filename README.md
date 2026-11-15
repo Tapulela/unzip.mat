@@ -259,7 +259,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   área útil se marca en rojo y el panel lo lista («Ver» lo selecciona). «Aplicar a
   todas» pasa la escala, los márgenes y el doble faz del panel a las hojas existentes;
   «Renumerar» las numera por su lugar (por filas, de arriba abajo y de izquierda a
-  derecha). «Imprimir / PDF» exporta cada hoja como SVG con la exportación de
+  derecha). «Insertar hoja después» agrega una hoja vacía justo después de la
+  seleccionada (o de la hoja de lo seleccionado), con su tamaño y sus márgenes: ocupa el
+  lugar de la siguiente, cada una de las que siguen pasa al lugar de la que le sigue
+  (con su contenido, así se respeta el acomodo en filas), la última se corre a la
+  derecha y todas suben un número; Ctrl+Z lo deshace en un paso. «Imprimir / PDF» exporta cada hoja como SVG con la exportación de
   Excalidraw (recortada al marco, en tema claro, con fuentes e imágenes incrustadas;
   entran los elementos que tocan la hoja y no están en otro marco, aunque no estén
   enganchados al marco), las arma en un iframe con `@page` A4 sin márgenes (una página

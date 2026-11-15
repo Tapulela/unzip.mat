@@ -282,6 +282,58 @@
     });
   }
 
+  // «Insertar hoja después»: agrega una hoja vacia inmediatamente despues de
+  // la seleccionada (o de la hoja de lo seleccionado), con su tamano y sus
+  // margenes. La nueva ocupa el lugar de la siguiente, cada una de las que
+  // siguen pasa al lugar de la que le sigue (con su contenido) y la ultima se
+  // corre un lugar a la derecha; todas suben un numero. Asi se respeta el
+  // acomodo en filas.
+  function insertarDespues(avisar) {
+    var A = api();
+    if (!A) return;
+    var st = A.getAppState(), todos = A.getSceneElements(), hojas = hojasDe(todos);
+    var sel = st.selectedElementIds || {};
+    var elegidas = hojas.filter(function (f) { return sel[f.id]; });
+    if (!elegidas.length) {
+      // lo seleccionado adentro de una sola hoja
+      var marcos = {};
+      todos.forEach(function (e) { if (sel[e.id] && e.frameId) marcos[e.frameId] = true; });
+      elegidas = hojas.filter(function (f) { return marcos[f.id]; });
+    }
+    if (elegidas.length !== 1) {
+      avisar(elegidas.length ? "Seleccioná una sola hoja." :
+        "Seleccioná la hoja después de la cual va la nueva (clic en su nombre o en su borde).", true);
+      return;
+    }
+    var f0 = elegidas[0], n0 = datosHoja(f0).n, u = porMm(f0), gap = 15 * u;
+    var siguientes = hojas.filter(function (f) { return datosHoja(f).n > n0; });
+    // lugar de cada una: el de la que le sigue; la ultima, a la derecha de si misma
+    function lugarDe(i) {
+      var g = i < siguientes.length ? siguientes[i] : null;
+      if (g) return { x: g.x, y: g.y };
+      var ult = siguientes.length ? siguientes[siguientes.length - 1] : f0;
+      return { x: ult.x + ult.width + gap, y: ult.y };
+    }
+    var nueva = marco(lugarDe(0).x, lugarDe(0).y, n0 + 1, f0), cambios = {};
+    siguientes.forEach(function (f, i) {
+      var l = lugarDe(i + 1), dx = l.x - f.x, dy = l.y - f.y, nn = datosHoja(f).n + 1;
+      cambios[f.id] = conDatos(f, { n: nn }, { name: "Hoja " + nn, x: l.x, y: l.y });
+      contenidoDe(f, todos).forEach(function (e) {
+        if (!cambios[e.id] && !esHoja(e)) cambios[e.id] = modificado(e, { x: e.x + dx, y: e.y + dy });
+      });
+    });
+    var marcados = {};
+    marcados[nueva.id] = true;
+    var vista = mostrarRect({ x0: nueva.x, y0: nueva.y, x1: nueva.x + nueva.width, y1: nueva.y + nueva.height }, st, false) || {};
+    A.updateScene({
+      elements: A.getSceneElementsIncludingDeleted().map(function (e) { return cambios[e.id] || e; }).concat([nueva]),
+      appState: Object.assign({ selectedElementIds: marcados, selectedGroupIds: {}, editingGroupId: null }, vista),
+      captureUpdate: "IMMEDIATELY",
+    });
+    avisar("Hoja " + (n0 + 1) + " insertada después de la " + n0 +
+      (siguientes.length ? "; las siguientes se corrieron un lugar." : "."));
+  }
+
   // pasa los margenes, el doble faz y la escala del panel a todas las hojas, y
   // el alto y la portada a la cabecera y al pie (con el ancho del area util)
   function aplicarATodas() {
@@ -1012,6 +1064,7 @@
         '<label class="chk"><input type="checkbox" class="guias"> Mostrar márgenes</label>' +
         "</div>" +
         '<div class="botones"><button class="b principal agregar">Agregar hoja</button>' +
+        '<button class="b insertar-hoja" title="Agrega una hoja vacía justo después de la seleccionada; las que siguen se corren un lugar">Insertar hoja después</button>' +
         '<button class="b todas" title="Pasa la escala, los márgenes y el doble faz a las hojas que ya están en la pizarra">Aplicar a todas</button>' +
         '<button class="b renumerar" title="Numera las hojas según su lugar: por filas, de arriba abajo y de izquierda a derecha">Renumerar</button>' +
         '<button class="b girar" title="Pasa las hojas seleccionadas de vertical a apaisada o al revés">Girar hoja</button>' +
@@ -1075,6 +1128,7 @@
       }
       el.querySelector(".girar").onclick = function () { girar(avisarHojas); };
       el.querySelector(".repartir").onclick = function () { repartir(avisarHojas); };
+      el.querySelector(".insertar-hoja").onclick = function () { insertarDespues(avisarHojas); };
       [].forEach.call(el.querySelectorAll(".orientacion button"), function (b) {
         b.onclick = function () { op.apaisada = b.getAttribute("data-o") === "h"; guardar(); self.pintar(); };
       });
