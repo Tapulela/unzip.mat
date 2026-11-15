@@ -1297,6 +1297,9 @@
       abrir: function () { panel.alternar(true); },
       cerrar: function () { if (panel.abierto) panel.alternar(false); },
       lugarPara: lugarPara,
+      // para solucionario.js: crear hojas con los margenes del panel y saber su area util
+      marco: marco, areaUtil: areaUtil, hojasDe: hojasDe, bandasDe: bandasDe,
+      separacion: function () { return 15 * PX_MM / op.impresion; },
     };
     var espera = setInterval(function () {
       var A = api();

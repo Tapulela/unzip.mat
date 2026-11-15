@@ -8722,6 +8722,8 @@
     razonamientos: { nombre: "Razonamiento deductivo", icono: "∴" },
     // no es un generador: abre el panel de hojas.js
     hojas: { nombre: "Hojas A4", icono: "A4", externo: true },
+    // no es un generador: abre un archivo .json de solucion (solucionario.js)
+    solucion: { nombre: "Importar solución (.json)", icono: "{ }", externo: "solucionario" },
   };
   // como se ordenan en el menu: los sueltos arriba y despues las secciones,
   // con la unidad del programa de la materia a la que pertenecen
@@ -8733,7 +8735,7 @@
     { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
     { grupo: "Números complejos", unidad: 7, items: ["complejos", "raicesC"] },
-    { grupo: "Impresión", items: ["hojas"] },
+    { grupo: "Impresión", items: ["hojas", "solucion"] },
   ];
 
   // ------------------------------------------------- insertar / reemplazar
@@ -9541,9 +9543,10 @@
     elegir: function (t) {
       this.alternar(false);
       if (MENU_GEN[t].externo) {
-        // panel de otro archivo (hojas.js), en el mismo lugar que el de generadores
+        // panel o accion de otro archivo (hojas.js, solucionario.js)
         if (panel.abierto) panel.alternar(false);
-        if (window.__pizarraHojas) window.__pizarraHojas.abrir();
+        var ext = MENU_GEN[t].externo === "solucionario" ? window.__pizarraSolucionario : window.__pizarraHojas;
+        if (ext) ext.abrir();
         return;
       }
       if (t !== panel.tipo) {
@@ -9595,6 +9598,21 @@
         }
       }, 300);
     },
+  };
+
+  // ------------------------------------------- piezas para otros modulos
+  // solucionario.js arma las resoluciones con los mismos renglones (notas,
+  // fracciones, raices dibujadas, marcas, llaves) y con los generadores.
+  window.__pizarraGeneradores = {
+    FUENTES: FUENTES, TAMANOS: TAMANOS, TAM_NOTA: TAM_NOTA, COLORES: COLORES, TINTA: TINTA,
+    COLOR: {
+      suma: COLOR_SUMA, producto: COLOR_PRODUCTO, condicion: COLOR_CONDICION, caso: COLOR_CASO,
+      a: COLOR_A, b: COLOR_B, c: COLOR_C, mal: COLOR_MAL, tinta: TINTA,
+    },
+    GEN: GEN, tamTitulo: tamTitulo,
+    medir: medir, base: base, texto: texto, trazo: trazo, expandirRaices: expandirRaices,
+    dibujarBloqueF: dibujarBloqueF, medirItsF: medirItsF, caja: caja, cajaDe: cajaDe,
+    nuevoId: nuevoId, copiar: copiar,
   };
 
   // ----------------------------------------------------------------- inicio

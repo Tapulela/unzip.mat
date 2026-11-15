@@ -307,6 +307,23 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   contenido, como al alinear o distribuir con Ctrl+Shift+flechas, lo enganchado a su
   marco y lo suelto cuyo centro estaba en ella se mueve lo mismo. Ese ajuste no queda
   como un paso aparte del historial: al deshacer, el contenido vuelve con la hoja.
+- Importar solución (`app/solucionario.js`): en el menú de Generadores, sección
+  «Impresión» → «Importar solución (.json)». Lee una resolución escrita en el formato
+  `unzip.mat/solucion@1` (documentado en el repositorio de solucionarios, `FORMATO.md`)
+  y la dibuja en hojas A4 nuevas, a la derecha de lo que ya hay, con los márgenes, la
+  escala y el doble faz del panel de Hojas A4. Los pasos se dibujan con los mismos
+  renglones que los generadores (`dibujarBloqueF`: notas antes de cada paso,
+  fracciones, raíces dibujadas, marcas, llaves, ramas y recuadros), y los gráficos con
+  el generador que corresponda, vinculados a él. Cada pieza (título, enunciado, bloque
+  de pasos, gráfico) se corta en renglones (lo que se superpone en vertical va junto) y
+  los renglones se reparten en las hojas. Un título o un enunciado nunca queda solo al
+  pie de una hoja. Al terminar, un aviso muestra los errores del archivo (con la ruta
+  del campo) o los renglones que se salen del área útil. Ctrl+Z lo deshace en un paso.
+  Desde código: `await window.__pizarraSolucionario.importar(objetoOTexto)` devuelve
+  `{ ok, hojas, elementos, avisos, errores }`. Para esto `generadores.js` expone
+  `window.__pizarraGeneradores` (constantes, `texto`, `trazo`, `dibujarBloqueF`, `GEN`…)
+  y `window.__pizarraHojas` suma `marco`, `areaUtil`, `hojasDe`, `bandasDe` y
+  `separacion`.
 
 - Los archivos `.excalidraw` (y la escena incrustada en PNG/SVG) se guardan sin los
   elementos borrados. Excalidraw los conserva marcados con `isDeleted` para el
@@ -367,6 +384,7 @@ Dibujar, guardar, exportar y todos los generadores funcionan igual.
 - `app/` — build compilado de Excalidraw (con las modificaciones).
 - `app/entorno.js` — detecta si hay servidor y oculta la marca y los enlaces de Excalidraw/Excalidraw+.
 - `app/hojas.js` — hojas A4 con márgenes para preparar material imprimible.
+- `app/solucionario.js` — importa resoluciones en JSON (`unzip.mat/solucion@1`) a hojas A4.
 - `servidor.js` — servidor HTTP + Socket.IO.
 - `build/armar-exe.mjs` — arma `dist/unzip.mat.exe` (`npm run exe`).
 - `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).
