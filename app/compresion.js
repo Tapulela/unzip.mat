@@ -457,8 +457,10 @@
     return n >= 1024 * 1024 ? (n / 1024 / 1024).toFixed(1).replace(".", ",") + " MB" : Math.round(n / 1024) + " KB";
   }
 
+  // Sin argumento: las imagenes seleccionadas (solo esas copias) o todas.
+  // Con soloArchivo (un fileId): ese archivo, en todas sus copias (lo usa imagenes.js).
   var comprimiendo = false;
-  window.__pizarraComprimirImagenes = async function () {
+  async function comprimirImagenes(soloArchivo) {
     var A = window.__pizarraAPI;
     if (!A || comprimiendo) return;
     function aviso(texto, ms) { try { A.setToast({ message: texto, duration: ms || 5000, closable: true }); } catch (e) {} }
@@ -466,8 +468,10 @@
 
     var elementos = A.getSceneElements();
     var sel = A.getAppState().selectedElementIds || {};
-    var imagenes = elementos.filter(function (e) { return e.type === "image" && e.fileId; });
-    var elegidas = imagenes.filter(function (e) { return sel[e.id]; });
+    var imagenes = elementos.filter(function (e) {
+      return e.type === "image" && e.fileId && (!soloArchivo || e.fileId === soloArchivo);
+    });
+    var elegidas = soloArchivo ? [] : imagenes.filter(function (e) { return sel[e.id]; });
     if (elegidas.length) imagenes = elegidas;
     var archivos = A.getFiles();
     var porArchivo = {};
@@ -501,7 +505,7 @@
           console.warn("compresion.js: no se pudo comprimir la imagen " + ids[i], e);
         }
       }
-      if (!nuevos.length) return aviso("Las imágenes ya están comprimidas.");
+      if (!nuevos.length) return aviso(soloArchivo ? "La imagen ya está comprimida." : "Las imágenes ya están comprimidas.");
 
       A.addFiles(nuevos);
       var ahora = Date.now();
@@ -522,7 +526,9 @@
     } finally {
       comprimiendo = false;
     }
-  };
+  }
+  window.__pizarraComprimirImagenes = function () { return comprimirImagenes(); };
+  window.__pizarraComprimirArchivo = function (fileId) { return comprimirImagenes(fileId); };
 
   // ---------- Imagenes pegadas o insertadas ----------
   // El bundle llama a window.__pizarraComprimirAlPegar(file) al empezar initializeImage

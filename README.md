@@ -59,6 +59,15 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   de `const s=i.type`, se agrega
   `window.__pizarraComprimirAlPegar&&(i=await window.__pizarraComprimirAlPegar(i));`, y
   el interruptor es otro `OPS` en el submenú Preferencias.
+- Opciones de la imagen seleccionada (`app/imagenes.js`): al seleccionar una imagen (o
+  varias copias de la misma) aparece una barra debajo de la selección con «Ver copias»
+  (une con líneas punteadas todas las copias, es decir los elementos que usan el mismo
+  archivo; las líneas se dibujan en una capa encima del lienzo y no se guardan ni se
+  sincronizan), «Información» (peso del archivo, cuánto ocupa en el archivo guardado,
+  tamaño original, copias) y «Comprimir» (comprime el archivo y pasa todas sus copias
+  al comprimido, con `window.__pizarraComprimirArchivo(fileId)` de `compresion.js`;
+  Ctrl+Z lo deshace). La barra se esconde mientras se arrastra, se recorta o se cambia
+  el tamaño. No requiere cambios en el bundle, solo el `<script>` en `index.html`.
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite
