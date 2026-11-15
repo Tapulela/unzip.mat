@@ -248,7 +248,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   Cabecera y pie de página: «Crear cabecera y pie» agrega dos marcos especiales
   («Cabecera» y «Pie de página», con `customData.pizarraBanda`) del ancho del área útil
   del papel y del alto elegido (predeterminados 15 y 12 mm), arriba de la Hoja 1. Se
-  arman con un contenido inicial (el título y una línea; una línea y el número de hoja)
+  arman con un contenido inicial (el título y una línea; una línea y «Hoja {n} de {total}» centrado)
   y se dibujan con las herramientas de la pizarra. Se repiten en todas las hojas, salvo
   en la primera si está marcada «Sin cabecera ni pie en la primera hoja (portada)»: se
   descuentan del área útil (con 4 mm de separación), en la pizarra se ven como una imagen

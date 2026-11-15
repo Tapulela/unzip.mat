@@ -360,7 +360,7 @@
 
   // Crea la cabecera y el pie que falten, arriba de la Hoja 1. Se arman con
   // un contenido inicial: la cabecera con el titulo y una linea abajo; el pie
-  // con una linea arriba y el numero de hoja centrado.
+  // con una linea arriba y «Hoja {n} de {total}» centrado.
   function crearBandas(avisar) {
     var A = api();
     if (!A) return;
@@ -386,7 +386,7 @@
       var p = marcoBanda("pie", x0 + w + gap, y0, w, hp);
       nuevos.push(p,
         lineaBanda(p.x, p.y + 2 * u, w, p.id),
-        textoBanda("{n}", p.x + w / 2, p.y + hp / 2 + 1.5 * u, true, p.id));
+        textoBanda("Hoja {n} de {total}", p.x + w / 2, p.y + hp / 2 + 1.5 * u, true, p.id));
     }
     var b = cajaDeLista(nuevos);
     A.updateScene({
