@@ -153,7 +153,7 @@
         if (b.salto) { piezas.push({ salto: true }); return; }
         if (b.espacio) { piezas.push({ hueco: (+b.espacio || 1) * lh }); return; }
         if (b.texto !== undefined) {
-          p = nuevaPieza();
+          p = nuevaPieza(!!b.unir); // unir: no se separa de lo que le sigue
           escribirParrafo(b.texto, x, 0, maxW - x, b.tam && g.TAMANOS[b.tam] || tam, fuente, color(b.color, g.TINTA), p.agregar);
           piezas.push(p);
         } else if (Array.isArray(b.pasos)) {
@@ -183,30 +183,51 @@
         } else {
           errores.push(rb + ": bloque sin «texto», «pasos», «generador», «salto» ni «espacio»");
         }
+        // aviso propio si la hoja se corta justo antes de este bloque (estilo.continuacion)
+        if (p && typeof b.continua === "string") p.continua = b.continua;
       });
     }
 
-    function enunciado(numero, texto, x, tamN, colN) {
-      var p = nuevaPieza(true), etiqueta = numero !== undefined && numero !== "" ? String(numero) + ") " : "";
-      var wE = etiqueta ? g.medir(etiqueta, tamN, fuente) : 0;
-      if (etiqueta) p.agregar(g.texto(x, 0, etiqueta.trim(), tamN, fuente, colN, "left"));
-      if (texto) escribirParrafo(texto, x + wE, 0, maxW - x - wE, tamN, fuente, COLOR_ENUNCIADO, p.agregar);
+    // Consigna (enunciados y su numeracion). Opcional, en `estilo`:
+    //   fuenteEnunciado: "normal" | "mano" | "codigo" (por defecto, la del texto)
+    //   tamEnunciado: "S" | "M" | "L" | "XL" o un numero (por defecto, un tamaño de titulo)
+    //   numeracion: { ejercicio: "{n})", item: "{i})" }: {n} es el numero del
+    //     ejercicio e {i} el del item (por ejemplo "Ejercicio {n}:" y "{n}.{i}")
+    var fuenteE = g.FUENTES[est.fuenteEnunciado] || fuente;
+    var tamE = typeof est.tamEnunciado === "number" && est.tamEnunciado > 0 ? est.tamEnunciado
+      : g.TAMANOS[est.tamEnunciado] || g.tamTitulo(tam);
+    var num = est.numeracion || {};
+    var plEj = typeof num.ejercicio === "string" ? num.ejercicio : "{n})";
+    var plIt = typeof num.item === "string" ? num.item : "{i})";
+    function rotulo(pl, n, i) {
+      return pl.replace(/\{n\}/g, String(n)).replace(/\{i\}/g, i === undefined ? "" : String(i));
+    }
+
+    function enunciado(etiqueta, texto, x, tamN, colN, inicioEj) {
+      var p = nuevaPieza(true);
+      p.esEnunciado = true; p.inicioEj = !!inicioEj;
+      etiqueta = etiqueta ? etiqueta.trim() + " " : "";
+      var wE = etiqueta ? g.medir(etiqueta, tamN, fuenteE) : 0;
+      if (etiqueta) p.agregar(g.texto(x, 0, etiqueta.trim(), tamN, fuenteE, colN, "left"));
+      if (texto) escribirParrafo(texto, x + wE, 0, maxW - x - wE, tamN, fuenteE, COLOR_ENUNCIADO, p.agregar);
       p.espacio = lh * 0.4;
       if (p.els.length) piezas.push(p);
     }
 
     (sol.ejercicios || []).forEach(function (ej, i) {
-      var r = "ejercicios[" + i + "]";
+      var r = "ejercicios[" + i + "]", nEj = ej.numero !== undefined ? ej.numero : i + 1;
       if (i) piezas.push({ hueco: lh * 1.2 });
-      enunciado(ej.numero !== undefined ? ej.numero : i + 1, ej.enunciado, 0, g.tamTitulo(tam), COLOR_EJERCICIO);
+      enunciado(nEj === "" ? "" : rotulo(plEj, nEj), ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
       bloques(ej.bloques, sangria * 0.5, r);
       (ej.items || []).forEach(function (it, j) {
         piezas.push({ hueco: lh * 0.6 });
-        enunciado(it.numero !== undefined ? it.numero : String.fromCharCode(97 + j), it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
+        var nIt = it.numero !== undefined ? it.numero : String.fromCharCode(97 + j);
+        enunciado(nIt === "" ? "" : rotulo(plIt, nEj, nIt), it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
       });
     });
-    return { piezas: piezas, errores: errores, avisos: avisos, tam: tam, lh: lh };
+    return { piezas: piezas, errores: errores, avisos: avisos, tam: tam, lh: lh, fuente: fuente,
+      continuacion: est.continuacion === true };
   }
 
   // ----------------------------------------------- renglones de una pieza
@@ -265,6 +286,23 @@
       var bt = g.cajaDe(vivos);
       x0 = bt.x1 + sep * 2; y0 = hojas.length ? hojas[0].y : bt.y0;
     }
+    // cabecera y pie («cabecera» y «pie» de la solucion): se crean los que
+    // falten en la escena, arriba de la primera hoja nueva. Las bandas son de
+    // toda la pizarra: si ya hay, quedan las que estan.
+    var faltan = {};
+    if (typeof sol.cabecera === "string" && !(bandas && bandas.cab)) faltan.cab = sol.cabecera;
+    if (typeof sol.pie === "string" && !(bandas && bandas.pie)) faltan.pie = sol.pie;
+    if ((faltan.cab !== undefined || faltan.pie !== undefined) && h.nuevasBandas) {
+      var nb = h.nuevasBandas(faltan, x0, y0);
+      nb.forEach(function (e) {
+        var cd = {};
+        for (var k in e.customData || {}) cd[k] = e.customData[k];
+        cd.pizarraSolucion = clave;
+        e.customData = cd;
+      });
+      todos = todos.concat(nb);
+      bandas = h.bandasDe(todos);
+    }
     var nuevas = [];
     function hojaNueva() {
       var u = nuevas[nuevas.length - 1];
@@ -280,14 +318,32 @@
     var avisos = avisosFormato.concat(r.avisos);
     var altoUtil = hoja.area.y1 - hoja.area.y0;
 
-    // reparto: renglon por renglon; una pieza «unir» (titulo, enunciado) se
-    // pasa a la hoja siguiente junto con el primer renglon de lo que le sigue
+    // reparto: renglon por renglon; una pieza «unir» (enunciado) pasa entera a
+    // la hoja siguiente junto con el primer renglon de lo que le sigue
     // seq: [{ q: renglon, antes: espacio que lo separa del anterior }]
     var listos = [], pendiente = null, gap = 0, vacia = true;
+    // estilo.continuacion: si un ejercicio sigue en la hoja siguiente, se avisa
+    // en gris al pie de la hoja (y se reserva ese lugar en todas las hojas)
+    var tamAviso = g.TAMANOS.S, altoAviso = r.continuacion ? Math.ceil(tamAviso * r.fuente.lh + 8) : 0;
+    function textoAviso(seq) {
+      var it = seq[0];
+      if (it.p.inicioEj && it.i === 0) return null; // empieza un ejercicio: no hay nada que continue
+      if (it.p.esEnunciado && it.i > 0) return "Continúa la consigna en la siguiente hoja";
+      for (var k = 0; k < seq.length; k++) if (seq[k].p.continua) return seq[k].p.continua;
+      return "Continúa en la siguiente hoja";
+    }
     function poner(seq) {
       var alto = seq.reduce(function (s, it, i) { return s + (i ? it.antes : 0) + (it.q.y1 - it.q.y0); }, 0);
       var arranque = vacia ? 0 : seq[0].antes;
-      if (!vacia && hoja.y + arranque + alto > hoja.area.y1) { hoja = hojaNueva(); vacia = true; arranque = 0; }
+      if (!vacia && hoja.y + arranque + alto > hoja.area.y1 - altoAviso) {
+        var aviso = r.continuacion && textoAviso(seq);
+        if (aviso) {
+          var ea = g.texto(hoja.area.x0, hoja.y + 6, "(" + aviso + ")", tamAviso, r.fuente, color("gris"), "left");
+          ea.frameId = hoja.f.id; ea.groupIds = [g.nuevoId()];
+          listos.push(ea);
+        }
+        hoja = hojaNueva(); vacia = true; arranque = 0;
+      }
       if (alto > altoUtil + 1) avisos.push("Un renglón es más alto que el área útil de la hoja " + hoja.f.customData.pizarraHoja.n + ": se sale por abajo");
       var y = hoja.y + arranque;
       seq.forEach(function (it, i) {
@@ -313,9 +369,11 @@
       p.els.forEach(function (e) { e.groupIds = [gid]; });
       var rs = renglones(p.els);
       rs.forEach(function (q, i) {
-        var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap }];
+        var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap, p: p, i: i }];
         if (pendiente) { seq = pendiente.concat(seq); pendiente = null; }
-        if (p.unir && i === rs.length - 1) { pendiente = seq; return; }
+        // un enunciado no se corta entre hojas: todos sus renglones esperan al
+        // primero de lo que sigue
+        if (p.unir) { pendiente = seq; return; }
         poner(seq);
       });
       gap = p.espacio !== undefined ? p.espacio : r.lh * 0.6;

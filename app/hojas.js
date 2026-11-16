@@ -460,6 +460,39 @@
   }
 
   // lleva la vista a la cabecera y al pie
+  // Para solucionario.js: cabecera y pie nuevos, sin agregarlos a la escena,
+  // arriba de (x0, y0). textos: { cab, pie }; una banda se crea si su texto es
+  // un string (vacio: solo la linea). Puede tener varios renglones (\n).
+  function nuevasBandas(textos, x0, y0) {
+    var u = PX_MM / op.impresion;
+    var w = anchoBanda() * u, hc = op.alto.cab * u, hp = op.alto.pie * u, gap = 25 * u;
+    var hayCab = typeof textos.cab === "string", hayPie = typeof textos.pie === "string";
+    var y = y0 - gap - Math.max(hayCab ? hc : 0, hayPie ? hp : 0), nuevos = [];
+    function textoVarios(str, x, cy, centrado, marcoId) {
+      var lineas = str.split("\n"), tam = lineas.length > 1 ? 16 : 20, lh = tam * 1.25;
+      medidor.font = tam + "px Nunito, sans-serif";
+      var wt = Math.ceil(Math.max.apply(null, lineas.map(function (l) { return medidor.measureText(l).width; })));
+      return elemento("text", {
+        x: centrado ? x - wt / 2 : x, y: cy - lh * lineas.length / 2, width: wt, height: lh * lineas.length, frameId: marcoId,
+        text: str, originalText: str, fontSize: tam, fontFamily: 6,
+        textAlign: centrado ? "center" : "left", verticalAlign: "top", containerId: null,
+        autoResize: true, lineHeight: 1.25, strokeColor: "#495057",
+      });
+    }
+    if (hayCab) {
+      var c = marcoBanda("cabecera", x0, y, w, hc);
+      nuevos.push(c, lineaBanda(c.x, c.y + hc - 2 * u, w, c.id));
+      if (textos.cab) nuevos.push(textoVarios(textos.cab, c.x, c.y + (hc - 2 * u) / 2, false, c.id));
+    }
+    if (hayPie) {
+      var p = marcoBanda("pie", x0 + (hayCab ? w + gap : 0), y, w, hp);
+      nuevos.push(p, lineaBanda(p.x, p.y + 2 * u, w, p.id));
+      if (textos.pie) nuevos.push(textoVarios(textos.pie, p.x + w / 2, p.y + (hp + 2 * u) / 2, true, p.id));
+    }
+    return nuevos;
+  }
+
+  // lleva la vista a la cabecera y al pie
   function verBandas(avisar) {
     var A = api();
     if (!A) return;
@@ -1298,7 +1331,7 @@
       cerrar: function () { if (panel.abierto) panel.alternar(false); },
       lugarPara: lugarPara,
       // para solucionario.js: crear hojas con los margenes del panel y saber su area util
-      marco: marco, areaUtil: areaUtil, hojasDe: hojasDe, bandasDe: bandasDe,
+      marco: marco, areaUtil: areaUtil, hojasDe: hojasDe, bandasDe: bandasDe, nuevasBandas: nuevasBandas,
       separacion: function () { return 15 * PX_MM / op.impresion; },
     };
     var espera = setInterval(function () {
