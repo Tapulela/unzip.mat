@@ -62,7 +62,7 @@
     if (Array.isArray(x.tabla)) {
       return { tabla: x.tabla.map(function (f, i) {
         return (Array.isArray(f) ? f : [f]).map(function (c, j) { return items(c, ruta + ".tabla[" + i + "][" + j + "]", errores); });
-      }) };
+      }), lineas: x.lineas === true };
     }
     errores.push(ruta + ": no se reconoce el item " + JSON.stringify(x).slice(0, 60));
     return { t: "" };
@@ -151,12 +151,36 @@
       piezas.push(p);
     }
 
-    function bloques(lista, x, ruta) {
+    // seccion: { seccion: "Título", bloques: [...] }. El título va subrayado (del
+    // tamaño del texto) y el contenido, con sangría y una línea vertical a la
+    // izquierda que acompaña cada renglón, también si la sección sigue en otra hoja.
+    // barras: las líneas de las secciones que encierran a un bloque [{ x, id }]
+    var sangSec = tam * 1.4, nSec = 0;
+    function bloques(lista, x, ruta, barras) {
+      barras = barras || [];
+      var n0 = piezas.length;
+      bloquesSin(lista, x, ruta, barras);
+      for (var k = n0; k < piezas.length; k++) if (piezas[k].els && !piezas[k].barras) piezas[k].barras = barras;
+    }
+    function bloquesSin(lista, x, ruta, barras) {
       (lista || []).forEach(function (b, i) {
         var rb = ruta + ".bloques[" + i + "]", p;
         if (typeof b === "string") b = { texto: b };
         if (b.salto) { piezas.push({ salto: true }); return; }
         if (b.espacio) { piezas.push({ hueco: (+b.espacio || 1) * lh }); return; }
+        if (b.seccion !== undefined) {
+          p = nuevaPieza(true);
+          var colS = color(b.color, COLOR_EJERCICIO);
+          var yS = escribirParrafo(String(b.seccion), x, 0, maxW - x, tam, fuente, colS, p.agregar);
+          var wS = Math.min(maxW - x, g.medir(String(b.seccion), tam, fuente));
+          p.agregar(g.trazo([[x, yS + 1], [x + wS, yS + 1]], { strokeColor: colS, strokeWidth: 1.5 }));
+          p.barras = barras;
+          p.espacio = lh * 0.3;
+          piezas.push(p);
+          var hijas = barras.concat([{ x: x + sangSec * 0.35, id: ++nSec, color: colS }]);
+          bloques(b.bloques, x + sangSec, rb, hijas);
+          return;
+        }
         if (b.texto !== undefined) {
           p = nuevaPieza(!!b.unir); // unir: no se separa de lo que le sigue
           escribirParrafo(b.texto, x, 0, maxW - x, b.tam && g.TAMANOS[b.tam] || tam, fuente, color(b.color, g.TINTA), p.agregar);
@@ -189,7 +213,7 @@
           p.gid = gid;
           piezas.push(p);
         } else {
-          errores.push(rb + ": bloque sin «texto», «pasos», «generador», «salto» ni «espacio»");
+          errores.push(rb + ": bloque sin «texto», «pasos», «generador», «seccion», «salto» ni «espacio»");
         }
         // aviso propio si la hoja se corta justo antes de este bloque (estilo.continuacion)
         if (p && typeof b.continua === "string") p.continua = b.continua;
@@ -351,6 +375,23 @@
       for (var k = 0; k < seq.length; k++) if (seq[k].p.continua) return seq[k].p.continua;
       return "Continúa en la siguiente hoja";
     }
+    // líneas verticales de las secciones: un tramo por hoja y por sección, que
+    // se alarga hasta el último renglón puesto (cubre también los espacios)
+    var tramos = {};
+    function barrasDe(p, yTop, yBot) {
+      (p.barras || []).forEach(function (b) {
+        var t = tramos[b.id], x = hoja.area.x0 + b.x;
+        if (t && t.hoja === hoja.f.id) {
+          var i = listos.indexOf(t.el);
+          if (i >= 0) listos.splice(i, 1);
+        } else {
+          t = tramos[b.id] = { hoja: hoja.f.id, y0: yTop - r.lh * 0.15 };
+        }
+        t.el = g.trazo([[x, t.y0], [x, yBot]], { strokeColor: b.color, strokeWidth: 1.5 });
+        t.el.frameId = hoja.f.id; t.el.groupIds = [g.nuevoId()];
+        listos.push(t.el);
+      });
+    }
     function poner(seq) {
       var alto = seq.reduce(function (s, it, i) { return s + (i ? it.antes : 0) + (it.q.y1 - it.q.y0); }, 0);
       var arranque = vacia ? 0 : seq[0].antes;
@@ -374,6 +415,7 @@
         }
         var dy = y - q.y0;
         q.els.forEach(function (e) { e.x += hoja.area.x0; e.y += dy; e.frameId = hoja.f.id; listos.push(e); });
+        barrasDe(it.p, q.y0 + dy, q.y1 + dy);
         y = q.y1 + dy;
       });
       hoja.y = y;

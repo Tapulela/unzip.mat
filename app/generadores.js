@@ -4763,9 +4763,10 @@
         c.mar = Math.max(c.mar, celda.some(function (x) { return x.marca; }) ? mar.w : 0);
       });
     });
-    var x = 0;
+    // con «lineas» queda medio espacio de margen dentro del marco, a cada lado
+    var pad = it.lineas ? gap / 2 : 0, x = pad;
     cols.forEach(function (c) { c.x = x; x += c.txt + c.mar + gap; });
-    return { cols: cols, w: x - gap, altoF: altoF, alto: it.tabla.length * altoF };
+    return { cols: cols, w: x - gap + pad, altoF: altoF, alto: it.tabla.length * altoF, pad: pad, gap: gap };
   }
   function medirItF(it, tam, fuente) {
     var lh = tam * fuente.lh;
@@ -4798,6 +4799,19 @@
             dibujarItsF(celda, x + col.x + col.txt - txt, y0 + mt.altoF * (i + 0.5), c, tam, fuente, agregar);
           });
         });
+        // «lineas»: marco y grilla; la primera fila y la primera columna (los
+        // encabezados de una tabla de doble entrada) se separan con una línea más gruesa
+        if (it.lineas) {
+          var y1 = y0 + mt.alto, x1 = x + mt.w;
+          for (var fi = 0; fi <= it.tabla.length; fi++) {
+            var yy = y0 + mt.altoF * fi;
+            agregar(trazo([[x, yy], [x1, yy]], { strokeColor: c, strokeWidth: fi === 1 ? 2 : 1 }));
+          }
+          var xs = [x].concat(mt.cols.slice(1).map(function (col) { return x + col.x - mt.gap / 2; }), [x1]);
+          xs.forEach(function (xx, k) {
+            agregar(trazo([[xx, y0], [xx, y1]], { strokeColor: c, strokeWidth: k === 1 ? 2 : 1 }));
+          });
+        }
       } else if (it.marca === "ok") {
         var t = tam * 0.85, x0 = x + tam * 0.6;
         agregar(trazo([[x0, mid], [x0 + t * 0.35, mid + t * 0.35], [x0 + t, mid - t * 0.45]],
