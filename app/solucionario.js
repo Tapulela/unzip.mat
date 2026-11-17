@@ -165,6 +165,7 @@
           var L = b.pasos.map(function (r, j) { return renglon(r, rb + ".pasos[" + j + "]", errores); });
           if (!L.length) return;
           p = nuevaPieza();
+          p.entero = !!b.entero; // entero: el desarrollo no se parte entre hojas (si entra en una)
           try { g.dibujarBloqueF(L, x, 0, opPasos, p.agregar); }
           catch (e) { errores.push(rb + ": no se pudo dibujar (" + (e && e.message || e) + ")"); return; }
           piezas.push(p);
@@ -380,6 +381,14 @@
       var gid = p.gid || g.nuevoId();
       p.els.forEach(function (e) { e.groupIds = [gid]; });
       var rs = renglones(p.els);
+      // el dibujo de un generador no se parte si entra en una hoja: un grafico
+      // partido queda con su titulo en una hoja y el dibujo en otra, y ya no se
+      // puede regenerar desde su panel
+      if ((p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil) {
+        rs = [rs.reduce(function (a, q) {
+          return { els: a.els.concat(q.els), y0: Math.min(a.y0, q.y0), y1: Math.max(a.y1, q.y1), x1: Math.max(a.x1, q.x1) };
+        })];
+      }
       rs.forEach(function (q, i) {
         var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap, p: p, i: i }];
         if (pendiente) { seq = pendiente.concat(seq); pendiente = null; }
