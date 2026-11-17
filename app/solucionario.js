@@ -106,18 +106,23 @@
   // --------------------------------------------------------- piezas
   // Cada pieza se dibuja con su esquina en (0, 0) y despues se ubica.
   // { els, unir (no separar del siguiente), gid (dibujo de un generador) }
-  function escribirParrafo(str, x, y, maxW, tam, fuente, col, agregar) {
-    var g = G(), lh = tam * fuente.lh;
+  // xResto (opcional): donde empiezan los renglones despues del primero, para
+  // una sangria francesa mas chica que el rotulo de la consigna
+  function escribirParrafo(str, x, y, maxW, tam, fuente, col, agregar, xResto) {
+    var g = G(), lh = tam * fuente.lh, primero = true;
+    var finW = x + maxW; // borde derecho
+    if (xResto === undefined) xResto = x;
+    function xa() { return primero ? x : xResto; }
+    function poner(t) { agregar(g.texto(xa(), y, t, tam, fuente, col, "left")); y += lh; primero = false; }
     String(str).split("\n").forEach(function (par) {
       var palabras = par.split(/ +/), linea = "";
       palabras.forEach(function (p) {
         var prueba = linea ? linea + " " + p : p;
-        if (linea && g.medir(prueba, tam, fuente) > maxW) {
-          agregar(g.texto(x, y, linea, tam, fuente, col, "left")); y += lh; linea = p;
-        } else linea = prueba;
+        if (linea && g.medir(prueba, tam, fuente) > finW - xa()) { poner(linea); linea = p; }
+        else linea = prueba;
       });
-      if (linea) agregar(g.texto(x, y, linea, tam, fuente, col, "left"));
-      y += lh;
+      if (linea) poner(linea);
+      else { y += lh; primero = false; }
     });
     return y;
   }
@@ -205,13 +210,18 @@
       return pl.replace(/\{n\}/g, String(n)).replace(/\{i\}/g, i === undefined ? "" : String(i));
     }
 
+    // sangriaEnunciado: "rotulo" (los renglones siguientes de la consigna
+    // empiezan donde termina «Ejercicio 1:», lo de siempre) o un numero: la
+    // sangria de esos renglones, medida desde donde empieza el rotulo
+    var sangE = typeof est.sangriaEnunciado === "number" && est.sangriaEnunciado >= 0 ? est.sangriaEnunciado : null;
     function enunciado(etiqueta, texto, x, tamN, colN, inicioEj) {
       var p = nuevaPieza(true);
       p.esEnunciado = true; p.inicioEj = !!inicioEj;
       etiqueta = etiqueta ? etiqueta.trim() + " " : "";
       var wE = etiqueta ? g.medir(etiqueta, tamN, fuenteE) : 0;
       if (etiqueta) p.agregar(g.texto(x, 0, etiqueta.trim(), tamN, fuenteE, colN, "left"));
-      if (texto) escribirParrafo(texto, x + wE, 0, maxW - x - wE, tamN, fuenteE, COLOR_ENUNCIADO, p.agregar);
+      var xResto = sangE === null ? x + wE : x + Math.min(sangE, wE);
+      if (texto) escribirParrafo(texto, x + wE, 0, maxW - x - wE, tamN, fuenteE, COLOR_ENUNCIADO, p.agregar, xResto);
       p.espacio = lh * 0.4;
       if (p.els.length) piezas.push(p);
     }
