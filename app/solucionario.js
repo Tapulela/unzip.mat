@@ -54,7 +54,10 @@
     if (Array.isArray(x.frac) && x.frac.length === 2) {
       return { frac: [items(x.frac[0], ruta + ".frac[0]", errores), items(x.frac[1], ruta + ".frac[1]", errores)], color: color(x.color, undefined) };
     }
-    if (x.raiz !== undefined) return { raiz: items(x.raiz, ruta + ".raiz", errores), color: color(x.color, undefined) };
+    if (x.raiz !== undefined) {
+      return { raiz: items(x.raiz, ruta + ".raiz", errores), indice: x.indice !== undefined ? String(x.indice) : undefined,
+        color: color(x.color, undefined) };
+    }
     if (x.marca === "ok" || x.marca === "mal") return { marca: x.marca };
     if (Array.isArray(x.sistema)) {
       return { sistema: x.sistema.map(function (f, i) { return items(f, ruta + ".sistema[" + i + "]", errores); }), color: color(x.color, undefined) };
@@ -62,7 +65,7 @@
     if (Array.isArray(x.tabla)) {
       return { tabla: x.tabla.map(function (f, i) {
         return (Array.isArray(f) ? f : [f]).map(function (c, j) { return items(c, ruta + ".tabla[" + i + "][" + j + "]", errores); });
-      }), lineas: x.lineas === true };
+      }), lineas: x.lineas === true, alinear: x.alinear };
     }
     errores.push(ruta + ": no se reconoce el item " + JSON.stringify(x).slice(0, 60));
     return { t: "" };

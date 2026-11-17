@@ -4768,6 +4768,19 @@
     cols.forEach(function (c) { c.x = x; x += c.txt + c.mar + gap; });
     return { cols: cols, w: x - gap + pad, altoF: altoF, alto: it.tabla.length * altoF, pad: pad, gap: gap };
   }
+  // índice de una raíz ({ raiz, indice: "n − 1" }): más chico y arriba del
+  // gancho, separado del renglón para que no se lea como un producto. Si es
+  // ancho, corre la raíz a la derecha. alto: cuánto sube sobre el medio del renglón
+  function indiceRaizF(it, tam, fuente) {
+    if (!it.indice) return { corre: 0, alto: 0 };
+    var g = tam * 0.6, tamI = Math.round(tam * 0.55), wI = medir(it.indice, tamI, fuente), sube = tam * 0.35;
+    return { tamI: tamI, wI: wI, sube: sube, corre: Math.max(0, wI - g * 0.45), alto: sube + tamI * fuente.lh };
+  }
+  // alineación de la columna j de una tabla: "izq", "centro" o "der" (por defecto)
+  function alinearColF(it, j) {
+    var a = Array.isArray(it.alinear) ? it.alinear[j] : it.alinear;
+    return a === "izq" || a === "centro" ? a : "der";
+  }
   function medirItF(it, tam, fuente) {
     var lh = tam * fuente.lh;
     if (it.tabla) { var mt = medidasTablaF(it, tam, fuente); return { w: mt.w, ar: mt.alto / 2, ab: mt.alto / 2 }; }
@@ -4782,8 +4795,8 @@
       return { w: Math.max(n.w, d.w) + tam * 0.5, ar: n.ar + n.ab + 4, ab: d.ar + d.ab + 4 };
     }
     if (it.raiz) {
-      var r = medirItsF(it.raiz, tam, fuente);
-      return { w: r.w + tam * 0.8, ar: r.ar + 4, ab: r.ab };
+      var r = medirItsF(it.raiz, tam, fuente), ix = indiceRaizF(it, tam, fuente);
+      return { w: r.w + tam * 0.8 + ix.corre, ar: Math.max(r.ar + 4, ix.alto), ab: r.ab };
     }
     return { w: medir(it.t, tam, fuente), ar: lh / 2, ab: lh / 2 };
   }
@@ -4796,7 +4809,8 @@
         it.tabla.forEach(function (f, i) {
           f.forEach(function (celda, j) {
             var col = mt.cols[j], txt = medirItsF(celda.filter(function (q) { return !q.marca; }), tam, fuente).w;
-            dibujarItsF(celda, x + col.x + col.txt - txt, y0 + mt.altoF * (i + 0.5), c, tam, fuente, agregar);
+            var al = alinearColF(it, j), dx = al === "izq" ? 0 : al === "centro" ? (col.txt - txt) / 2 : col.txt - txt;
+            dibujarItsF(celda, x + col.x + dx, y0 + mt.altoF * (i + 0.5), c, tam, fuente, agregar);
           });
         });
         // «lineas»: marco y grilla; la primera fila y la primera columna (los
@@ -4834,9 +4848,11 @@
         dibujarItsF(it.frac[1], x + (m.w - d.w) / 2, mid + 4 + d.ar, c, tam, fuente, agregar);
       } else if (it.raiz) {
         var r = medirItsF(it.raiz, tam, fuente), g = tam * 0.6, top = mid - r.ar - 1, bot = mid + r.ab - 3;
-        agregar(trazo([[x + tam * 0.05, mid + 2], [x + g * 0.3, mid - 2], [x + g * 0.6, bot], [x + g, top],
-          [x + g + r.w + tam * 0.1, top]], { strokeColor: c, strokeWidth: 1.5 }));
-        dibujarItsF(it.raiz, x + g + tam * 0.05, mid, c, tam, fuente, agregar);
+        var ix = indiceRaizF(it, tam, fuente), xr = x + ix.corre;
+        if (it.indice) agregar(texto(xr + g * 0.5 - ix.wI, mid - ix.alto, it.indice, ix.tamI, fuente, c, "left"));
+        agregar(trazo([[xr + tam * 0.05, mid + 2], [xr + g * 0.3, mid - 2], [xr + g * 0.6, bot], [xr + g, top],
+          [xr + g + r.w + tam * 0.1, top]], { strokeColor: c, strokeWidth: 1.5 }));
+        dibujarItsF(it.raiz, xr + g + tam * 0.05, mid, c, tam, fuente, agregar);
       } else {
         var lead = it.t.length - it.t.replace(/^\s+/, "").length, limpio = it.t.trim();
         if (limpio) agregar(texto(x + medir(it.t.slice(0, lead), tam, fuente), mid - lh / 2, limpio, tam, fuente, c, "left"));
