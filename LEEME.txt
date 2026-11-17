@@ -94,7 +94,8 @@ RECTA REAL CON INTERVALOS (prototipo)
       Plantillas
       Logica proposicional (Unidad 1):  Tablas de verdad, Simplificacion
                                         paso a paso, Razonamiento deductivo
-      Teoria de conjuntos (Unidad 2):   Conjuntos, Relaciones binarias,
+      Teoria de conjuntos (Unidad 2):   Conjuntos, Diagramas de Venn,
+                                        Relaciones binarias,
                                         Estructuras algebraicas,
                                         Simplificacion paso a paso
       Algebra de Boole (Unidad 3):      Funciones booleanas, Simplificacion
@@ -436,6 +437,47 @@ CONJUNTOS (prototipo)
   en el orden de las filas.
 - Ojo: igual que en Funciones, las funciones son codigo que se ejecuta en
   el navegador.
+
+DIAGRAMAS DE VENN (prototipo)
+- En el menu de Generadores, "Teoria de conjuntos" → "Diagramas de Venn".
+  Dibuja 2, 3 o 4 conjuntos (con 4, elipses) dentro de un rectangulo que
+  es el universo U, con el nombre de cada conjunto al lado de su contorno.
+- Arriba: "Conjuntos" (los nombres separados por coma: A, B, C o V, R, A
+  o Pr, In, Po) y "Variables" (los nombres para las zonas sin dato, en
+  orden: primero las de un solo conjunto, despues las de dos, tres..., y
+  al final la de afuera; si no alcanzan sigue con x₁, x₂...).
+- Cada fila es un dato, "algo = numero":
+      |A| = 23            cardinal de un conjunto (tambien A = 23, n(A) = 23)
+      |A ∩ B| = 11        incluye la zona comun a todos
+      |A ∪ B| = 30, A − B = 4, (A ∪ B)' = 2   cualquier expresion
+      solo A = 8          solo ese conjunto
+      solo A y B = 6      esos dos y ninguno mas (= A y B pero no C,
+                          = A ∩ B − C, = R y A sin V)
+      los tres = 5        (o todos, los cuatro, los dos)
+      ninguno = 0         fuera de todos
+      U = 38              total del universo
+  Operaciones: ∩ (y, &), ∪ (o, +), − (sin, \), Δ, complemento A'.
+  ∩ se resuelve antes que ∪, − y Δ.
+  Tambien se puede ponerle nombre a una zona: solo A = x.
+- Las zonas sin dato son incognitas. Cada dato es una ecuacion (la suma de
+  sus zonas); se resuelven primero las que tienen una sola incognita (esas
+  son los pasos que se escriben) y lo que queda, como sistema.
+  Si los datos no cierran (por ejemplo una zona da negativo) la fila se
+  pone en rojo y dice por que; si no alcanzan, la ultima fila avisa que
+  zonas quedan como incognitas. La zona de afuera queda en blanco si ningun
+  dato la usa (por ejemplo, si no se da U).
+- "Mostrar": "Planteo" escribe en cada zona su dato o su variable (x, y...);
+  "Resuelto" escribe los numeros calculados.
+- Para imprimir en blanco y negro: "Contornos: Distintos" dibuja cada
+  conjunto con un trazo distinto (lleno, de rayas, de puntos, de rayas
+  grueso). "Conjuntos en colores" es opcional.
+- Opciones: tamaño, texto, fuente, "Cardinales" junto al nombre (|A| = 23:
+  ninguno, los que son datos o todos), y escribir los datos, que zona es
+  cada variable ("x: solo V", "y: V y R, pero no A"), las ecuaciones del
+  planteo (x + y + z + 5 = 18) y la resolucion (|R| = 23 ⇒ y = 23 − 3 −
+  9 − 5 = 6). Los datos y las variables van a la derecha o debajo; la
+  resolucion, siempre debajo.
+- "Ejemplo": 38 fichas verdes, rojas y azules (TP 2, ejercicio 16.1).
 
 RELACIONES BINARIAS (prototipo)
 - En el menu del boton, en "Teoria de conjuntos", elegi "Relaciones binarias".

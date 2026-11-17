@@ -173,6 +173,8 @@
           try { gen.generar(op, x, 0, function (e) { tmp.push(e); return e; }); }
           catch (e) { errores.push(rb + ": el generador «" + b.generador + "» falló (" + (e && e.message || e) + ")"); return; }
           tmp.forEach(function (e) { g.expandirRaices(e).forEach(function (q) { p.els.push(q); }); });
+          // avisos propios del generador (datos inconsistentes o que no alcanzan...)
+          if (gen.avisos) gen.avisos(op).forEach(function (a) { avisos.push(rb + ": " + a); });
           if (!p.els.length) { avisos.push(rb + ": el generador «" + b.generador + "» no dibujó nada (¿datos con errores?)"); return; }
           // vinculado al generador, como si se hubiera insertado desde el panel
           p.els.forEach(function (e) { e.customData = { pizarra: { tipo: b.generador, gid: gid } }; });
