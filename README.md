@@ -111,7 +111,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   herramientas», así hereda el estilo y el tema) con un ítem por generador,
   ordenados en secciones con la unidad del programa de la materia
   (`MENU_ORDEN`): Plantillas suelta; «Lógica proposicional (Unidad 1)»
-  (Tablas de verdad, Simplificación paso a paso, Razonamiento deductivo); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Relaciones
+  (Tablas de verdad, Simplificación paso a paso, Razonamiento deductivo); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Diagramas de Venn, Relaciones
   binarias, Estructuras algebraicas, Simplificación paso a paso); «Álgebra de
   Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, MCM y
   MCD, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
@@ -169,6 +169,36 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   elementos y puntos suspensivos; los universos infinitos se recorren en orden
   (ℚ por altura |p| + q, hasta 20000 elementos), y en ℝ los conjuntos que no
   se pueden listar se escriben por comprensión.
+  **Diagramas de Venn** (`GEN.venn`) dibuja 2, 3 o 4 conjuntos (círculos; con 4,
+  elipses giradas) dentro de un rectángulo que es el universo, con el nombre de cada
+  uno junto a su contorno. Cada fila es un dato `expresión = número`: cardinal de un
+  conjunto (`|A| = 23`, también `n(A)`), de una intersección (`|A ∩ B| = 11`, que
+  incluye la zona común), de cualquier expresión (`∪ ∩ − Δ '`, con `y`, `o`, `sin`,
+  `pero no` como sinónimos; ∩ antes que ∪, − y Δ), de una zona (`solo A`,
+  `solo A y B`, `A y B pero no C`, `los tres`, `ninguno`) o del universo (`U = 38`);
+  `solo A = x` le pone nombre a una zona. Cada zona (máscara de bits de los conjuntos
+  que la contienen) es una incógnita y cada dato una ecuación lineal; se resuelve por
+  sustitución (ecuaciones con una sola incógnita, en el orden de las filas: son los
+  pasos que se escriben, `|R| = 23 ⇒ y = 23 − 3 − 9 − 5 = 6`) y lo que queda por
+  eliminación de Gauss. Avisa en la fila si un dato no cierra (zonas negativas, no
+  enteras, sumas que no coinciden) y en la última si faltan datos; `GEN.venn.avisos(op)`
+  devuelve esos avisos y el importador de soluciones los agrega a los suyos (cualquier
+  generador puede definir `avisos`). «Planteo» escribe en cada zona su dato o su
+  variable y «Resuelto» los valores. Para imprimir en blanco y negro, cada contorno
+  tiene un trazo distinto (lleno, rayas, puntos, rayas grueso); los colores son
+  opcionales. Los números de cada zona van en el punto más alejado de sus bordes
+  (muestreo en una grilla). Opciones (`op`):
+  `nombres` ("A, B, C", 2 a 4), `filas` ([{ texto }] o, desde un `solucion.json`,
+  también strings), `variables` ("x, y, z, w, v, t": nombres para las zonas sin
+  dato, primero las de un conjunto, después las de dos, tres..., la de afuera al
+  final), `mostrar` ("planteo" | "resuelto"), `tamano` ("chico" | "medio" |
+  "grande"), `tamTexto` (S, M, L, XL), `fuente` ("normal" | "mano" | "codigo"),
+  `cardinales` ("no" | "datos" | "todos": `|A| = 23` en lugar del nombre),
+  `trazos` ("distintos" | "iguales"), `colores`, `datos` (lista de datos),
+  `referencias` (qué zona es cada variable), `ecuaciones` (las del planteo),
+  `pasos` (la resolución, solo en «Resuelto»), `variableYValor` (`x = 6` en la zona),
+  `textos` ("derecha" | "debajo": dónde van datos, referencias y ecuaciones; la
+  resolución va siempre debajo) y `titulos` («Diagrama de Venn»).
   El quinto, **Relaciones**, define conjuntos finitos y relaciones binarias
   `R ⊆ A × B` por extensión (`{(1, a), (2, b)}`) o por comprensión
   (`(x, y) => x < y`, pudiendo usar conjuntos `A(x)` y relaciones `R(x, y)` de

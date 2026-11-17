@@ -7655,6 +7655,575 @@
     };
   }
 
+  // ====================================================== GENERADOR: DIAGRAMA DE VENN
+  // 2, 3 o 4 conjuntos dentro del universo (un rectangulo). Cada fila es un dato:
+  // el cardinal de una zona o de una expresion con los conjuntos (|A| = 23,
+  // |A ∩ B| = 11, solo A = 8, ninguno = 0, U = 38) o el nombre de la variable de
+  // una zona (solo A = x). Cada zona es una incognita y cada dato una ecuacion
+  // lineal (la suma de las zonas que forman la expresion); se resuelve primero
+  // por sustitucion (ecuaciones con una sola incognita, que son los pasos que se
+  // escriben) y lo que queda, por eliminacion. Zona = mascara de bits: el bit i
+  // esta prendido si la zona esta dentro del conjunto i (0 = fuera de todos).
+  var MAX_VENN = 4;
+  var PALABRAS_VENN = {
+    solo: "solo", "sólo": "solo", solamente: "solo", "únicamente": "solo", unicamente: "solo",
+    ninguno: "ninguno", ninguna: "ninguno", "ningún": "ninguno", ningun: "ninguno", nada: "ninguno",
+    todos: "todos", todas: "todos", los: "los", las: "los", dos: "num", tres: "num", cuatro: "num",
+    y: "y", e: "y", pero: "y", o: "o", u: "o", sin: "sin", no: "no", total: "U",
+  };
+  var TRAZOS_VENN = [
+    { estilo: "solid", grosor: 2 }, { estilo: "dashed", grosor: 2 },
+    { estilo: "dotted", grosor: 2.5 }, { estilo: "dashed", grosor: 4 },
+  ];
+  var RADIOS_VENN = { chico: 90, medio: 115, grande: 145 };
+
+  function filasVenn(op) {
+    return (op.filas || []).map(function (f) { return typeof f === "string" ? { texto: f } : f; });
+  }
+
+  function leerNombresVenn(op) {
+    var t = Array.isArray(op.nombres) ? op.nombres.join(",") : String(op.nombres || "");
+    var l = t.split(/[,;]/).map(function (s) { return s.trim(); }).filter(Boolean);
+    if (l.length < 2) return { error: "Escribí 2, 3 o 4 nombres de conjuntos separados por coma" };
+    if (l.length > MAX_VENN) return { error: "Como mucho " + MAX_VENN + " conjuntos" };
+    for (var i = 0; i < l.length; i++) {
+      if (!/^[A-Za-zÁÉÍÓÚÑáéíóúñ][A-Za-zÁÉÍÓÚÑáéíóúñ0-9₀-₉]*$/.test(l[i]))
+        return { error: "«" + l[i] + "» no sirve como nombre (letras y números, empezando con letra)" };
+      if (l[i] === "U") return { error: "U es el universo: elegí otro nombre" };
+      if (PALABRAS_VENN[l[i].toLowerCase()] && l[i] === l[i].toLowerCase())
+        return { error: "«" + l[i] + "» es una palabra de los datos: elegí otro nombre" };
+      if (l.indexOf(l[i]) !== i) return { error: "«" + l[i] + "» está repetido" };
+    }
+    return { nombres: l };
+  }
+
+  function contarBits(m) { var c = 0; while (m) { c += m & 1; m >>= 1; } return c; }
+
+  // Lee la expresion de la izquierda de un dato. Devuelve { zonas } (bitset de
+  // zonas: el bit z esta prendido si la zona z es parte de la expresion) o { error }.
+  function leerExprVenn(s, nombres) {
+    var n = nombres.length, Z = 1 << n, TODAS = (1 << Z) - 1;
+    s = s.replace(/[−–-]/g, "−").replace(/\\|∖/g, "−").replace(/[\^&]/g, "∩").replace(/\+/g, "∪")
+      .replace(/[ᶜ’´`]/g, "'").replace(/Ø/g, "∅");
+    var toks = [], i = 0, m;
+    while (i < s.length) {
+      var c = s[i];
+      if (/\s/.test(c)) { i++; continue; }
+      if ("()∩∪−Δ'∅,".indexOf(c) >= 0) { toks.push({ s: c }); i++; continue; }
+      m = /^[A-Za-zÁÉÍÓÚÑáéíóúñ0-9₀-₉]+/.exec(s.slice(i));
+      if (!m) throw "No se entiende «" + c + "»";
+      var w = m[0], k = nombres.indexOf(w), lw = w.toLowerCase();
+      if (k < 0 && !PALABRAS_VENN[lw]) {
+        // nombres sin distinguir mayusculas (si no hay ambiguedad)
+        var cand = nombres.filter(function (x) { return x.toLowerCase() === lw; });
+        if (cand.length === 1) k = nombres.indexOf(cand[0]);
+      }
+      if (k >= 0) toks.push({ conj: k, s: w });
+      else if (w === "U") toks.push({ s: "U" });
+      else if (PALABRAS_VENN[lw]) toks.push({ s: PALABRAS_VENN[lw], w: w });
+      else throw "«" + w + "» no es uno de los conjuntos (" + nombres.join(", ") + ")";
+      i += w.length;
+    }
+    var p = 0;
+    function ver() { return toks[p] && toks[p].s; }
+    function deConj(k) { var r = 0; for (var z = 0; z < Z; z++) if (z & (1 << k)) r |= 1 << z; return r; }
+    function exprU() {
+      var v = inter();
+      for (;;) {
+        var t = ver();
+        if (t === "∪" || t === "o") { p++; v |= inter(); }
+        else if (t === "−" || t === "sin") { p++; v &= ~inter() & TODAS; }
+        else if (t === "Δ") { p++; v ^= inter(); }
+        else return v;
+      }
+    }
+    function inter() {
+      var v = post();
+      while (ver() === "∩" || ver() === "y") { p++; v &= post(); }
+      return v;
+    }
+    function post() {
+      var v = atomo();
+      while (ver() === "'") { p++; v = ~v & TODAS; }
+      return v;
+    }
+    function atomo() {
+      var t = toks[p];
+      if (!t) throw "Falta un conjunto al final";
+      p++;
+      if (t.conj !== undefined) return deConj(t.conj);
+      if (t.s === "(") { var v = exprU(); if (ver() !== ")") throw "Falta cerrar un paréntesis"; p++; return v; }
+      if (t.s === "U") return TODAS;
+      if (t.s === "∅") return 0;
+      if (t.s === "no") return ~post() & TODAS;
+      if (t.s === "ninguno") return 1; // la zona 0
+      if (t.s === "todos") return 1 << (Z - 1);
+      if (t.s === "los") {
+        // los tres / los cuatro / los dos / todos: estan en todos los conjuntos
+        if (ver() === "num" || ver() === "todos") p++;
+        return 1 << (Z - 1);
+      }
+      if (t.s === "solo") {
+        // solo A, solo A y B, solo A ∩ B: exactamente esos conjuntos
+        var bits = 0;
+        for (;;) {
+          var q = toks[p];
+          if (!q || q.conj === undefined) throw "Después de «solo» van uno o más conjuntos: solo A, solo A y B";
+          bits |= 1 << q.conj; p++;
+          var sig = ver();
+          if ((sig === "y" || sig === "∩" || sig === ",") && toks[p + 1] && toks[p + 1].conj !== undefined) p++;
+          else break;
+        }
+        return 1 << bits;
+      }
+      throw "No se entiende «" + (t.w || t.s) + "»";
+    }
+    var r = exprU();
+    if (p < toks.length) throw "Sobra «" + (toks[p].w || toks[p].s) + "»";
+    return r;
+  }
+
+  // Lee un dato: «izquierda = número» o «izquierda = variable».
+  function leerDatoVenn(texto, nombres) {
+    var t = String(texto || "").trim();
+    if (!t) return { vacio: true };
+    var partes = t.split("=");
+    if (partes.length !== 2) return { error: partes.length < 2 ? "Falta «= número» (por ejemplo |A| = 23 o solo A = x)" : "Hay más de un «=»" };
+    var izq = partes[0].trim(), der = partes[1].trim();
+    var mm = /^\|(.*)\|$/.exec(izq) || /^(?:n|#|card)\s*\((.*)\)$/i.exec(izq);
+    if (mm) izq = mm[1].trim();
+    if (!izq) return { error: "Falta la zona o el conjunto antes del =" };
+    var zonas;
+    try { zonas = leerExprVenn(izq, nombres); } catch (e) { return { error: String(e) }; }
+    var r = { zonas: zonas, texto: t };
+    if (der === "?" || der === "") { r.pregunta = true; return r; }
+    var v = evaluar(der);
+    if (isFinite(v)) {
+      if (v < 0) return { error: "Un cardinal no puede ser negativo" };
+      r.valor = v;
+      return r;
+    }
+    if (/^[A-Za-zñ][A-Za-zñ0-9₀-₉']*$/.test(der) && nombres.indexOf(der) < 0 && der !== "U") {
+      if (contarBits(zonas) !== 1) return { error: "Una variable nombra una sola zona (por ejemplo solo A = x o A ∩ B − C = y)" };
+      r.variable = der;
+      return r;
+    }
+    return { error: "Después del = va un número o el nombre de una variable (x, y...)" };
+  }
+
+  // describe una zona con palabras: «solo A», «A y B, pero no C», «ninguno»
+  function describirZonaVenn(z, nombres) {
+    var n = nombres.length, den = [], fue = [];
+    nombres.forEach(function (nm, i) { (z & (1 << i) ? den : fue).push(nm); });
+    function lista(l, y) { return l.length < 2 ? l.join("") : l.slice(0, -1).join(", ") + " " + y + " " + l[l.length - 1]; }
+    if (!den.length) return "ninguno";
+    if (den.length === 1) return "solo " + den[0];
+    if (!fue.length) return n === 2 ? "los dos" : n === 3 ? "los tres" : "los cuatro";
+    return lista(den, "y") + ", pero no " + lista(fue, "ni");
+  }
+
+  // Resuelve los datos. Devuelve { n, nombres, valor[z], variable[z], blanco[z],
+  // pasos, ecuaciones, avisosFila[i], avisos, error }
+  function resolverVenn(op) {
+    var N = leerNombresVenn(op);
+    if (N.error) return { error: N.error, avisosFila: {}, avisos: [N.error] };
+    var nombres = N.nombres, n = nombres.length, Z = 1 << n;
+    var filas = filasVenn(op), datos = [], avisosFila = {}, avisos = [];
+    function avisar(i, msj) { (avisosFila[i] = avisosFila[i] || []).push(msj); }
+    var valor = [], variable = [], usada = {}, fuente = [];
+    filas.forEach(function (f, i) {
+      var d = leerDatoVenn(f.texto, nombres);
+      if (d.vacio) return;
+      if (d.error) { avisar(i, d.error); return; }
+      d.fila = i;
+      d.lista = [];
+      for (var z = 0; z < Z; z++) if (d.zonas & (1 << z)) d.lista.push(z);
+      if (d.variable !== undefined) {
+        var z1 = d.lista[0];
+        if (usada[d.variable] !== undefined && usada[d.variable] !== z1) { avisar(i, "La variable " + d.variable + " ya nombra otra zona"); return; }
+        if (variable[z1] !== undefined && variable[z1] !== d.variable) { avisar(i, "Esa zona ya se llama " + variable[z1]); return; }
+        variable[z1] = d.variable; usada[d.variable] = z1;
+        return;
+      }
+      if (d.valor !== undefined) {
+        if (!d.lista.length) { if (d.valor !== 0) avisar(i, "Esa expresión es vacía: su cardinal es 0"); return; }
+        datos.push(d);
+      }
+    });
+    // datos de una sola zona: se conocen directamente
+    datos.forEach(function (d) {
+      if (d.lista.length === 1 && valor[d.lista[0]] === undefined) { valor[d.lista[0]] = d.valor; fuente[d.lista[0]] = "dato"; d.usado = true; }
+    });
+    var enEcuacion = [];
+    datos.forEach(function (d) { d.lista.forEach(function (z) { enEcuacion[z] = true; }); });
+    // incognitas: las zonas sin dato directo. La zona de afuera (ninguno) solo si aparece en algun dato
+    var incognitas = [];
+    var orden = [];
+    for (var z = 1; z < Z; z++) orden.push(z);
+    orden.sort(function (a, b) { return contarBits(a) - contarBits(b) || a - b; });
+    orden.push(0);
+    var blanco = [];
+    orden.forEach(function (z) {
+      if (valor[z] !== undefined) return;
+      if (z === 0 && !enEcuacion[0] && variable[0] === undefined) { blanco[0] = true; return; }
+      incognitas.push(z);
+    });
+    // nombres automaticos para las incognitas sin nombre
+    var libres = String(op.variables || "x, y, z, w, v, t").split(/[,;\s]+/).filter(function (v) {
+      return v && usada[v] === undefined && nombres.indexOf(v) < 0;
+    });
+    var extra = 1;
+    incognitas.forEach(function (z) {
+      if (variable[z] !== undefined) return;
+      var v = libres.shift();
+      while (!v || usada[v] !== undefined) { v = "x" + String(extra++).replace(/\d/g, function (d) { return "₀₁₂₃₄₅₆₇₈₉"[d]; }); if (usada[v] === undefined) break; }
+      variable[z] = v; usada[v] = z;
+    });
+    // ecuaciones del planteo (las que tienen mas de una zona)
+    var ecuaciones = datos.filter(function (d) { return d.lista.length > 1; });
+    // sustitucion: ecuaciones con una sola incognita, en el orden de las filas
+    var pasos = [];
+    function sustituir() {
+      var hubo = true;
+      while (hubo) {
+        hubo = false;
+        for (var k = 0; k < datos.length; k++) {
+          var d = datos[k];
+          var faltan = d.lista.filter(function (z) { return valor[z] === undefined; });
+          if (faltan.length !== 1) continue;
+          var otros = d.lista.filter(function (z) { return z !== faltan[0]; });
+          var res = d.valor - otros.reduce(function (s, z) { return s + valor[z]; }, 0);
+          valor[faltan[0]] = res; fuente[faltan[0]] = "paso";
+          pasos.push({ zona: faltan[0], dato: d, otros: otros.map(function (z) { return valor[z]; }), valor: res });
+          d.usado = true;
+          hubo = true;
+        }
+      }
+    }
+    // eliminacion de Gauss con lo que queda: incognitas que quedan determinadas
+    function eliminar() {
+      var pend = datos.filter(function (d) { return d.lista.some(function (z) { return valor[z] === undefined; }); });
+      if (!pend.length) return false;
+      var cols = [];
+      pend.forEach(function (d) { d.lista.forEach(function (z) { if (valor[z] === undefined && cols.indexOf(z) < 0) cols.push(z); }); });
+      var M = pend.map(function (d) {
+        var fila = cols.map(function (z) { return d.lista.indexOf(z) >= 0 ? 1 : 0; });
+        fila.push(d.valor - d.lista.reduce(function (s, z) { return s + (valor[z] === undefined ? 0 : valor[z]); }, 0));
+        return fila;
+      });
+      var r = 0, piv = [];
+      for (var c = 0; c < cols.length && r < M.length; c++) {
+        var best = r;
+        for (var i = r; i < M.length; i++) if (Math.abs(M[i][c]) > Math.abs(M[best][c])) best = i;
+        if (Math.abs(M[best][c]) < 1e-9) continue;
+        var tmp = M[r]; M[r] = M[best]; M[best] = tmp;
+        var pv = M[r][c];
+        M[r] = M[r].map(function (x) { return x / pv; });
+        for (i = 0; i < M.length; i++) {
+          if (i === r || Math.abs(M[i][c]) < 1e-12) continue;
+          var f = M[i][c];
+          M[i] = M[i].map(function (x, j) { return x - f * M[r][j]; });
+        }
+        piv.push(c); r++;
+      }
+      // fila 0 = c (c ≠ 0): el sistema no tiene solucion
+      for (i = r; i < M.length; i++) {
+        if (Math.abs(M[i][cols.length]) > 1e-9 && !incompatible) {
+          incompatible = true;
+          avisos.push("Los datos no son consistentes entre sí (el sistema de ecuaciones no tiene solución)");
+        }
+      }
+      var nuevo = false;
+      for (i = 0; i < r; i++) {
+        var c0 = piv[i];
+        var sola = M[i].slice(0, cols.length).every(function (x, j) { return j === c0 || Math.abs(x) < 1e-9; });
+        if (sola) {
+          var v = Math.round(M[i][cols.length] * 1e9) / 1e9;
+          valor[cols[c0]] = v; fuente[cols[c0]] = "paso";
+          pasos.push({ zona: cols[c0], sistema: true, valor: v });
+          nuevo = true;
+        }
+      }
+      return nuevo;
+    }
+    var incompatible = false;
+    sustituir();
+    while (eliminar()) sustituir();
+    // verificacion: los datos que no se usaron tienen que cerrar
+    var inconsistente = false;
+    datos.forEach(function (d) {
+      var s = d.lista.reduce(function (a, z) { return a + (valor[z] === undefined ? 0 : valor[z]); }, 0);
+      if (d.lista.some(function (z) { return valor[z] === undefined; })) {
+        // las zonas que faltan tendrian que sumar un numero negativo
+        if (s - d.valor > 1e-9) {
+          inconsistente = true;
+          avisar(d.fila, "No cierra: las zonas que ya se conocen suman " + formatear(s) + ", más que " + formatear(d.valor));
+        }
+        return;
+      }
+      if (Math.abs(s - d.valor) > 1e-9) {
+        inconsistente = true;
+        avisar(d.fila, "No cierra con los otros datos: sus zonas suman " + formatear(s) + ", no " + formatear(d.valor));
+      }
+    });
+    pasos.forEach(function (p) {
+      if (p.valor < -1e-9) avisar(p.dato ? p.dato.fila : filas.length - 1, "La zona «" + describirZonaVenn(p.zona, nombres) + "» da " + formatear(p.valor) + " (negativo): los datos no son consistentes");
+      else if (Math.abs(p.valor - Math.round(p.valor)) > 1e-9) avisar(p.dato ? p.dato.fila : filas.length - 1, "La zona «" + describirZonaVenn(p.zona, nombres) + "» da " + formatear(p.valor) + " (no es entero)");
+    });
+    var faltan = incognitas.filter(function (z) { return valor[z] === undefined; });
+    if (faltan.length) {
+      avisos.push("Faltan datos: no se pueden calcular " + faltan.map(function (z) { return variable[z]; }).join(", ") +
+        " (" + faltan.map(function (z) { return describirZonaVenn(z, nombres); }).join("; ") + "); quedan como incógnitas");
+    }
+    // cardinales de cada conjunto y del universo (si se conocen todas sus zonas)
+    function suma(test) {
+      var s = 0;
+      for (var z = 0; z < Z; z++) if (test(z)) { if (valor[z] === undefined) return undefined; s += valor[z]; }
+      return s;
+    }
+    var totales = nombres.map(function (nm, i) { return suma(function (z) { return z & (1 << i); }); });
+    var totalU = suma(function () { return true; });
+    // cardinales dados como dato (para escribirlos en el planteo)
+    var dadosConj = [], dadoU;
+    datos.forEach(function (d) {
+      nombres.forEach(function (nm, i) {
+        var bits = 0;
+        for (var z = 0; z < Z; z++) if (z & (1 << i)) bits |= 1 << z;
+        if (d.zonas === bits) dadosConj[i] = d.valor;
+      });
+      if (d.zonas === (1 << Z) - 1) dadoU = d.valor;
+    });
+    return {
+      n: n, Z: Z, nombres: nombres, valor: valor, fuente: fuente, variable: variable, blanco: blanco,
+      incognitas: incognitas, pasos: pasos, ecuaciones: ecuaciones, datos: datos, orden: orden,
+      avisosFila: avisosFila, avisos: avisos, inconsistente: inconsistente, faltan: faltan,
+      totales: totales, totalU: totalU, dadosConj: dadosConj, dadoU: dadoU, filas: filas,
+    };
+  }
+
+  function erroresVenn(t, op, i) {
+    var R = resolverVenn(op), l = filasVenn(op);
+    if (R.error) return [];
+    var e = (R.avisosFila[i] || []).slice();
+    // los avisos generales van en la ultima fila con texto
+    var ultima = -1;
+    l.forEach(function (f, k) { if (String(f.texto || "").trim()) ultima = k; });
+    if (i === ultima) e = e.concat(R.avisos);
+    return e;
+  }
+
+  // ---- geometria: elipses en coordenadas locales (centro del diagrama en 0, 0)
+  function elipsesVenn(n, R) {
+    var g = Math.PI / 180;
+    if (n === 2) return [{ cx: -0.55 * R, cy: 0, a: R, b: R, ang: 0 }, { cx: 0.55 * R, cy: 0, a: R, b: R, ang: 0 }];
+    if (n === 3) {
+      var rho = 0.62 * R;
+      return [210, 330, 90].map(function (t) { return { cx: rho * Math.cos(t * g), cy: rho * Math.sin(t * g), a: R, b: R, ang: 0 }; });
+    }
+    // 4 conjuntos: cuatro elipses giradas (todas las zonas existen)
+    var k = 3.3 * R;
+    return [[-0.147, 0.1, 40], [-0.047, 0, 40], [0.047, 0, 140], [0.147, 0.1, 140]].map(function (q) {
+      return { cx: q[0] * k, cy: q[1] * k, a: 0.36 * k, b: 0.225 * k, ang: q[2] * g };
+    });
+  }
+  // F < 0 adentro; distancia aproximada al borde |F| / |∇F|
+  function evalElipse(e, x, y) {
+    var dx = x - e.cx, dy = y - e.cy, c = Math.cos(e.ang), s = Math.sin(e.ang);
+    var u = dx * c + dy * s, v = -dx * s + dy * c;
+    var F = (u * u) / (e.a * e.a) + (v * v) / (e.b * e.b) - 1;
+    var gu = 2 * u / (e.a * e.a), gv = 2 * v / (e.b * e.b);
+    var gn = Math.sqrt(gu * gu + gv * gv) || 1e-9;
+    return { F: F, d: Math.abs(F) / gn };
+  }
+
+  function generarVenn(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal;
+    var tam = TAMANOS[op.tamTexto] || 20, tamN = tamTitulo(tam), lh = tam * fuente.lh;
+    var R0 = resolverVenn(op);
+    if (R0.error) return;
+    var nombres = R0.nombres, n = R0.n, Z = R0.Z;
+    var R = RADIOS_VENN[op.tamano] || 115;
+    if (n === 4) R *= 1.1;
+    var els = elipsesVenn(n, R);
+    var resuelto = op.mostrar !== "planteo";
+    var colorDe = function (i) { return op.colores ? COLORES[i % COLORES.length] : TINTA; };
+    var tmp = [];
+    function ag(e) { tmp.push(e); return e; }
+
+    // textos de las zonas
+    function textoZona(z) {
+      if (R0.blanco[z]) return "";
+      var v = R0.valor[z], nom = R0.variable[z];
+      if (R0.fuente[z] === "dato" || nom === undefined) return v === undefined ? "" : formatear(v);
+      if (!resuelto || v === undefined) return nom;
+      return op.variableYValor ? nom + " = " + formatear(v) : formatear(v);
+    }
+    // cardinal de cada conjunto junto a su nombre
+    function cardConj(i) {
+      if (op.cardinales === "datos") return R0.dadosConj[i];
+      if (op.cardinales === "todos") return R0.dadosConj[i] !== undefined ? R0.dadosConj[i] : resuelto ? R0.totales[i] : undefined;
+      return undefined;
+    }
+    var etiquetas = nombres.map(function (nm, i) {
+      var c = cardConj(i);
+      return c === undefined ? nm : "|" + nm + "| = " + formatear(c);
+    });
+
+    // posicion del nombre de cada conjunto: el punto del borde que no esta dentro
+    // de los otros y queda mas lejos del centro del diagrama
+    var cajasNombres = [];
+    els.forEach(function (e, i) {
+      var w = medir(etiquetas[i], tamN, fuente), h = tamN * fuente.lh;
+      var mejor = null;
+      for (var t = 0; t < 360; t += 2) {
+        var th = t * Math.PI / 180, c = Math.cos(e.ang), s = Math.sin(e.ang);
+        var u = e.a * Math.cos(th), v = e.b * Math.sin(th);
+        var x = e.cx + u * c - v * s, y = e.cy + u * s + v * c;
+        var afuera = els.every(function (o, j) { return j === i || evalElipse(o, x, y).F > 0.25; });
+        if (!afuera) continue;
+        // normal hacia afuera
+        var nu = Math.cos(th) / e.a, nv = Math.sin(th) / e.b;
+        var nx = nu * c - nv * s, ny = nu * s + nv * c, nn = Math.sqrt(nx * nx + ny * ny);
+        nx /= nn; ny /= nn;
+        var dist = Math.sqrt(x * x + y * y) + (n === 2 ? -Math.abs(y) * 0.5 : 0);
+        if (!mejor || dist > mejor.dist) mejor = { x: x, y: y, nx: nx, ny: ny, dist: dist };
+      }
+      var sep = 8 + 0.5 * Math.abs(w * mejor.nx) + 0.5 * Math.abs(h * mejor.ny);
+      var cx = mejor.x + mejor.nx * sep, cy = mejor.y + mejor.ny * sep;
+      cajasNombres.push({ x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2, w: w, h: h, cx: cx, cy: cy });
+    });
+
+    // universo: caja de las elipses y los nombres, con margen
+    var bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
+    els.forEach(function (e) {
+      var c = Math.cos(e.ang), s = Math.sin(e.ang);
+      var hx = Math.sqrt(e.a * e.a * c * c + e.b * e.b * s * s), hy = Math.sqrt(e.a * e.a * s * s + e.b * e.b * c * c);
+      bx0 = Math.min(bx0, e.cx - hx); bx1 = Math.max(bx1, e.cx + hx);
+      by0 = Math.min(by0, e.cy - hy); by1 = Math.max(by1, e.cy + hy);
+    });
+    cajasNombres.forEach(function (b) {
+      bx0 = Math.min(bx0, b.x0); bx1 = Math.max(bx1, b.x1); by0 = Math.min(by0, b.y0); by1 = Math.max(by1, b.y1);
+    });
+    var margen = Math.max(0.3 * R, tamN * 1.6);
+    var U = { x0: bx0 - margen, y0: by0 - margen, x1: bx1 + margen, y1: by1 + margen };
+    var etiquetaU = "U";
+    var cardU = op.cardinales === "no" ? undefined : R0.dadoU !== undefined ? R0.dadoU :
+      op.cardinales === "todos" && resuelto ? R0.totalU : undefined;
+    if (cardU !== undefined) etiquetaU = "U    |U| = " + formatear(cardU);
+    var wU = medir(etiquetaU, tamN, fuente);
+    var cajaU = { x0: U.x0 + 10, y0: U.y0 + 6, x1: U.x0 + 10 + wU, y1: U.y0 + 6 + tamN * fuente.lh };
+
+    // 1. universo y su nombre
+    ag(base("rectangle", { x: U.x0, y: U.y0, width: U.x1 - U.x0, height: U.y1 - U.y0, strokeWidth: 2 }));
+    ag(texto(cajaU.x0, cajaU.y0, etiquetaU, tamN, fuente, TINTA, "left"));
+    // 2. conjuntos (contornos distintos para imprimir en blanco y negro) y sus nombres
+    els.forEach(function (e, i) {
+      var tr = op.trazos === "iguales" ? TRAZOS_VENN[0] : TRAZOS_VENN[i];
+      ag(base("ellipse", {
+        x: e.cx - e.a, y: e.cy - e.b, width: 2 * e.a, height: 2 * e.b, angle: e.ang,
+        strokeColor: colorDe(i), strokeStyle: tr.estilo, strokeWidth: tr.grosor,
+      }));
+      var b = cajasNombres[i];
+      ag(texto(b.cx, b.y0, etiquetas[i], tamN, fuente, colorDe(i), "center"));
+    });
+    // 3. zonas: el punto mas alejado de los bordes (muestreo en una grilla)
+    var paso = Math.max(3, R / 30), mejor = [];
+    var obst = cajasNombres.concat([cajaU]);
+    for (var y = U.y0 + paso / 2; y < U.y1; y += paso) {
+      for (var x = U.x0 + paso / 2; x < U.x1; x += paso) {
+        var z = 0, d = Infinity;
+        els.forEach(function (e, i) {
+          var r = evalElipse(e, x, y);
+          if (r.F < 0) z |= 1 << i;
+          d = Math.min(d, r.d);
+        });
+        if (z === 0) {
+          d = Math.min(d, x - U.x0, U.x1 - x, y - U.y0, U.y1 - y);
+          obst.forEach(function (b) {
+            var ddx = Math.max(b.x0 - x, 0, x - b.x1), ddy = Math.max(b.y0 - y, 0, y - b.y1);
+            d = Math.min(d, Math.sqrt(ddx * ddx + ddy * ddy));
+          });
+        }
+        if (!mejor[z] || d > mejor[z].d) mejor[z] = { x: x, y: y, d: d };
+      }
+    }
+    for (var zz = 0; zz < Z; zz++) {
+      var s = textoZona(zz);
+      if (!s || !mejor[zz]) continue;
+      ag(texto(mejor[zz].x, mejor[zz].y - lh / 2, s, tam, fuente, TINTA, "center"));
+    }
+
+    // 4. textos: datos, que es cada variable, ecuaciones y pasos
+    var lineas = [];
+    function titulo(t) { lineas.push({ t: t, titulo: true }); }
+    function zonasEn(d, conVal) {
+      return d.lista.map(function (z) {
+        var v = R0.valor[z], nom = R0.variable[z];
+        if (R0.fuente[z] === "dato" || (conVal && v !== undefined) || nom === undefined) return v === undefined ? "?" : formatear(v);
+        return nom;
+      });
+    }
+    if (op.datos) {
+      var conTexto = R0.filas.filter(function (f, i) {
+        return String(f.texto || "").trim() && !(R0.avisosFila[i] && R0.avisosFila[i].length && !leerDatoVenn(f.texto, nombres).zonas);
+      });
+      if (conTexto.length) {
+        titulo("Datos:");
+        conTexto.forEach(function (f) { lineas.push({ t: String(f.texto).trim().replace(/\s*=\s*/, " = ") }); });
+      }
+    }
+    var conNombre = R0.incognitas.filter(function (z) { return R0.variable[z] !== undefined; });
+    if (op.referencias && conNombre.length) {
+      titulo("Incógnitas:");
+      conNombre.forEach(function (z) { lineas.push({ t: R0.variable[z] + ": " + describirZonaVenn(z, nombres) }); });
+    }
+    if (op.ecuaciones && R0.ecuaciones.length) {
+      titulo("Ecuaciones:");
+      R0.ecuaciones.forEach(function (d) {
+        // en el planteo, solo con los datos directos (sin lo calculado)
+        lineas.push({ t: zonasEn(d, false).join(" + ") + " = " + formatear(d.valor) });
+      });
+    }
+    // la resolucion va siempre debajo del diagrama (sus renglones son largos)
+    var costado = lineas;
+    lineas = [];
+    if (resuelto && op.pasos && R0.pasos.length) {
+      titulo("Resolución:");
+      R0.pasos.forEach(function (p) {
+        var nom = R0.variable[p.zona] || describirZonaVenn(p.zona, nombres);
+        if (p.sistema) { lineas.push({ t: nom + " = " + formatear(p.valor) + "   (resolviendo el sistema)" }); return; }
+        var cuenta = formatear(p.dato.valor);
+        p.otros.forEach(function (v) { cuenta += v < 0 ? " + " + formatear(-v) : " − " + formatear(v); });
+        var ref = p.dato.texto.replace(/\s*=\s*/, " = ");
+        lineas.push({ t: ref + "   ⇒   " + nom + " = " + (p.otros.length ? cuenta + " = " : "") + formatear(p.valor) });
+      });
+    }
+    function escribir(lista, tx, ty) {
+      lista.forEach(function (l, k) {
+        if (l.titulo && k > 0) ty += lh * 0.4;
+        ag(texto(tx, ty, l.t, tam, fuente, l.titulo ? GUIA : TINTA, "left"));
+        ty += lh + 4;
+      });
+      return ty;
+    }
+    var abajo = U.y1 + 20;
+    if (op.textos === "debajo") lineas = costado.concat(lineas);
+    else if (costado.length) abajo = Math.max(abajo, escribir(costado, U.x1 + 32, U.y0) + 16);
+    escribir(lineas, U.x0, abajo);
+    var b0 = cajaDe(tmp);
+    tmp.forEach(function (e) { e.x += ox - b0.x0; e.y += oy - b0.y0; agregar(e); });
+  }
+
+  function avisosVenn(op) {
+    var R = resolverVenn(op);
+    if (R.error) return [R.error];
+    var l = [];
+    R.filas.forEach(function (f, i) {
+      (R.avisosFila[i] || []).forEach(function (a) { l.push("dato «" + String(f.texto).trim() + "»: " + a); });
+    });
+    return l.concat(R.avisos);
+  }
+
   // ====================================================== GENERADORES
   // Cada generador define su contenido (filas), opciones, panel y como dibujar.
   // contenido: claves que "Restablecer" no toca (lo que se grafica, no el aspecto).
@@ -8014,6 +8583,95 @@
         ui.chk("Escribir el universo", "escribirU");
         ui.chk("Escribir la definición (A ∪ B = ..., {x ∈ U / ...} = ...)", "mostrarDef");
         ui.chk("Escribir el cardinal |A| (si se conocen todos los elementos)", "cardinal");
+      },
+    },
+
+    venn: {
+      titulo: "Diagrama de Venn",
+      dibujo: "diagrama", femenino: false,
+      clave: "pizarra-generador-venn",
+      defecto: {
+        nombres: "A, B, C",
+        filas: [
+          { texto: "U = 60", color: COLORES[0] },
+          { texto: "solo A = 15", color: COLORES[1] },
+          { texto: "|A ∩ B| = 11", color: COLORES[2] },
+          { texto: "solo C = 12", color: COLORES[3] },
+          { texto: "|A ∩ C| = 8", color: COLORES[4] },
+          { texto: "solo B = 10", color: COLORES[5] },
+          { texto: "|B ∩ C| = 5", color: COLORES[0] },
+          { texto: "los tres = 3", color: COLORES[1] },
+        ],
+        variables: "x, y, z, w, v, t", mostrar: "resuelto",
+        tamano: "medio", tamTexto: "M", fuente: "normal", cardinales: "datos", trazos: "distintos",
+        colores: false, datos: true, referencias: true, ecuaciones: false, pasos: true,
+        variableYValor: false, textos: "derecha", titulos: true,
+      },
+      contenido: ["filas", "nombres", "variables"],
+      ejemplo: {
+        nombres: "V, R, A",
+        filas: [
+          { texto: "U = 38", color: COLORES[0] },
+          { texto: "|V| = 18", color: COLORES[1] },
+          { texto: "|R| = 23", color: COLORES[2] },
+          { texto: "|A| = 29", color: COLORES[3] },
+          { texto: "solo R = 3", color: COLORES[4] },
+          { texto: "solo A = 8", color: COLORES[5] },
+          { texto: "R ∩ A − V = 9", color: COLORES[0] },
+          { texto: "los tres = 5", color: COLORES[1] },
+        ],
+      },
+      textoEjemplo: "Inserta un diagrama nuevo de ejemplo (38 fichas: verdes, rojas y azules)",
+      agregarFila: "+ Dato",
+      placeholder: "Ej: |A| = 23  ·  solo A = 8  ·  A ∩ B − C = x",
+      simbolos: [["| |", "|", "Barras del cardinal: |A ∩ B| = 11"], ["∩", " ∩ ", "Intersección"], ["∪", " ∪ ", "Unión"],
+        ["−", " − ", "Diferencia"], ["A'", "'", "Complemento respecto de U (se escribe después: A')"],
+        ["solo", "solo ", "Zona de un solo conjunto (solo A) o de varios y ninguno más (solo A y B)"],
+        ["ninguno", "ninguno = ", "Zona fuera de todos los conjuntos"], ["todos", "los tres = ", "Zona común a todos"],
+        ["U", "U = ", "Total del universo"]],
+      ayuda: "Arriba van los nombres de los conjuntos (2, 3 o 4). Cada fila es un dato: el cardinal de " +
+        "un conjunto o de una expresión (|A| = 23, |A ∩ B| = 11, que incluye la zona común a todos, " +
+        "|A ∪ B| = 30, A − B = 4, (A ∪ B)' = 2), de una zona (solo A = 8, solo A y B = 6, " +
+        "A y B pero no C = 6, los tres = 5, ninguno = 0) o del universo (U = 38). También se puede " +
+        "nombrar la variable de una zona: solo A = x. Las zonas sin dato se llaman con las variables de " +
+        "arriba y se calculan resolviendo las ecuaciones que dan los datos; si no alcanzan o no cierran, " +
+        "la última fila lo avisa. «Planteo» dibuja los datos y las variables; «Resuelto», el resultado. " +
+        "Seleccioná un diagrama ya insertado para editarlo.",
+      erroresFila: erroresVenn,
+      avisos: avisosVenn,
+      posicion: function (op, cx, cy) { return { x: cx - 380, y: cy - 220 }; },
+      generar: function (op, ox, oy, agregar) {
+        conTitulo(op.titulos && "Diagrama de Venn", TAMANOS[op.tamTexto] || 20, FUENTES[op.fuente] || FUENTES.normal,
+          agregar, function (ag) { generarVenn(op, ox, oy, ag); });
+      },
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.campos("Conjuntos", [{ clave: "nombres", prefijo: "", texto: true, ancho: 150,
+            titulo: "Nombres de los conjuntos (2, 3 o 4), separados por coma: A, B, C" }],
+          function () { return leerNombresVenn(op).error || ""; });
+          ui.campos("Variables", [{ clave: "variables", prefijo: "", texto: true, ancho: 150,
+            titulo: "Nombres para las zonas sin dato, en orden: primero las de un solo conjunto, " +
+              "después las de dos, tres..., y al final la de afuera (ninguno)" }]);
+          ui.seg("Mostrar", "mostrar", [["planteo", "Planteo (datos y variables)"], ["resuelto", "Resuelto"]], true);
+        });
+        ui.seg("Tamaño", "tamano", [["chico", "Chico"], ["medio", "Medio"], ["grande", "Grande"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.seg("Cardinales", "cardinales", [["no", "No"], ["datos", "Los datos", "Junto al nombre, |A| = 23 si es un dato"],
+          ["todos", "Todos", "También los calculados (en el resuelto)"]]);
+        ui.seg("Contornos", "trazos", [["distintos", "Distintos ─ ╌ ┈", "Cada conjunto con un trazo distinto (para imprimir en blanco y negro)"],
+          ["iguales", "Iguales"]]);
+        ui.seg("Textos", "textos", [["derecha", "A la derecha"], ["debajo", "Debajo"]]);
+        ui.chk("Escribir los datos", "datos");
+        ui.chk("Escribir qué zona es cada variable", "referencias");
+        ui.chk("Escribir las ecuaciones del planteo", "ecuaciones");
+        if (op.mostrar !== "planteo") {
+          ui.chk("Escribir la resolución (cómo se calcula cada variable)", "pasos");
+          ui.chk("En cada zona, la variable y su valor (x = 6)", "variableYValor");
+        }
+        ui.chk("Conjuntos en colores", "colores");
+        ui.chk("Título («Diagrama de Venn»)", "titulos");
       },
     },
 
@@ -8695,7 +9353,7 @@
   };
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
+  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "venn", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
   // nombre e icono (un simbolo) de cada generador en el menu desplegable
   // panel: titulo del panel cuando no es el nombre del item (los items solos
   // en su seccion no repiten el nombre de la seccion)
@@ -8703,6 +9361,7 @@
     tabla: { nombre: "Tablas de verdad", panel: "Lógica proposicional", icono: "⊨" },
     boole: { nombre: "Funciones booleanas", panel: "Álgebra de Boole", icono: "∧" },
     conjuntos: { nombre: "Conjuntos", icono: "∪" },
+    venn: { nombre: "Diagramas de Venn", icono: "◎" },
     relaciones: { nombre: "Relaciones binarias", icono: "R" },
     recta: { nombre: "Recta real", icono: "ℝ" },
     funcion: { nombre: "Gráfico de funciones", icono: "ƒ" },
@@ -8730,7 +9389,7 @@
   var MENU_ORDEN = [
     "plantillas",
     { grupo: "Lógica proposicional", unidad: 1, items: ["tabla", "simpLogica", "razonamientos"] },
-    { grupo: "Teoría de conjuntos", unidad: 2, items: ["conjuntos", "relaciones", "estructuras", "simpConjuntos"] },
+    { grupo: "Teoría de conjuntos", unidad: 2, items: ["conjuntos", "venn", "relaciones", "estructuras", "simpConjuntos"] },
     { grupo: "Álgebra de Boole", unidad: 3, items: ["boole", "simpBoole"] },
     { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
@@ -9567,7 +10226,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
+      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, diagramas de Venn, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.setAttribute("aria-haspopup", "menu");
