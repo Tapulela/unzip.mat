@@ -292,6 +292,12 @@
       });
     }
     var vivos = todos.filter(function (e) { return !e.isDeleted; });
+    // estilo.margenes (mm: sup, inf, ext, lomo) y estilo.dobleFaz: pasan al panel
+    // de Hojas A4 antes de crear las hojas (y valen para las que se creen despues)
+    var estH = sol.estilo || {};
+    if (h.configurar && (estH.margenes || typeof estH.dobleFaz === "boolean")) {
+      h.configurar({ margenes: estH.margenes, dobleFaz: estH.dobleFaz });
+    }
     var hojas = h.hojasDe(todos), bandas = h.bandasDe(todos);
     // primera hoja nueva: a la derecha de todo lo que ya hay
     var sep = h.separacion(), x0 = 0, y0 = 0, n0 = hojas.length ? hojas[hojas.length - 1].customData.pizarraHoja.n : 0;

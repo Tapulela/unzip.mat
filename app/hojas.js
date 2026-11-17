@@ -1333,6 +1333,14 @@
       // para solucionario.js: crear hojas con los margenes del panel y saber su area util
       marco: marco, areaUtil: areaUtil, hojasDe: hojasDe, bandasDe: bandasDe, nuevasBandas: nuevasBandas,
       separacion: function () { return 15 * PX_MM / op.impresion; },
+      // para solucionario.js: una solucion puede traer sus margenes (en mm) y el
+      // doble faz; se guardan en el panel, como si se hubieran escrito ahi
+      configurar: function (c) {
+        if (!c) return;
+        if (c.margenes) for (var k in op.margenes) if (isFinite(c.margenes[k]) && c.margenes[k] >= 0) op.margenes[k] = +c.margenes[k];
+        if (typeof c.dobleFaz === "boolean") op.dobleFaz = c.dobleFaz;
+        guardar();
+      },
     };
     var espera = setInterval(function () {
       var A = api();
