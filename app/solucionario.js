@@ -286,6 +286,41 @@
         if (piezas[k].els && piezas[k].els.length) { piezas[k][campo] = true; return; }
       }
     }
+    // alLado: las piezas de un ítem se ponen a la derecha de las del ítem anterior,
+    // alineadas arriba, como una sola pieza entera (si entran a lo ancho)
+    function esMarcador(e) { return !!(e.customData && e.customData.pizarraMarcador); }
+    function apilar(grupo) {
+      var els = [], y = 0, gap = null, x0 = Infinity, x1 = -Infinity, ok = true, ultimo = null;
+      grupo.forEach(function (p) {
+        if (p.salto || p.gid || (p.barras && p.barras.length)) { ok = false; return; }
+        if (p.hueco !== undefined) { gap = Math.max(gap || 0, p.hueco); return; }
+        if (!p.els || !p.els.length) return;
+        var cs = p.els.map(function (e) { return g.caja(e); });
+        var y0 = Math.min.apply(null, cs.map(function (c) { return c.y0; }));
+        var y1 = Math.max.apply(null, cs.map(function (c) { return c.y1; }));
+        var dy = (els.length ? y + (gap || 0) : 0) - y0, gid = p.gruposListos ? null : g.nuevoId();
+        p.els.forEach(function (e, k) {
+          e.y += dy; els.push(e);
+          if (gid) e.groupIds = [gid];
+          if (!esMarcador(e)) { x0 = Math.min(x0, cs[k].x0); x1 = Math.max(x1, cs[k].x1); }
+        });
+        y = y1 + dy; ultimo = p;
+        gap = p.espacio !== undefined ? p.espacio : lh * 0.6;
+      });
+      return ok && els.length ? { els: els, x0: x0, x1: x1, ultimo: ultimo } : null;
+    }
+    function ponerAlLado(desdeA, hasta, desdeB, r) {
+      var A = apilar(piezas.slice(desdeA, hasta)), B = apilar(piezas.slice(desdeB));
+      if (!A || !B) { avisos.push(r + ": «alLado» no se aplica a ítems con secciones, gráficos o saltos"); return false; }
+      var dx = A.x1 + tam * 2 - B.x0;
+      if (B.x1 + dx > maxW + 1) { avisos.push(r + ": no entra al lado del ítem anterior; va debajo"); return false; }
+      B.els.forEach(function (e) { if (!esMarcador(e)) e.x += dx; });
+      var primera = piezas.slice(desdeA, hasta).filter(function (p) { return p.els && p.els.length; })[0];
+      var junta = { els: A.els.concat(B.els), entero: true, gruposListos: true, inicioIt: true, inicioEj: !!primera.inicioEj };
+      if (B.ultimo && B.ultimo.espacio !== undefined) junta.espacio = B.ultimo.espacio;
+      piezas.splice(desdeA, piezas.length - desdeA, junta);
+      return true;
+    }
     (sol.ejercicios || []).forEach(function (ej, i) {
       var r = "ejercicios[" + i + "]", nEj = ej.numero !== undefined ? ej.numero : i + 1;
       if (i) piezas.push({ hueco: lh * 1.2 });
@@ -294,7 +329,9 @@
       marcar(pEj, ej.marcador, (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1);
       bloques(ej.bloques, sangria * 0.5, r);
       marcarInicio(desdeEj, "inicioEj");
+      var desdeAnt = -1;
       (ej.items || []).forEach(function (it, j) {
+        var antesHueco = piezas.length;
         piezas.push({ hueco: lh * 0.6 });
         var nIt = it.numero !== undefined ? it.numero : String.fromCharCode(97 + j);
         var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt), desdeIt = piezas.length;
@@ -302,6 +339,8 @@
         marcar(pIt, it.marcador, (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1);
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
         marcarInicio(desdeIt, "inicioIt");
+        if (it.alLado && desdeAnt >= 0 && ponerAlLado(desdeAnt, antesHueco, desdeIt, r + ".items[" + j + "]")) desdeIt = desdeAnt;
+        desdeAnt = desdeIt;
       });
     });
     return { piezas: piezas, errores: errores, avisos: avisos, tam: tam, lh: lh, fuente: fuente,
@@ -414,7 +453,9 @@
       // empieza un ejercicio o un ítem: no hay nada que continúe
       if ((it.p.inicioEj || it.p.inicioIt) && it.i === 0) return null;
       if (it.p.esEnunciado && it.i > 0) return "Continúa la consigna en la siguiente hoja";
-      for (var k = 0; k < seq.length; k++) if (seq[k].p.continua) return seq[k].p.continua;
+      // «continua»: el aviso propio del bloque; "" si no hace falta (por ejemplo,
+      // si el bloque anterior ya avisa «(La tabla continúa)»)
+      for (var k = 0; k < seq.length; k++) if (typeof seq[k].p.continua === "string") return seq[k].p.continua || null;
       return "Continúa en la siguiente hoja";
     }
     // líneas verticales de las secciones: un tramo por hoja y por sección, que
@@ -469,7 +510,7 @@
       if (!p.els.length) return;
       // cada pieza en su grupo (las de un generador, en el grupo de su dibujo)
       var gid = p.gid || g.nuevoId();
-      p.els.forEach(function (e) { e.groupIds = [gid]; });
+      if (!p.gruposListos) p.els.forEach(function (e) { e.groupIds = [gid]; });
       var rs = renglones(p.els);
       // el dibujo de un generador no se parte si entra en una hoja: un grafico
       // partido queda con su titulo en una hoja y el dibujo en otra, y ya no se

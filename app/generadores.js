@@ -4754,6 +4754,9 @@
   function TablaF(filas) { return { tabla: filas.map(function (f) { return f.map(itF); }) }; }
   function medidasTablaF(it, tam, fuente) {
     var lh = tam * fuente.lh, cols = [], altoF = lh * 1.35, gap = tam * 3;
+    // con «lineas» (grilla), cada celda deja a lo sumo el ancho de un carácter de
+    // margen a cada lado: la tabla queda angosta
+    if (it.lineas) gap = 2 * medir("0", tam, fuente);
     it.tabla.forEach(function (f) {
       f.forEach(function (celda, j) {
         var txt = medirItsF(celda.filter(function (x) { return !x.marca; }), tam, fuente).w;
@@ -4763,7 +4766,7 @@
         c.mar = Math.max(c.mar, celda.some(function (x) { return x.marca; }) ? mar.w : 0);
       });
     });
-    // con «lineas» queda medio espacio de margen dentro del marco, a cada lado
+    // con «lineas» queda el mismo margen dentro del marco, a cada lado
     var pad = it.lineas ? gap / 2 : 0, x = pad;
     cols.forEach(function (c) { c.x = x; x += c.txt + c.mar + gap; });
     return { cols: cols, w: x - gap + pad, altoF: altoF, alto: it.tabla.length * altoF, pad: pad, gap: gap };
@@ -4815,6 +4818,8 @@
         });
         // «lineas»: marco y grilla; la primera fila y la primera columna (los
         // encabezados de una tabla de doble entrada) se separan con una línea más gruesa
+        // («columnasFijas»: cuántas columnas van antes de esa línea, por ejemplo
+        // las de las variables en una tabla de verdad)
         if (it.lineas) {
           var y1 = y0 + mt.alto, x1 = x + mt.w;
           for (var fi = 0; fi <= it.tabla.length; fi++) {
@@ -4823,7 +4828,7 @@
           }
           var xs = [x].concat(mt.cols.slice(1).map(function (col) { return x + col.x - mt.gap / 2; }), [x1]);
           xs.forEach(function (xx, k) {
-            agregar(trazo([[xx, y0], [xx, y1]], { strokeColor: c, strokeWidth: k === 1 ? 2 : 1 }));
+            agregar(trazo([[xx, y0], [xx, y1]], { strokeColor: c, strokeWidth: k === (it.columnasFijas || 1) ? 2 : 1 }));
           });
         }
       } else if (it.marca === "ok") {
