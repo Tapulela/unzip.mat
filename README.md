@@ -115,7 +115,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (Tablas de verdad, Simplificación paso a paso, Razonamiento deductivo); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Diagramas de Venn, Relaciones
   binarias, Estructuras algebraicas, Simplificación paso a paso); «Álgebra de
   Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, MCM y
-  MCD, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
+  MCD, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales, Inducción matemática); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
   (Unidad 7)» (Formas y operaciones, Raíces n-ésimas). Al elegir uno se abre el panel
   con ese generador. Uno de ellos genera una recta real con intervalos (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
   (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
@@ -231,6 +231,34 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   descompone en factores primos con la tabla de divisiones sucesivas, escribe
   cada factorización y calcula el MCD (comunes con el menor exponente) y el
   MCM (comunes y no comunes con el mayor exponente).
+  **Inducción matemática** toma por fila el término general de una sucesión
+  (`5^(n − 1)`, `2n − 1`, `1/(n(n + 1))`; potencias con `^`, `²` o `ⁿ`, factorial
+  con `!`) y, en «Suma», la fórmula de la suma de los n primeros términos
+  (`1/4(5^n − 1)`, que se lee (1/4)·(5ⁿ − 1)). Escribe la igualdad a demostrar
+  con los primeros términos (las potencias quedan como `5²`, opcional), el paso 1
+  (n = 1, con las cuentas de a una y la marca dibujada), la hipótesis de
+  inducción (n = k, en un recuadro) y el paso 3 (n = k + 1), con llaves sobre los
+  k primeros términos y el término k + 1, y la flecha «Aplicar hipótesis de
+  inducción» al renglón donde se reemplazan por S(k) (lo lineal en k se
+  simplifica: `5^((k + 1) − 1)` pasa a `5^k`). Con «Resolver el paso 3»
+  (activada por defecto) sigue trabajando el miembro izquierdo hasta llegar a
+  S(k + 1), con el miembro derecho repetido en cada renglón, la nota antes de cada
+  paso, la marca y «por inducción, vale para todo n ∈ ℕ». Estrategias
+  (`resolverInd`): si S es c·(…) se reescribe a(k + 1) = c·(a(k + 1)/c) y se saca
+  factor común c; si es (…)/d, se multiplica y divide a(k + 1) por d y se suman
+  las fracciones; con potencias b^(k+m) se llevan a la misma potencia, se saca
+  factor común, se suma y se aplica el producto de potencias de igual base; con
+  polinomios, factor común (lo que queda se factoriza según S(k + 1)) o
+  desarrollar y sumar los términos semejantes; con k en el denominador, común
+  denominador, sumar, factorizar el numerador y simplificar; con factoriales,
+  factor común (k + 1)! y m·(m − 1)! = m!. Cada renglón se controla con números
+  (k = 1…9, fracciones exactas): si alguno no da lo mismo, o no hay estrategia
+  (por ejemplo n·2ⁿ o 1/2ⁿ), se corta y queda «(El resto queda para completar a
+  mano)». Si la
+  fórmula no vale para algún n de 1 a 8, lo avisa debajo de la fila. Los
+  exponentes son un ítem propio de `dibujarBloqueF` (`{ sup: [...] }`, más chico
+  y subido), que también admite el miembro izquierdo como ítems y llaves por
+  encima de los términos (`arriba`).
   **Números complejos** define un número por fila en forma binómica
   (`3 + 4i`), par ordenado (`(3, 4)`), polar (`[5; 53,13°]`, `5∠30°`) o
   trigonométrica (`5(cos 30° + i sen 30°)`), u operaciones entre filas
