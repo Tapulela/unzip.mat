@@ -17,6 +17,7 @@ bienvenida y los enlaces a Excalidraw+ y a las redes del proyecto original.
 | `app/fonts/` | Fuentes incluidas en el build de Excalidraw | Ver abajo |
 | `build/armar-exe.mjs`, `.github/workflows/exe.yml` | Propio | MIT |
 | `unzip.mat.exe` (Releases) | Node.js (MIT) + `servidor.js` y `socket.io` empaquetados + `app/` | Ver «Ejecutable de Windows» abajo |
+| `app/vendor/pdf-lib.min.js` | pdf-lib 1.17.1 (Andrew Dillon), sin cambios | MIT (ver «pdf-lib» abajo) |
 | `node_modules/` (no se versiona) | Dependencias npm (`socket.io` y sus dependencias) | MIT (cada paquete trae su `LICENSE`) |
 
 ## Excalidraw (MIT)
@@ -54,6 +55,16 @@ archivo está en la raíz de `app/`, en `app/fonts/Assistant/LICENSE.txt`;
 | Nunito | OFL 1.1 | Google Fonts |
 | Virgil | OFL 1.1 | Ellinor Rapp |
 | Xiaolai | OFL 1.1 | LXGW (Kose Font) |
+
+## pdf-lib (`app/vendor/`)
+
+`app/vendor/pdf-lib.min.js` es el bundle UMD de [pdf-lib](https://github.com/Hopding/pdf-lib)
+1.17.1 tal como se publica en npm (solo se le quitó la línea `sourceMappingURL`).
+Lo usa `app/hojas.js` para agregar los marcadores a un PDF y se carga recién
+cuando se usa. Licencia MIT, Copyright (c) 2019 Andrew Dillon; el texto está en
+`app/vendor/pdf-lib.LICENSE.md`. El bundle incluye a su vez `pako` (MIT),
+`upng` (MIT), `@pdf-lib/standard-fonts` y `@pdf-lib/upng` (MIT) y `tslib`
+(Microsoft, su aviso de licencia queda dentro del archivo).
 
 ## Dependencias npm
 

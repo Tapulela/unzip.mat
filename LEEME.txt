@@ -4,14 +4,12 @@ UNZIP.MAT (pizarra basada en Excalidraw modificado)
 Que cambia respecto de excalidraw.com
 - Las dos ventanas se sincronizan dentro de tu PC, sin pasar por internet.
   Los trazos aparecen en vivo y sin congelarse.
-- Si agregas ?sinpuntero a la direccion, esa ventana no muestra el puntero
-  del colaborador.
 - En el menu (arriba a la izquierda) -> Preferencias hay una opcion "Ocultar
   selección de colaboradores"
   (activada por defecto): evita que veas resaltados los elementos que otro
   colaborador selecciona. Se recuerda en cada navegador.
 - Y otra, "Ocultar cursores de colaboradores" (activada por
-  defecto). Es equivalente a ?sinpuntero, que sigue funcionando.
+  defecto): esa ventana no muestra el puntero de los demas colaboradores.
 - No se guarda nada en la nube de Excalidraw. Las imagenes pegadas tambien
   se comparten por el servidor local.
 
@@ -40,8 +38,9 @@ PRIMERA VEZ (una sola vez, si no usas unzip.mat.exe)
 
 CADA VEZ QUE GRABES
 1. Doble clic en "Iniciar pizarra.bat".
-   Se abre una ventana negra (dejala abierta) y el navegador ya dentro de una
-   sesion compartida nueva. La pizarra de la sesion arranca vacia (lo que
+   Se abre una ventana negra (dejala abierta) y la misma sesion compartida
+   nueva en dos ventanas: el navegador por defecto y el perfil "Grabacion" de
+   Firefox. La pizarra de la sesion arranca vacia (lo que
    tenias dibujado sin sesion queda guardado en el navegador, aparte).
    Si Windows pregunta por el Firewall, podes poner "Cancelar": no hace falta
    acceso a la red.
@@ -50,10 +49,8 @@ CADA VEZ QUE GRABES
        http://localhost:3000/#room=xxxxxxxx,yyyyyyyy
    (Si preferis crear la sesion a mano: boton de compartir, arriba a la
    derecha -> "Start session" -> "Copy link".)
-3. En la ventana que va a grabar OBS, pega ese link agregando ?sinpuntero
-   antes del #:
-       http://localhost:3000/?sinpuntero#room=xxxxxxxx,yyyyyyyy
-   Ahi fija el encuadre y no la toques mas.
+3. La ventana que va a grabar OBS ya se abre con ese link. Ahi fija el
+   encuadre y no la toques mas.
    (Es la ventana del perfil "Grabacion" de Firefox, como armamos antes.)
    Para poder mover su camara desde la otra ventana, en la ventana grabada
    toca el boton "Proyección" (el de la pantallita, al final de la barra de

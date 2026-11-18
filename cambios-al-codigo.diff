@@ -120,11 +120,8 @@ index 3e04eff..9395fbe 100644
    normalizedWidth: number;
    normalizedHeight: number;
  }) => {
-+  // Ocultar punteros remotos si la URL incluye ?sinpuntero
-+  if (
-+    typeof window !== "undefined" &&
-+    new URLSearchParams(window.location.search).has("sinpuntero")
-+  ) {
++  // Ocultar punteros remotos si esta activa la preferencia (ver app/opciones.js)
++  if (typeof window !== "undefined" && (window as any).__ocultarPunteros) {
 +    return;
 +  }
    // Paint remote pointers

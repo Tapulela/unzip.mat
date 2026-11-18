@@ -11,6 +11,9 @@
 //    y el panel los lista.
 //  - «Imprimir / PDF» exporta cada hoja como SVG y abre el dialogo de impresion
 //    con una pagina A4 por hoja (de ahi se imprime o se guarda como PDF).
+//  - Marcadores del PDF: textos de las hojas marcados (o creados aparte, sin
+//    imprimirse). «Agregar marcadores a un PDF» le arma el indice al PDF ya
+//    guardado, con pdf-lib (app/vendor/), en el navegador.
 //  - Hojas apaisadas: se imprimen giradas 90° a la izquierda en una pagina
 //    vertical (su borde de arriba va al lomo en las hojas impares), asi se
 //    encuadernan con las demas.
@@ -188,8 +191,9 @@
     var hojas = hojasDe(todos), ids = {}, bandas = bandasDe(todos);
     todos.forEach(function (e) { if (esBanda(e)) ids[e.id] = true; });
     hojas.forEach(function (f) { ids[f.id] = true; });
+    // los marcadores que no se imprimen pueden ir en el margen
     var vivos = todos.filter(function (e) {
-      return !e.isDeleted && e.type !== "frame" && e.type !== "magicframe";
+      return !e.isDeleted && e.type !== "frame" && e.type !== "magicframe" && !marcadorOculto(e);
     });
     return hojas.map(function (f) {
       var borde = { x0: f.x, y0: f.y, x1: f.x + f.width, y1: f.y + f.height };
@@ -737,6 +741,265 @@
     A.updateScene({ elements: todos, captureUpdate: "IMMEDIATELY" });
   }
 
+  // ------------------------------------------------------------ marcadores
+  // Un marcador es un texto de una hoja con customData.pizarraMarcador
+  // { nivel: 1..3, imprime }. Su texto es el titulo que se ve en el panel de
+  // marcadores del lector de PDF, y lleva al lugar del texto en su pagina.
+  //  - Un texto de la hoja que se marca sigue imprimiendose (imprime: true).
+  //  - Uno creado aparte (violeta, imprime: false) no se imprime ni cuenta
+  //    como fuera del area util: sirve para marcar un lugar sin titulo visible.
+  // El PDF lo arma el dialogo de impresion, que no pone marcadores: se los
+  // agrega despues «Agregar marcadores a un PDF», con pdf-lib (app/vendor/),
+  // sobre el PDF ya guardado.
+  var NIVELES = 3, VIOLETA = "#6965db";
+  function datosMarcador(e) { return e && e.customData && e.customData.pizarraMarcador; }
+  function esMarcador(e) { return e && !e.isDeleted && e.type === "text" && !!datosMarcador(e); }
+  function marcadorOculto(e) { return esMarcador(e) && datosMarcador(e).imprime === false; }
+  function tituloMarcador(e) {
+    return String(e.originalText || e.text || "").replace(/\s+/g, " ").trim() || "(sin título)";
+  }
+
+  // posicion (mm) de un rectangulo de la pizarra en el papel de su hoja: la
+  // esquina de arriba a la izquierda tal como queda impresa
+  function enPapel(f, c) {
+    var u = porMm(f);
+    return esApaisada(f)
+      ? { x: (c.y0 - f.y) / u, y: A4.h - (c.x1 - f.x) / u }
+      : { x: (c.x0 - f.x) / u, y: (c.y0 - f.y) / u };
+  }
+
+  // marcadores en el orden del documento: por hoja y, en cada una, de arriba
+  // abajo (y de izquierda a derecha en el mismo renglon). Los que no estan en
+  // una hoja van aparte, en `sueltos`.
+  function marcadoresDe(todos) {
+    var hojas = hojasDe(todos), lista = [], sueltos = [], porId = {};
+    hojas.forEach(function (f, i) { porId[f.id] = { f: f, i: i }; });
+    todos.forEach(function (e) {
+      if (!esMarcador(e)) return;
+      var c = caja(e), h = e.frameId ? porId[e.frameId] : null;
+      if (!h && !e.frameId) {
+        hojas.some(function (f, i) {
+          if (adentro(f, (c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2)) { h = { f: f, i: i }; return true; }
+          return false;
+        });
+      }
+      var d = datosMarcador(e), m = {
+        el: e, caja: c, titulo: tituloMarcador(e),
+        nivel: Math.max(1, Math.min(NIVELES, d.nivel | 0 || 1)), imprime: d.imprime !== false,
+      };
+      if (!h) { sueltos.push(m); return; }
+      m.hoja = h.f; m.pagina = h.i; m.papel = enPapel(h.f, c);
+      lista.push(m);
+    });
+    lista.sort(function (a, b) {
+      if (a.pagina !== b.pagina) return a.pagina - b.pagina;
+      if (Math.abs(a.papel.y - b.papel.y) > 2) return a.papel.y - b.papel.y;
+      return a.papel.x - b.papel.x;
+    });
+    return { lista: lista, sueltos: sueltos };
+  }
+
+  // copia de un elemento con otros datos de marcador (null: deja de serlo)
+  function conMarcador(e, datos) {
+    var cd = {};
+    for (var k in e.customData) if (k !== "pizarraMarcador") cd[k] = e.customData[k];
+    if (datos) cd.pizarraMarcador = datos;
+    return modificado(e, { customData: Object.keys(cd).length ? cd : null });
+  }
+
+  // «Agregar marcador»: los textos seleccionados (o los de las formas
+  // seleccionadas) pasan a ser marcadores; sin seleccion, se crea uno que no
+  // se imprime en el margen de la hoja que se esta mirando, a la altura del
+  // centro de la vista.
+  function agregarMarcador(avisar) {
+    var A = api();
+    if (!A) return;
+    var st = A.getAppState(), todos = A.getSceneElementsIncludingDeleted(), vivos = todos.filter(function (e) { return !e.isDeleted; });
+    var sel = st.selectedElementIds || {};
+    var textos = vivos.filter(function (e) { return e.type === "text" && (sel[e.id] || (e.containerId && sel[e.containerId])); });
+    if (textos.length) {
+      var nuevos = textos.filter(function (e) { return !esMarcador(e); }), ids = {};
+      if (!nuevos.length) { avisar(textos.length === 1 ? "Ese texto ya es un marcador." : "Esos textos ya son marcadores."); return; }
+      nuevos.forEach(function (e) { ids[e.id] = true; });
+      A.updateScene({
+        elements: todos.map(function (e) { return ids[e.id] ? conMarcador(e, { nivel: 1, imprime: true }) : e; }),
+        captureUpdate: "IMMEDIATELY",
+      });
+      avisar(nuevos.length === 1 ? "Marcador agregado: «" + tituloMarcador(nuevos[0]) + "»." : nuevos.length + " marcadores agregados.");
+      return;
+    }
+    if (Object.keys(sel).some(function (id) { return sel[id]; })) {
+      avisar("Lo seleccionado no tiene texto. Seleccioná un título (o nada, para crear un marcador que no se imprime).", true);
+      return;
+    }
+    var z = st.zoom.value, cx = -st.scrollX + st.width / z / 2, cy = -st.scrollY + st.height / z / 2;
+    var f = hojasDe(vivos).filter(function (h) { return adentro(h, cx, cy); })[0];
+    if (!f) { avisar("Mirá la hoja donde va el marcador (o seleccioná un título de la hoja).", true); return; }
+    var u = porMm(f), tam = 14, lh = tam * 1.25, str = "Marcador";
+    medidor.font = tam + "px Nunito, sans-serif";
+    var w = Math.ceil(medidor.measureText(str).width);
+    var t = elemento("text", {
+      x: f.x + 2 * u, y: Math.max(f.y, Math.min(cy - lh / 2, f.y + f.height - lh)), width: w, height: lh, frameId: f.id,
+      text: str, originalText: str, fontSize: tam, fontFamily: 6,
+      textAlign: "left", verticalAlign: "top", containerId: null,
+      autoResize: true, lineHeight: 1.25, strokeColor: VIOLETA,
+      customData: { pizarraMarcador: { nivel: 1, imprime: false } },
+    });
+    var marcado = {};
+    marcado[t.id] = true;
+    A.updateScene({
+      elements: todos.concat([t]),
+      appState: { selectedElementIds: marcado, selectedGroupIds: {}, editingGroupId: null },
+      captureUpdate: "IMMEDIATELY",
+    });
+    avisar("Marcador agregado en " + f.name + ". Doble clic en «Marcador» para escribir su título; no se imprime.");
+  }
+
+  // cambia el nivel de un marcador (1 a 3) o lo quita (el creado aparte se borra)
+  function cambiarMarcador(id, cambio) {
+    var A = api();
+    if (!A) return;
+    var todos = A.getSceneElementsIncludingDeleted();
+    A.updateScene({
+      elements: todos.map(function (e) {
+        if (e.id !== id || !esMarcador(e)) return e;
+        var d = copiar(datosMarcador(e));
+        if (cambio === "quitar") return d.imprime === false ? modificado(e, { isDeleted: true }) : conMarcador(e, null);
+        d.nivel = Math.max(1, Math.min(NIVELES, (d.nivel | 0 || 1) + cambio));
+        return conMarcador(e, d);
+      }),
+      captureUpdate: "IMMEDIATELY",
+    });
+  }
+
+  function verMarcador(m) {
+    var A = api();
+    if (!A) return;
+    var sel = {}, c = m.caja, pad = 60;
+    sel[m.el.id] = true;
+    A.updateScene({
+      appState: Object.assign({ selectedElementIds: sel, selectedGroupIds: {}, editingGroupId: null },
+        mostrarRect({ x0: c.x0 - pad, y0: c.y0 - pad, x1: c.x1 + pad, y1: c.y1 + pad }, A.getAppState(), false) || {}),
+    });
+  }
+
+  // pdf-lib se carga recien cuando hace falta (pesa ~500 KB)
+  var cargaPdfLib = null;
+  function pdfLib() {
+    if (window.PDFLib) return Promise.resolve(window.PDFLib);
+    if (!cargaPdfLib) {
+      cargaPdfLib = new Promise(function (listo, fallo) {
+        var s = document.createElement("script");
+        s.src = "./vendor/pdf-lib.min.js";
+        s.onload = function () { window.PDFLib ? listo(window.PDFLib) : fallo(new Error("pdf-lib no cargó")); };
+        s.onerror = function () { cargaPdfLib = null; fallo(new Error("no se pudo cargar pdf-lib")); };
+        document.head.appendChild(s);
+      });
+    }
+    return cargaPdfLib;
+  }
+
+  // Arma el indice del PDF (/Outlines) con los marcadores. Cada uno lleva a
+  // su pagina, a la altura de su texto (un poco mas arriba); el nivel arma el
+  // arbol: un marcador cuelga del anterior de nivel menor.
+  function ponerMarcadores(L, doc, marcas) {
+    var ctx = doc.context, paginas = doc.getPages();
+    var nodos = marcas.map(function (m) { return { m: m, ref: ctx.nextRef(), hijos: [] }; });
+    var raiz = [], pila = [];
+    nodos.forEach(function (n) {
+      while (pila.length && pila[pila.length - 1].m.nivel >= n.m.nivel) pila.pop();
+      (pila.length ? pila[pila.length - 1].hijos : raiz).push(n);
+      pila.push(n);
+    });
+    function contar(n) { return n.hijos.reduce(function (s, h) { return s + 1 + contar(h); }, 0); }
+    function escribir(lista, padre) {
+      lista.forEach(function (n, i) {
+        var pag = paginas[n.m.pagina], caja = pag.getMediaBox();
+        var y = Math.max(0, n.m.papel.y - 4) / A4.h;
+        var d = {
+          Title: L.PDFHexString.fromText(n.m.titulo),
+          Parent: padre,
+          Dest: ctx.obj([pag.ref, "XYZ", caja.x, caja.y + caja.height * (1 - y), null]),
+        };
+        if (i > 0) d.Prev = lista[i - 1].ref;
+        if (i < lista.length - 1) d.Next = lista[i + 1].ref;
+        if (n.hijos.length) {
+          d.First = n.hijos[0].ref; d.Last = n.hijos[n.hijos.length - 1].ref;
+          d.Count = contar(n); // positivo: abierto
+        }
+        ctx.assign(n.ref, ctx.obj(d));
+        escribir(n.hijos, n.ref);
+      });
+    }
+    var indice = ctx.nextRef();
+    escribir(raiz, indice);
+    ctx.assign(indice, ctx.obj({
+      Type: "Outlines", First: raiz[0].ref, Last: raiz[raiz.length - 1].ref, Count: nodos.length,
+    }));
+    doc.catalog.set(L.PDFName.of("Outlines"), indice);
+    doc.catalog.set(L.PDFName.of("PageMode"), L.PDFName.of("UseOutlines")); // abre con el panel de marcadores
+  }
+
+  // guarda el PDF: con el dialogo de «Guardar como» si el navegador lo tiene
+  // (Chrome, Edge), si no como una descarga
+  async function guardarPdf(bytes, nombre) {
+    var blob = new Blob([bytes], { type: "application/pdf" });
+    if (window.showSaveFilePicker) {
+      try {
+        var h = await window.showSaveFilePicker({
+          suggestedName: nombre, types: [{ description: "PDF", accept: { "application/pdf": [".pdf"] } }],
+        });
+        var w = await h.createWritable();
+        await w.write(blob);
+        await w.close();
+        return "guardado";
+      } catch (e) {
+        if (e && e.name === "AbortError") return "cancelado";
+        // sin permiso (por ejemplo, paso mucho desde el clic): va como descarga
+      }
+    }
+    var url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    return "descargado";
+  }
+
+  async function marcarPdf(archivo, avisar) {
+    var A = api();
+    if (!A || !archivo) return;
+    var todos = A.getSceneElements(), hojas = hojasDe(todos), marcas = marcadoresDe(todos).lista;
+    if (!marcas.length) { avisar("No hay marcadores en las hojas. Agregá alguno con «Agregar marcador».", true); return; }
+    try {
+      avisar("Leyendo " + archivo.name + "…");
+      var L = await pdfLib(), bytes = new Uint8Array(await archivo.arrayBuffer());
+      var doc;
+      try { doc = await L.PDFDocument.load(bytes, { updateMetadata: false }); }
+      catch (e) {
+        avisar(/encrypt/i.test(e && e.message) ? "Ese PDF está protegido: no se le pueden agregar marcadores." :
+          "No se pudo leer ese archivo como PDF.", true);
+        return;
+      }
+      var n = doc.getPageCount();
+      if (n !== hojas.length) {
+        avisar("El PDF tiene " + n + (n === 1 ? " página" : " páginas") + " y la pizarra " + hojas.length +
+          (hojas.length === 1 ? " hoja" : " hojas") + ". Elegí el PDF que se guardó desde «Imprimir / PDF» con estas hojas.", true);
+        return;
+      }
+      ponerMarcadores(L, doc, marcas);
+      var titulo = (op.titulo || "").trim();
+      if (titulo) doc.setTitle(titulo, { showInWindowTitleBar: true });
+      var salida = await doc.save();
+      var r = await guardarPdf(salida, archivo.name);
+      if (r === "cancelado") { avisar("No se guardó el PDF."); return; }
+      avisar((marcas.length === 1 ? "1 marcador agregado" : marcas.length + " marcadores agregados") +
+        (r === "guardado" ? ". PDF guardado." : ": el PDF se descargó como «" + archivo.name + "»."));
+    } catch (e) {
+      console.warn("hojas.js: no se pudieron agregar los marcadores", e);
+      avisar("No se pudieron agregar los marcadores: " + (e && e.message || e), true);
+    }
+  }
+
   // ------------------------------------------------------------- impresion
   // Cada hoja se exporta como SVG con la exportacion de Excalidraw
   // (window.__pizarraSvg, ver README): recortada al marco, en tema claro, con
@@ -749,7 +1012,8 @@
     var A = api(), exportar = window.__pizarraSvg;
     if (!A || imprimiendo) return;
     if (!exportar) { avisar("Esta versión de la pizarra no puede exportar las hojas.", true); return; }
-    var elementos = A.getSceneElements(), hojas = hojasDe(elementos), archivos = A.getFiles();
+    var elementos = A.getSceneElements().filter(function (e) { return !marcadorOculto(e); });
+    var hojas = hojasDe(elementos), archivos = A.getFiles();
     var bandas = bandasDe(elementos);
     if (!hojas.length) { avisar("No hay hojas para imprimir.", true); return; }
     imprimiendo = true;
@@ -1003,10 +1267,23 @@
           ctx.fillText(txt, fx1 - tw - 8, fy1 + 13);
         }
       });
+      // marcadores: una cinta (dibujada) a la izquierda de cada uno
+      var mm = this.marcadores;
+      mm.lista.concat(mm.sueltos).forEach(function (m) {
+        var x = X(m.caja.x0) - 13, y = Y(m.caja.y0) + 2;
+        if (x < -20 || y < -20 || x > w || y > h) return;
+        ctx.fillStyle = m.hoja ? VIOLETA : rojo;
+        ctx.beginPath();
+        ctx.moveTo(x, y); ctx.lineTo(x + 9, y); ctx.lineTo(x + 9, y + 13);
+        ctx.lineTo(x + 4.5, y + 9); ctx.lineTo(x, y + 13); ctx.closePath();
+        ctx.fill();
+      });
     },
     version: 0,
+    marcadores: { lista: [], sueltos: [] },
     actualizar: function (todos) {
       this.revision = revisar(todos);
+      this.marcadores = marcadoresDe(todos.filter(function (e) { return !e.isDeleted; }));
       this.version++;
       fantasmas.programar(todos);
     },
@@ -1080,7 +1357,15 @@
     ".pz-hojas .estado{font-size:12px;margin-top:6px;opacity:.8}" +
     ".pz-hojas .estado.mal{color:#e03131;opacity:1}" +
     ".pz-hojas .imprimir-sec{margin-top:12px;border-top:1px solid #e0dfe6;padding-top:4px}" +
-    ".pz-gen.oscuro.pz-hojas .imprimir-sec{border-color:#3a3a43}";
+    ".pz-gen.oscuro.pz-hojas .imprimir-sec{border-color:#3a3a43}" +
+    ".pz-hojas .marcadores{margin-top:8px;font-size:12px;line-height:1.6;max-height:180px;overflow-y:auto}" +
+    ".pz-hojas .marcador{display:flex;align-items:baseline;gap:2px}" +
+    ".pz-hojas .marcador .tit{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}" +
+    ".pz-hojas .marcador .tit.oculto{color:" + VIOLETA + "}" +
+    ".pz-hojas .marcador .pag{opacity:.6;padding:0 4px}" +
+    ".pz-hojas .marcadores button.enlace{border:0;background:none;color:#6965db;cursor:pointer;padding:0 3px;font:inherit}" +
+    ".pz-hojas .marcadores button.enlace:disabled{opacity:.3;cursor:default}" +
+    ".pz-hojas .marcadores .mal{color:#e03131}";
 
   var panel = {
     el: null, abierto: false,
@@ -1131,7 +1416,17 @@
         '<label class="chk"><input type="checkbox" class="numerar"> Numerar las páginas (si no hay pie de página)</label>' +
         "</div>" +
         '<div class="botones"><button class="b principal imprimir" title="Abre el diálogo de impresión: ahí se imprime o se elige «Guardar como PDF»">Imprimir / PDF</button></div>' +
-        '<div class="estado"></div></div>' +
+        '<div class="estado estado-imprimir"></div></div>' +
+        '<div class="imprimir-sec"><div class="opc"><div class="grupo"><b>Marcadores del PDF</b></div></div>' +
+        '<div class="botones"><button class="b agregar-marcador" title="Convierte en marcador el título seleccionado; sin selección, crea uno que no se imprime en la hoja que estás mirando">Agregar marcador</button>' +
+        '<button class="b marcar-pdf" title="Elegí el PDF guardado desde «Imprimir / PDF»: se guarda una copia con los marcadores">Agregar marcadores a un PDF…</button>' +
+        '<input type="file" class="archivo-pdf" accept="application/pdf,.pdf" hidden></div>' +
+        '<div class="marcadores"></div>' +
+        '<div class="ayuda">Un marcador lleva a un lugar del PDF desde el panel de marcadores del lector. ' +
+        "Seleccioná un título de la hoja y tocá «Agregar marcador» (se sigue imprimiendo), o tocá sin seleccionar nada " +
+        "para crear uno violeta que no se imprime. Con ← → se arman niveles. Primero guardá el PDF con «Imprimir / PDF» " +
+        "y después elegilo en «Agregar marcadores a un PDF…».</div>" +
+        '<div class="estado estado-marcadores"></div></div>' +
         '<div class="ayuda">Cada hoja es un marco: lo que sueltes adentro se mueve con ella. ' +
         "La línea punteada marca el área útil; las guías no se imprimen. " +
         "Las hojas nuevas usan la orientación, la escala y los márgenes de este panel. " +
@@ -1197,7 +1492,16 @@
         };
       });
       el.querySelector(".numerar").onchange = function () { op.numerar = this.checked; guardar(); };
-      var estado = el.querySelector(".estado");
+      var estadoMarcadores = el.querySelector(".estado-marcadores");
+      function avisarMarcadores(texto, mal) {
+        estadoMarcadores.textContent = texto;
+        estadoMarcadores.classList.toggle("mal", !!mal);
+      }
+      el.querySelector(".agregar-marcador").onclick = function () { agregarMarcador(avisarMarcadores); };
+      var archivoPdf = el.querySelector(".archivo-pdf");
+      el.querySelector(".marcar-pdf").onclick = function () { archivoPdf.value = ""; archivoPdf.click(); };
+      archivoPdf.onchange = function () { if (archivoPdf.files[0]) marcarPdf(archivoPdf.files[0], avisarMarcadores); };
+      var estado = el.querySelector(".estado-imprimir");
       el.querySelector(".imprimir").onclick = function () {
         imprimir(function (texto, mal) {
           estado.textContent = texto;
@@ -1236,6 +1540,7 @@
     // resumen de las hojas y de lo que se sale de cada una
     lista: function () {
       if (!this.abierto) return;
+      this.listaMarcadores();
       var cont = this.el.querySelector(".lista"), rev = capa.revision;
       cont.innerHTML = "";
       if (!rev.length) { cont.textContent = "Todavía no hay hojas en la pizarra."; return; }
@@ -1256,6 +1561,49 @@
         d.appendChild(b);
         cont.appendChild(d);
       });
+    },
+    // los marcadores en el orden en que van a quedar en el PDF
+    listaMarcadores: function () {
+      var cont = this.el.querySelector(".marcadores"), mm = capa.marcadores;
+      cont.innerHTML = "";
+      if (!mm.lista.length && !mm.sueltos.length) { cont.textContent = "Todavía no hay marcadores."; return; }
+      function boton(texto, titulo, accion, apagado) {
+        var b = document.createElement("button");
+        b.className = "enlace";
+        b.textContent = texto;
+        b.title = titulo;
+        b.disabled = !!apagado;
+        b.onclick = accion;
+        return b;
+      }
+      mm.lista.forEach(function (m) {
+        var d = document.createElement("div");
+        d.className = "marcador";
+        d.style.paddingLeft = (m.nivel - 1) * 14 + "px";
+        var t = document.createElement("span");
+        t.className = "tit" + (m.imprime ? "" : " oculto");
+        t.textContent = m.titulo;
+        t.title = (m.imprime ? "" : "No se imprime. ") + "Hoja " + (m.pagina + 1);
+        var p = document.createElement("span");
+        p.className = "pag";
+        p.textContent = "h. " + (m.pagina + 1);
+        d.appendChild(t);
+        d.appendChild(p);
+        d.appendChild(boton("Ver", "Mostrarlo en la pizarra", function () { verMarcador(m); }));
+        d.appendChild(boton("←", "Subir de nivel", function () { cambiarMarcador(m.el.id, -1); }, m.nivel <= 1));
+        d.appendChild(boton("→", "Bajar de nivel (queda adentro del anterior)", function () { cambiarMarcador(m.el.id, 1); }, m.nivel >= NIVELES));
+        d.appendChild(boton("✕", m.imprime ? "Deja de ser marcador (el texto queda)" : "Borrar el marcador",
+          function () { cambiarMarcador(m.el.id, "quitar"); }));
+        cont.appendChild(d);
+      });
+      if (mm.sueltos.length) {
+        var s = document.createElement("div");
+        s.className = "mal";
+        s.textContent = (mm.sueltos.length === 1 ? "1 marcador está" : mm.sueltos.length + " marcadores están") +
+          " fuera de las hojas y no va al PDF.";
+        s.appendChild(boton("Ver", "Mostrarlo en la pizarra", function () { verMarcador(mm.sueltos[0]); }));
+        cont.appendChild(s);
+      }
     },
     alternar: function (abrir) {
       this.abierto = abrir === undefined ? !this.abierto : abrir;

@@ -22,7 +22,8 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   fuente Assistant en `assets/index-*.css` y el helper de precarga en
   `assets/mermaid-to-excalidraw-*.js`. Si se recompila, hay que compilar con
   `base: "./"` y conservar estos cambios.
-- `?sinpuntero` en la URL oculta el puntero del colaborador (útil para grabar con OBS).
+- Menú principal → Preferencias → «Ocultar cursores de colaboradores» (activada por
+  defecto) oculta el puntero de los demás (útil para grabar con OBS).
 - Compresión de PNG (`app/compresion.js`): al exportar como PNG o copiar como PNG, la
   imagen se guarda con paleta de colores (PNG indexado). Como pngquant / iLoveIMG, se usa
   la paleta más chica (desde 4 colores) cuyo error medio no pase `RMSE_OBJETIVO`, sin
@@ -337,6 +338,23 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   contenido, como al alinear o distribuir con Ctrl+Shift+flechas, lo enganchado a su
   marco y lo suelto cuyo centro estaba en ella se mueve lo mismo. Ese ajuste no queda
   como un paso aparte del historial: al deshacer, el contenido vuelve con la hoja.
+  Marcadores del PDF: un marcador es un texto de una hoja con
+  `customData.pizarraMarcador` (`{ nivel: 1..3, imprime }`); su texto es el título que
+  aparece en el panel de marcadores del lector de PDF y lleva a su página, a la altura
+  del texto (con hojas apaisadas, según cómo queda impreso). «Agregar marcador» convierte
+  en marcadores los textos seleccionados (o los de las formas seleccionadas), que se
+  siguen imprimiendo; sin selección crea uno violeta en el margen de la hoja que se está
+  mirando, que no se imprime ni cuenta como fuera del área útil (doble clic para escribir
+  su título). En la pizarra cada marcador lleva una cinta dibujada a su izquierda (en
+  rojo si está fuera de las hojas, y entonces no va al PDF). El panel los lista en el
+  orden del documento (por hoja y de arriba abajo), con «Ver», ← → para el nivel (un
+  marcador cuelga del anterior de nivel menor) y ✕ para quitarlo. El diálogo de impresión
+  no pone marcadores, así que se agregan después: «Agregar marcadores a un PDF…» pide el
+  PDF guardado desde «Imprimir / PDF» (tiene que tener una página por hoja), le arma el
+  índice (`/Outlines`, con `PageMode /UseOutlines` para que el lector abra el panel) y
+  el título con [pdf-lib](https://github.com/Hopding/pdf-lib) (`app/vendor/pdf-lib.min.js`,
+  que se carga recién al usarlo) y lo guarda con «Guardar como» (Chrome, Edge) o como
+  descarga. Todo pasa en el navegador: no usa el servidor.
 - Importar solución (`app/solucionario.js`): en el menú de Generadores, sección
   «Impresión» → «Importar solución (.json)». Lee una resolución escrita en el formato
   `unzip.mat/solucion@1` (documentado en el repositorio de solucionarios, `FORMATO.md`)
@@ -428,6 +446,7 @@ Dibujar, guardar, exportar y todos los generadores funcionan igual.
 - `app/entorno.js` — detecta si hay servidor y oculta la marca y los enlaces de Excalidraw/Excalidraw+.
 - `app/hojas.js` — hojas A4 con márgenes para preparar material imprimible.
 - `app/solucionario.js` — importa resoluciones en JSON (`unzip.mat/solucion@1`) a hojas A4.
+- `app/vendor/pdf-lib.min.js` — pdf-lib 1.17.1 (MIT), para agregar los marcadores a un PDF.
 - `servidor.js` — servidor HTTP + Socket.IO.
 - `build/armar-exe.mjs` — arma `dist/unzip.mat.exe` (`npm run exe`).
 - `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).

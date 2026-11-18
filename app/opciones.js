@@ -1,8 +1,7 @@
 // Opciones propias de la pizarra local (el bundle consulta estas banderas):
 //  - window.__ocultarSeleccionRemota: no resalta lo que seleccionan otros colaboradores.
 //  (Los interruptores estan en el menu principal -> Preferencias, dentro del bundle.)
-//  - window.__ocultarPunteros: no dibuja los cursores de otros colaboradores
-//    (la URL con ?sinpuntero sigue forzando este ocultamiento).
+//  - window.__ocultarPunteros: no dibuja los cursores de otros colaboradores.
 //  - window.__comprimirPng: comprime los PNG al exportar o copiar (compresion.js).
 //  - window.__comprimirAlPegar: comprime las imagenes al pegarlas (compresion.js).
 (function () {
