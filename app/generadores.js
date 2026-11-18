@@ -3478,9 +3478,18 @@
     f.rel.pares.forEach(function (p) {
       var a = pos[p[0].k], b = pos[p[1].k];
       if (p[0].k === p[1].k) {
-        var t = ang[p[0].k];
-        var punto = function (dt, d) { return [a[0] + d * Math.cos(t + dt), a[1] + d * Math.sin(t + dt)]; };
-        agregar(trazo([punto(-0.45, rn), punto(-0.4, rn + 36), punto(0.4, rn + 36), punto(0.45, rn + 3)], flecha));
+        // lazo redondo: un circulo de radio rl hacia afuera del nodo, que nace
+        // y muere en el borde del nodo (cortes con su circulo); se recorre el
+        // arco de afuera y la punta queda un poco antes del borde
+        var t = ang[p[0].k], rl = Math.max(18, rn * 0.6), D = rn + rl * 0.55;
+        var lc = [a[0] + D * Math.cos(t), a[1] + D * Math.sin(t)];
+        var fi = Math.acos(Math.max(-1, Math.min(1, (D * D + rl * rl - rn * rn) / (2 * D * rl))));
+        var g0 = t + Math.PI + fi, g1 = t + Math.PI + 2 * Math.PI - fi - 3 / rl, k = 8, arco = [];
+        for (var q = 0; q <= k; q++) {
+          var g = g0 + (g1 - g0) * q / k;
+          arco.push([lc[0] + rl * Math.cos(g), lc[1] + rl * Math.sin(g)]);
+        }
+        agregar(trazo(arco, flecha));
         return;
       }
       var dx = b[0] - a[0], dy = b[1] - a[1], d = Math.sqrt(dx * dx + dy * dy);
