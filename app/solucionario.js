@@ -279,20 +279,29 @@
       return p;
     }
 
+    // marca la primera pieza con renglones desde «desde» (empieza un ejercicio
+    // o un ítem: si la hoja se corta justo antes, no hay nada que continúe)
+    function marcarInicio(desde, campo) {
+      for (var k = desde; k < piezas.length; k++) {
+        if (piezas[k].els && piezas[k].els.length) { piezas[k][campo] = true; return; }
+      }
+    }
     (sol.ejercicios || []).forEach(function (ej, i) {
       var r = "ejercicios[" + i + "]", nEj = ej.numero !== undefined ? ej.numero : i + 1;
       if (i) piezas.push({ hueco: lh * 1.2 });
-      var rEj = nEj === "" ? "" : rotulo(plEj, nEj);
+      var rEj = nEj === "" ? "" : rotulo(plEj, nEj), desdeEj = piezas.length;
       var pEj = enunciado(rEj, ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
       marcar(pEj, ej.marcador, (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1);
       bloques(ej.bloques, sangria * 0.5, r);
+      marcarInicio(desdeEj, "inicioEj");
       (ej.items || []).forEach(function (it, j) {
         piezas.push({ hueco: lh * 0.6 });
         var nIt = it.numero !== undefined ? it.numero : String.fromCharCode(97 + j);
-        var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt);
+        var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt), desdeIt = piezas.length;
         var pIt = enunciado(rIt, it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
         marcar(pIt, it.marcador, (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1);
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
+        marcarInicio(desdeIt, "inicioIt");
       });
     });
     return { piezas: piezas, errores: errores, avisos: avisos, tam: tam, lh: lh, fuente: fuente,
@@ -397,12 +406,13 @@
     // la hoja siguiente junto con el primer renglon de lo que le sigue
     // seq: [{ q: renglon, antes: espacio que lo separa del anterior }]
     var listos = [], pendiente = null, gap = 0, vacia = true;
-    // estilo.continuacion: si un ejercicio sigue en la hoja siguiente, se avisa
+    // estilo.continuacion: si un ejercicio o un ítem sigue en la hoja siguiente, se avisa
     // en gris al pie de la hoja (y se reserva ese lugar en todas las hojas)
     var tamAviso = g.TAMANOS.S, altoAviso = r.continuacion ? Math.ceil(tamAviso * r.fuente.lh + 8) : 0;
     function textoAviso(seq) {
       var it = seq[0];
-      if (it.p.inicioEj && it.i === 0) return null; // empieza un ejercicio: no hay nada que continue
+      // empieza un ejercicio o un ítem: no hay nada que continúe
+      if ((it.p.inicioEj || it.p.inicioIt) && it.i === 0) return null;
       if (it.p.esEnunciado && it.i > 0) return "Continúa la consigna en la siguiente hoja";
       for (var k = 0; k < seq.length; k++) if (seq[k].p.continua) return seq[k].p.continua;
       return "Continúa en la siguiente hoja";
