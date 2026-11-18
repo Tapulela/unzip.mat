@@ -9419,17 +9419,16 @@
     // no es un generador: abre un archivo .json de solucion (solucionario.js)
     solucion: { nombre: "Importar solución (.json)", icono: "{ }", externo: "solucionario" },
   };
-  // como se ordenan en el menu: los sueltos arriba y despues las secciones,
+  // como se ordenan en el menu: los sueltos arriba (si hay) y despues las secciones,
   // con la unidad del programa de la materia a la que pertenecen
   var MENU_ORDEN = [
-    "plantillas",
     { grupo: "Lógica proposicional", unidad: 1, items: ["tabla", "simpLogica", "razonamientos"] },
     { grupo: "Teoría de conjuntos", unidad: 2, items: ["conjuntos", "venn", "relaciones", "estructuras", "simpConjuntos"] },
     { grupo: "Álgebra de Boole", unidad: 3, items: ["boole", "simpBoole"] },
     { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
     { grupo: "Números complejos", unidad: 7, items: ["complejos", "raicesC"] },
-    { grupo: "Impresión", items: ["hojas", "solucion"] },
+    { grupo: "Otros", icono: "⋯", items: ["plantillas", "hojas", "solucion"] },
   ];
 
   // ------------------------------------------------- insertar / reemplazar
@@ -9588,6 +9587,12 @@
     ".pz-menu-gen .pz-menu-separador{height:1px;margin:6px 0;background:rgba(127,127,127,.25)}",
     ".excalidraw .pz-menu-gen .dropdown-menu-group-title{margin:4px 0 4px 8px;font-size:12px;opacity:.7}",
     ".pz-menu-gen .dropdown-menu-item.activo{background:var(--color-surface-primary-container,#e0dfff)}",
+    // filas de unidad (abren su submenu al costado) y el submenu
+    ".pz-menu-gen .pz-menu-unidad .dropdown-menu-item__text{flex-direction:column;align-items:flex-start;gap:0;line-height:1.15}",
+    ".pz-menu-gen .pz-menu-unidad small{font-size:11px;opacity:.6}",
+    ".pz-menu-gen .pz-menu-flecha{margin-left:auto;opacity:.5;font-size:16px;line-height:1}",
+    ".excalidraw .pz-menu-gen .pz-menu-unidad.abierta{background-color:var(--button-hover-bg)}",
+    ".excalidraw .dropdown-menu.pz-menu-gen.pz-submenu-gen{width:260px}",
     ".pz-gen .cab .cerrar{order:1}.pz-gen .cab .modo{order:2}",
     ".pz-gen .modo{font-size:11px;padding:1px 7px;border-radius:9px;background:#e7f5ff;color:#1864ab;white-space:nowrap}",
     ".pz-gen.oscuro .modo{background:#1c3a57;color:#a5d8ff}",
@@ -10170,43 +10175,164 @@
         b.onclick = function () { self.elegir(t); };
         destino.appendChild(b);
       }
+      this.item = item;
+      // submenu de las unidades: un solo elemento aparte (el menu principal
+      // tiene overflow y lo recortaria), que se llena con la unidad elegida
+      var sub = document.createElement("div");
+      sub.className = "dropdown-menu pz-menu-gen pz-submenu-gen";
+      sub.setAttribute("role", "menu");
+      sub.style.display = "none";
+      var subIsla = document.createElement("div");
+      subIsla.className = "Island dropdown-menu-container";
+      subIsla.style.setProperty("--padding", "2");
+      sub.appendChild(subIsla);
+      this.sub = sub;
+      this.subIsla = subIsla;
+      // cada seccion es una fila que despliega sus items al costado; una linea
+      // separa los sueltos, las unidades y las secciones sin unidad (Otros)
+      var clasePrevia = null;
       MENU_ORDEN.forEach(function (x) {
+        var clase = typeof x === "string" ? "suelto" : x.unidad ? "unidad" : "otro";
+        if (clasePrevia && clase !== clasePrevia) {
+          var s0 = document.createElement("div");
+          s0.className = "pz-menu-separador";
+          isla.appendChild(s0);
+        }
+        clasePrevia = clase;
         if (typeof x === "string") { item(x, isla); return; }
-        // apartado: linea separadora, titulo y sus items
-        var sep = document.createElement("div");
-        sep.className = "pz-menu-separador";
-        isla.appendChild(sep);
-        var g = document.createElement("div");
-        g.className = "dropdown-menu-group";
-        g.setAttribute("role", "group");
-        g.setAttribute("aria-label", x.grupo);
-        var tit = document.createElement("p");
-        tit.className = "dropdown-menu-group-title";
-        tit.textContent = x.grupo + (x.unidad ? " (Unidad " + x.unidad + ")" : "");
-        g.appendChild(tit);
-        x.items.forEach(function (t) { item(t, g); });
-        isla.appendChild(g);
+        var u = document.createElement("button");
+        u.type = "button";
+        u.className = "radix-menu-item dropdown-menu-item dropdown-menu-item-base pz-menu-unidad";
+        u.setAttribute("role", "menuitem");
+        u.setAttribute("aria-haspopup", "menu");
+        u.setAttribute("aria-expanded", "false");
+        u.setAttribute("data-seccion", x.grupo);
+        u.innerHTML = '<div class="dropdown-menu-item__icon"></div><div class="dropdown-menu-item__text"><span></span></div><span class="pz-menu-flecha">›</span>';
+        var icU = u.querySelector(".dropdown-menu-item__icon");
+        icU.textContent = x.icono || MENU_GEN[x.items[0]].icono;
+        icU.style.whiteSpace = "nowrap";
+        u.querySelector(".dropdown-menu-item__text span").textContent = x.grupo;
+        if (x.unidad) {
+          var sm = document.createElement("small");
+          sm.textContent = "Unidad " + x.unidad;
+          u.querySelector(".dropdown-menu-item__text").appendChild(sm);
+        }
+        u._unidad = x;
+        // con el mouse se abre al pasar por encima (con una pausa corta si ya
+        // habia otro abierto, para poder ir en diagonal hasta el submenu)
+        u.addEventListener("pointerenter", function (e) {
+          if (e.pointerType === "touch") return;
+          clearTimeout(self.tSub);
+          if (!self.filaSub) self.abrirSub(u, false);
+          else if (self.filaSub !== u) self.tSub = setTimeout(function () { self.abrirSub(u, false); }, 150);
+        });
+        // al tocar (o con clic / Enter) se abre y se entra al submenu
+        u.onclick = function () { self.abrirSub(u, true); };
+        isla.appendChild(u);
       });
       el.appendChild(isla);
       this.el = el;
+      // al pasar por un item suelto del menu principal se cierra el submenu
+      isla.addEventListener("pointerover", function (e) {
+        if (e.pointerType === "touch" || !self.filaSub) return;
+        if (e.target.closest && e.target.closest("[data-tipo]")) {
+          clearTimeout(self.tSub);
+          self.tSub = setTimeout(function () { self.cerrarSub(false); }, 150);
+        }
+      });
+      // al entrar al submenu queda abierto el que esta
+      sub.addEventListener("pointerenter", function () { clearTimeout(self.tSub); });
       // flechas para moverse entre los items; Excalidraw no recibe las teclas
-      el.addEventListener("keydown", function (e) {
-        var items = [].slice.call(el.querySelectorAll("[data-tipo]")), i = items.indexOf(document.activeElement);
+      function flechas(cont, e) {
+        var items = [].slice.call(cont.querySelectorAll("[data-tipo],[data-seccion]")), i = items.indexOf(document.activeElement);
         if (e.key === "ArrowDown" || e.key === "ArrowUp") {
           e.preventDefault();
           var n = items.length, j = i < 0 ? 0 : (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n;
           items[j].focus();
         }
+      }
+      el.addEventListener("keydown", function (e) {
+        flechas(el, e);
+        var fila = document.activeElement;
+        if (e.key === "ArrowRight" && fila && fila._unidad) { e.preventDefault(); self.abrirSub(fila, true); }
         if (e.key !== "Escape") e.stopPropagation();
       });
-      // se cierra al tocar afuera o con Escape
+      sub.addEventListener("keydown", function (e) {
+        flechas(sub, e);
+        if (e.key === "ArrowLeft") { e.preventDefault(); self.cerrarSub(true); }
+        if (e.key !== "Escape") e.stopPropagation();
+      });
+      // se cierra al tocar afuera o con Escape (dentro del submenu, Escape
+      // solo cierra el submenu)
       document.addEventListener("pointerdown", function (e) {
-        if (self.abierto && !el.contains(e.target) && !boton.el.contains(e.target)) self.alternar(false);
+        if (self.abierto && !el.contains(e.target) && !sub.contains(e.target) && !boton.el.contains(e.target)) self.alternar(false);
       }, true);
       document.addEventListener("keydown", function (e) {
-        if (self.abierto && e.key === "Escape") { e.stopPropagation(); self.alternar(false); }
+        if (!self.abierto || e.key !== "Escape") return;
+        e.stopPropagation();
+        if (self.filaSub && sub.contains(document.activeElement)) self.cerrarSub(true);
+        else self.alternar(false);
       }, true);
-      window.addEventListener("resize", function () { if (self.abierto) self.ubicar(); });
+      window.addEventListener("resize", function () { if (self.abierto) { self.ubicar(); self.ubicarSub(); } });
+    },
+    // abre al costado el submenu con los items de la unidad de la fila
+    abrirSub: function (fila, enfocar) {
+      clearTimeout(this.tSub);
+      if (this.filaSub !== fila) {
+        this.cerrarSub(false);
+        var self = this, x = fila._unidad;
+        this.subIsla.innerHTML = "";
+        var tit = document.createElement("p");
+        tit.className = "dropdown-menu-group-title";
+        tit.textContent = x.grupo + (x.unidad ? " (Unidad " + x.unidad + ")" : "");
+        this.subIsla.appendChild(tit);
+        x.items.forEach(function (t) { self.item(t, self.subIsla); });
+        this.sub.setAttribute("aria-label", x.grupo);
+        this.filaSub = fila;
+        fila.classList.add("abierta");
+        fila.setAttribute("aria-expanded", "true");
+        if (this.sub.parentNode !== this.el.parentNode) this.el.parentNode.appendChild(this.sub);
+        this.marcarActivos();
+        this.sub.style.display = "";
+        this.ubicarSub();
+      }
+      if (enfocar) {
+        var b = this.sub.querySelector(".activo") || this.sub.querySelector("[data-tipo]");
+        if (b) b.focus();
+      }
+    },
+    cerrarSub: function (volver) {
+      clearTimeout(this.tSub);
+      var fila = this.filaSub;
+      if (!fila) return;
+      this.filaSub = null;
+      fila.classList.remove("abierta");
+      fila.setAttribute("aria-expanded", "false");
+      this.sub.style.display = "none";
+      if (volver) fila.focus();
+    },
+    // a la derecha del menu, a la altura de la fila (o a la izquierda si no entra)
+    ubicarSub: function () {
+      if (!this.filaSub) return;
+      var m = this.el.getBoundingClientRect(), f = this.filaSub.getBoundingClientRect();
+      var w = this.sub.offsetWidth || 260, h = this.sub.offsetHeight;
+      var izq = m.right + 4;
+      if (izq + w > window.innerWidth - 8) izq = Math.max(8, m.left - w - 4);
+      this.sub.style.left = Math.round(izq) + "px";
+      this.sub.style.top = Math.round(Math.max(8, Math.min(f.top - 6, window.innerHeight - h - 8))) + "px";
+    },
+    // resalta el generador abierto y la unidad que lo contiene
+    marcarActivos: function () {
+      var t = panel.abierto ? panel.tipo : null;
+      [].forEach.call(this.el.querySelectorAll("[data-tipo]"), function (b) {
+        b.classList.toggle("activo", b.getAttribute("data-tipo") === t);
+      });
+      [].forEach.call(this.sub.querySelectorAll("[data-tipo]"), function (b) {
+        b.classList.toggle("activo", b.getAttribute("data-tipo") === t);
+      });
+      [].forEach.call(this.el.querySelectorAll("[data-seccion]"), function (b) {
+        b.classList.toggle("activo", !!t && b._unidad.items.indexOf(t) >= 0);
+      });
     },
     // debajo del boton, alineado a su borde derecho (sin salirse de la pantalla)
     ubicar: function () {
@@ -10221,15 +10347,13 @@
         // dentro de .excalidraw para heredar los estilos y el tema (claro/oscuro)
         var raiz = document.querySelector(".excalidraw") || document.body;
         if (this.el.parentNode !== raiz) raiz.appendChild(this.el);
-        var self = this;
-        [].forEach.call(this.el.querySelectorAll("[data-tipo]"), function (b) {
-          b.classList.toggle("activo", panel.abierto && b.getAttribute("data-tipo") === panel.tipo);
-        });
+        this.marcarActivos();
         this.el.style.display = "";
         this.ubicar();
-        var activo = this.el.querySelector(".activo") || this.el.querySelector("[data-tipo]");
+        var activo = this.el.querySelector(".activo") || this.el.querySelector("[data-tipo],[data-seccion]");
         if (activo) activo.focus();
       } else {
+        this.cerrarSub(false);
         this.el.style.display = "none";
       }
       boton.actualizar();

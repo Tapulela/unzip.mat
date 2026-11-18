@@ -12,13 +12,11 @@ window.PIZARRA_SIN_SERVIDOR = true;
     "a[href='https://github.com/excalidraw/excalidraw']," +
     "a[href='https://x.com/excalidraw']," +
     "a[href='https://discord.gg/UexuTaE']{display:none!important}" +
-    // Pantalla de bienvenida: logo y nombre propios en lugar de los de Excalidraw.
-    ".welcome-screen-center__logo .ExcalidrawLogo{display:none!important}" +
-    ".welcome-screen-center__logo{display:flex;align-items:center;justify-content:center;gap:.6rem}" +
-    ".welcome-screen-center__logo::before{content:'';width:3.4rem;height:3.4rem;" +
-    "background:url(logo.svg) center/contain no-repeat}" +
-    ".welcome-screen-center__logo::after{content:'unzip.mat';font-size:2.6rem;" +
-    "color:var(--color-primary, #6965db)}" +
+    // Pantalla de bienvenida: solo queda el texto propio y la ayuda de la barra.
+    // Sin logo, sin el menú (Abrir, Ayuda, Colaboración en vivo) y sin las
+    // ayudas del menú principal y de atajos.
+    ".welcome-screen-center__logo,.welcome-screen-menu," +
+    ".welcome-screen-decor-hint--menu,.welcome-screen-decor-hint--help{display:none!important}" +
     // Texto de bienvenida propio (el original habla del almacenamiento del navegador).
     ".welcome-screen-center__heading{font-size:0!important;line-height:0!important}" +
     ".welcome-screen-center__heading::after{display:block;max-width:32rem;margin:0 auto;" +
@@ -39,14 +37,6 @@ window.PIZARRA_SIN_SERVIDOR = true;
     if (/(^#|,)room=/.test(location.hash)) {
       try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
     }
-    // El ítem de la pantalla de bienvenida no tiene clase propia: se reconoce por el texto.
-    new MutationObserver(function () {
-      var items = document.querySelectorAll(".welcome-screen-menu-item");
-      for (var i = 0; i < items.length; i++) {
-        if (/colaboraci|collaborat/i.test(items[i].textContent)) items[i].style.display = "none";
-      }
-    }).observe(document.documentElement, { childList: true, subtree: true });
-
     // Menú principal: ítem para descargar la versión de Windows (unzip.mat.exe,
     // armado por .github/workflows/exe.yml). Solo en la versión online: con
     // servidor local (o dentro del .exe) PIZARRA_SIN_SERVIDOR es false.
