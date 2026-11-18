@@ -258,10 +258,13 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   se llevan al denominador más grande, se suman las fracciones y se simplifica; con
   polinomios, factor común (lo que queda se factoriza según S(k + 1)) o
   desarrollar y sumar los términos semejantes; con k en el denominador, común
-  denominador, sumar, factorizar el numerador y simplificar; con factoriales,
+  denominador, sumar, factorizar el numerador y simplificar; con potencias por
+  una fracción con k en el denominador (sumas telescópicas como
+  Σ k·2^k/((k + 1)(k + 2)) = 2^(n+1)/(n + 2) − 1), común denominador, sumar, el
+  numerador se resuelve con las potencias y se simplifica; con factoriales,
   factor común (k + 1)! y m·(m − 1)! = m!. Cada renglón se controla con números
   (k = 1…9, fracciones exactas): si alguno no da lo mismo, o no hay estrategia
-  (por ejemplo con 2ⁿ/n, o con dos potencias con k en un mismo término), se corta y queda «(El resto queda para completar a
+  (por ejemplo con dos potencias con k en un mismo término, como 2ⁿ·3ⁿ), se corta y queda «(El resto queda para completar a
   mano)». Si la
   fórmula no vale para algún n de 1 a 8, lo avisa debajo de la fila. Los
   exponentes son un ítem propio de `dibujarBloqueF` (`{ sup: [...] }`, más chico
@@ -317,6 +320,13 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   Cada generador se define en el objeto `GEN` (contenido, opciones del panel y
   función de dibujo); el dibujo guarda en su primer elemento las opciones y su
   distancia al origen, para regenerarlo en el mismo lugar.
+  El botón «Ejemplos ▾» de cada generador abre un menú con varios conjuntos de
+  ejemplos, cada uno con su nombre y lo que inserta (en Inducción, uno por cada
+  caso que sabe resolver el paso 3, y todos juntos). Al elegir uno se carga su
+  contenido (lo demás del contenido vuelve a lo predeterminado, así no quedan
+  filas del ejemplo anterior), se mantiene el aspecto elegido y se inserta como
+  dibujo nuevo. Se maneja también con el teclado (flechas, Enter, Escape). Los
+  conjuntos están en `EJEMPLOS` (`{ nombre, descripcion, op }` por generador).
 
 - Hojas A4 (`app/hojas.js`), para armar material que se va a imprimir (por ejemplo,
   solucionarios): en el menú de Generadores, sección «Impresión» → «Hojas A4». «Agregar

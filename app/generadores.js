@@ -7704,8 +7704,6 @@
       defecto: { filas: cfg.filas, tamTexto: "M", fuente: "normal", titulos: true, leyes: true, colores: true, aclaracion: true,
         consenso: "paso" },
       contenido: ["filas"],
-      ejemplo: { filas: cfg.ejemplo },
-      textoEjemplo: "Inserta un desarrollo nuevo de ejemplo con tres expresiones",
       agregarFila: "+ Expresión",
       placeholder: cfg.placeholder,
       nombreFila: cfg.nombreFila,
@@ -8831,7 +8829,8 @@
       }
       mons = mons.concat(m);
     }
-    if (X.k === "+" && (X.b.k === "+" || X.b.k === "-")) parens = true;
+    // sumas entre parentesis: k² + (2k + 1) o (k + 2) + k
+    if ((X.k === "+" && (X.b.k === "+" || X.b.k === "-")) || /\(/.test(textoPlanoInd(X))) parens = true;
     var pasos = [{ n: sumaNodosInd(mons), color: COLOR_PRODUCTO,
       nota: [prod ? "Aplicar la distributiva" : cuad ? "Desarrollar el cuadrado" : parens ? "Quitar los paréntesis" : "Ordenar"] }];
     pasos.push({ n: polyNodoInd(poliInd(X), "k"), nota: ["Sumar los términos semejantes"], color: COLOR_SUMA });
@@ -9039,6 +9038,91 @@
     return pasos;
   }
 
+  // potencias por una fraccion con k en el denominador (sumas telescopicas como
+  // Σ k·2ᵏ/((k + 1)(k + 2)) = 2ⁿ⁺¹/(n + 2) − 1): comun denominador, sumar las
+  // fracciones, resolver el numerador con las potencias y simplificar
+  function tieneDenVarInd(n) {
+    return (n.k === "/" && tieneVarInd(n.b) && !esPotVarInd(n.b)) || (!!n.a && tieneDenVarInd(n.a)) || (!!n.b && tieneDenVarInd(n.b));
+  }
+  function fraccionPotenciaInd(I) {
+    var base = null;
+    var items = terminosSumaInd(I).map(function (t) {
+      if (!tieneVarInd(t)) return { cte: t };
+      var c = fr(1), x = t;
+      while (x.k === "neg" || (x.k === "*" && !tieneVarInd(x.a))) {
+        if (x.k === "neg") { c = frNeg(c); x = x.a; } else { c = frMul(c, valInd(x.a)); x = x.b; }
+      }
+      if (x.k !== "/" || !tieneVarInd(x.b) || esPotVarInd(x.b) || !poliInd(x.b)) return { malo: true };
+      var e = terminoExpInd(x.a);
+      if (!e || e.s !== 1 || (base !== null && base !== e.b)) return { malo: true };
+      base = e.b;
+      return { cn: escalarInd(c, e.cn), b: e.b, m: e.m, den: factoresInd(x.b) };
+    });
+    var fs = items.filter(function (it) { return it.den; });
+    if (items.some(function (it) { return it.malo; }) || fs.length < 2) return null;
+    if (fs.some(function (it) { return it.den.c.d !== 1 || !it.den.c.n; })) return null;
+    // comun denominador: el mcm de las constantes y cada factor con su mayor exponente
+    var Dc = fr(fs.reduce(function (m, it) { var a = Math.abs(it.den.c.n); return m * a / mcdAbs(m, a); }, 1));
+    var Dfs = [];
+    fs.forEach(function (it) {
+      it.den.fs.forEach(function (f) {
+        var g = Dfs.filter(function (x) { return x.key === f.key; })[0];
+        if (g) g.e = Math.max(g.e, f.e); else Dfs.push({ n: f.n, e: f.e, key: f.key });
+      });
+    });
+    var Dn = productoInd(Dc, Dfs);
+    var potN = function (b, m) { return opInd("^", numInd(fr(b)), linealInd([fr(m), fr(1)], "k")); };
+    // numerador sobre el comun denominador: coeficiente·potencia·(lo que falta)
+    var numer = function (it) {
+      var mult = juntarFsInd(Dfs, it.den.fs, -1), cn = escalarInd(frDiv(Dc, it.den.c), it.cn);
+      var neg = esNegInd(cn);
+      if (neg) cn = negarInd(cn);
+      var x = potN(it.b, it.m), r = cn.k === "num" && frUno(cn.v) ? x : opInd("*", cn, x);
+      if (mult.length) r = opInd("*", r, productoInd(fr(1), mult));
+      return neg ? { k: "neg", a: r } : r;
+    };
+    var primera = items.indexOf(fs[0]);
+    // la suma con la fraccion (numerador N sobre D) en el lugar de la primera
+    var armar = function (N) {
+      var r = [];
+      items.forEach(function (it, i) {
+        if (it.cte) r.push(it.cte);
+        else if (i === primera) r.push(esNegInd(N) ? { k: "neg", a: opInd("/", negarInd(N), Dn) } : opInd("/", N, Dn));
+      });
+      return sumaNodosInd(r);
+    };
+    var pasos = [];
+    pasos.push({ n: sumaNodosInd(items.map(function (it) {
+      if (it.cte) return it.cte;
+      var q = numer(it), neg = q.k === "neg";
+      var d = pintInd(opInd("/", neg ? q.a : q, Dn), COLOR_PRODUCTO);
+      return neg ? { k: "neg", a: d } : d;
+    })), nota: ["Llevar a común denominador", linInd(Dn)], color: COLOR_PRODUCTO });
+    var N = sumaNodosInd(fs.map(numer));
+    pasos.push({ n: armar(N), nota: ["Sumar las fracciones", "(igual denominador)"], color: COLOR_SUMA });
+    // el numerador: misma potencia, factor comun, lo de adentro y producto de potencias
+    var sub = exponencialInd(N, N);
+    if (!sub) return null;
+    sub.forEach(function (p) { pasos.push({ n: armar(p.n), nota: p.nota, color: p.color }); });
+    var Nf = limpioInd(sub.length ? sub[sub.length - 1].n : N);
+    // simplificar lo que se repite arriba y abajo
+    var fN = factoresInd(Nf);
+    var G = fN.fs.filter(function (f) {
+      return esPoliFactor(f) && Dfs.some(function (g) { return g.key === f.key; });
+    }).map(function (f) {
+      var g = Dfs.filter(function (h) { return h.key === f.key; })[0];
+      return { n: f.n, e: Math.min(f.e, g.e), key: f.key };
+    });
+    if (G.length) {
+      var arriba = productoInd(fN.c, juntarFsInd(fN.fs, G, -1)), abajo = productoInd(Dc, juntarFsInd(Dfs, G, -1));
+      var q = abajo.k === "num" && frUno(abajo.v) ? arriba : opInd("/", arriba, abajo);
+      var r = [];
+      items.forEach(function (it, i) { if (it.cte) r.push(it.cte); else if (i === primera) r.push(pintInd(q, COLOR_PRODUCTO)); });
+      pasos.push({ n: sumaNodosInd(r), nota: ["Simplificar " + linInd(productoInd(fr(1), G))], color: COLOR_PRODUCTO });
+    }
+    return pasos;
+  }
+
   function tieneFactInd(n) { return n.k === "!" || (!!n.a && tieneFactInd(n.a)) || (!!n.b && tieneFactInd(n.b)); }
   // factoriales: factor comun (k + 1)!, sumar lo de adentro y (k + 2)·(k + 1)! = (k + 2)!
   function factorialInd(I) {
@@ -9193,7 +9277,8 @@
         hecho = fraccionesInd(A, ak1, B, paso);
       }
       if (hecho === null) {
-        var dentro = tieneExpInd(I) ? exponencialInd(I, F) : tieneFactInd(I) ? factorialInd(I) : polinomioInd(I, F);
+        var dentro = tieneExpInd(I) ? (tieneDenVarInd(I) ? fraccionPotenciaInd(I) : exponencialInd(I, F))
+          : tieneFactInd(I) ? factorialInd(I) : polinomioInd(I, F);
         if (dentro) dentro.forEach(function (p) { paso(envolver(p.n), p.nota, p.color); });
         hecho = !!dentro;
       }
@@ -9353,8 +9438,6 @@
         titulos: true,
       },
       contenido: ["filas", "operacion"],
-      ejemplo: { filas: [{ texto: "[-3, 2)", color: COLORES[0] }, { texto: "(0, 5]", color: COLORES[1] }] },
-      textoEjemplo: "Inserta una recta nueva de ejemplo con dos intervalos",
       agregarFila: "+ Intervalo",
       placeholder: "Ej: (1/2, 3]",
       simbolos: [["∞", "∞", "Escribe ∞ donde está el cursor"], ["∪", " ∪ ", "Escribe ∪ donde está el cursor"]],
@@ -9412,12 +9495,6 @@
         referencia: true, posReferencia: "derecha", marcarExtremos: true, titulos: true,
       },
       contenido: ["filas", "xMin", "xMax", "yAuto", "yMin", "yMax"],
-      ejemplo: {
-        filas: [{ nombre: "f", texto: "x => x**2 - 4", color: COLORES[0], puntos: "-3, -2, -1, 0, 1, 2, 3" },
-          { nombre: "g", texto: "x => 2*x + 1", color: COLORES[1], dominio: "x >= -2", puntos: "-2, 0, 2" }],
-        xMin: "-4", xMax: "4", yAuto: true,
-      },
-      textoEjemplo: "Inserta un gráfico nuevo de ejemplo con dos funciones",
       agregarFila: "+ Función",
       placeholder: "Ej: x => x**2 - 3",
       // cada funcion tiene un nombre editable (f, g, h... o f(x), P(t))
@@ -9502,8 +9579,6 @@
         interruptores: false, diseno: "abierto", circuitoDe: "original", titulos: true,
       },
       contenido: ["filas", "nVars", "nombres"],
-      ejemplo: { filas: [{ texto: "[(p → q) ∧ p] → q", color: COLORES[0] }], nVars: 2 },
-      textoEjemplo: "Inserta una tabla nueva de ejemplo (modus ponens)",
       agregarFila: "+ Expresión",
       placeholder: "Ej: (p → q) ∧ ¬r",
       simbolos: [["¬", "¬", "Negación"], ["∧", " ∧ ", "Conjunción (y)"], ["∨", " ∨ ", "Disyunción (o)"],
@@ -9567,14 +9642,6 @@
         compuertas: "altas", negacion: "prima", producto: "junto", tamTexto: "M", fuente: "normal", titulos: true,
       },
       contenido: ["filas", "nVars", "nombres"],
-      ejemplo: {
-        nVars: 4,
-        filas: [
-          { nombre: "F", texto: "m(0, 2, 5, 7, 8, 10, 13, 15)", color: COLORES[0] },
-          { nombre: "G", texto: "(A + B)(A + C' + D)", color: COLORES[1] },
-        ],
-      },
-      textoEjemplo: "Inserta un dibujo nuevo de ejemplo con 4 variables",
       agregarFila: "+ Función",
       placeholder: "AB + A'C  o  m(1, 3, 5)  o  M(0, 2)",
       nombreFila: { porDefecto: nombreBoole, titulo: "Nombre de la función: F, G, H..." },
@@ -9642,20 +9709,6 @@
         escribirU: true, mostrarDef: true, cardinal: false,
       },
       contenido: ["filas", "universo", "universoTexto", "conCero"],
-      ejemplo: {
-        universo: "N", conCero: false,
-        filas: [
-          { nombre: "A", texto: "x => x % 3 == 0", color: COLORES[0] },
-          { nombre: "B", texto: "{1, 2, 3, 4, 5, 6}", color: COLORES[1] },
-          { nombre: "C", texto: "A ∩ B", color: COLORES[2] },
-          { nombre: "D", texto: "B − A", color: COLORES[3] },
-          { nombre: "E", texto: "A Δ B", color: COLORES[4] },
-          { nombre: "F", texto: "B'", color: COLORES[5] },
-          // por comprension usando otros conjuntos: x ∈ B ∨ (x ∈ A ∧ x < 20)
-          { nombre: "G", texto: "x => B(x) || A(x) && x < 20", color: "#e8590c" },
-        ],
-      },
-      textoEjemplo: "Inserta un cálculo nuevo de ejemplo en ℕ",
       agregarFila: "+ Conjunto",
       placeholder: "{1, 2, 3}  o  x => x > 2  o  A ∪ B",
       nombreFila: { porDefecto: nombreConj, titulo: "Nombre del conjunto: A, B, C..." },
@@ -9721,20 +9774,6 @@
         variableYValor: false, textos: "derecha", titulos: true,
       },
       contenido: ["filas", "nombres", "variables"],
-      ejemplo: {
-        nombres: "V, R, A",
-        filas: [
-          { texto: "U = 38", color: COLORES[0] },
-          { texto: "|V| = 18", color: COLORES[1] },
-          { texto: "|R| = 23", color: COLORES[2] },
-          { texto: "|A| = 29", color: COLORES[3] },
-          { texto: "solo R = 3", color: COLORES[4] },
-          { texto: "solo A = 8", color: COLORES[5] },
-          { texto: "R ∩ A − V = 9", color: COLORES[0] },
-          { texto: "los tres = 5", color: COLORES[1] },
-        ],
-      },
-      textoEjemplo: "Inserta un diagrama nuevo de ejemplo (38 fichas: verdes, rojas y azules)",
       agregarFila: "+ Dato",
       placeholder: "Ej: |A| = 23  ·  solo A = 8  ·  A ∩ B − C = x",
       simbolos: [["| |", "|", "Barras del cardinal: |A ∩ B| = 11"], ["∩", " ∩ ", "Intersección"], ["∪", " ∪ ", "Unión"],
@@ -9802,17 +9841,6 @@
         cartesiano: true, sagital: true, grafo: true, titulos: true,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { nombre: "A", texto: "{1, 2, 3}", color: COLORES[0] },
-          { nombre: "B", texto: "{a, b}", color: COLORES[2] },
-          { nombre: "S", texto: "{(1, a), (2, a), (3, b)}", base: "A × B", color: COLORES[1] },
-          { nombre: "T", texto: "(x, y) => (x + y) % 2 == 0", base: "A × A", color: COLORES[3] },
-          // la inversa de S, usando S dentro de la funcion
-          { nombre: "Q", texto: "(x, y) => S(y, x)", base: "B × A", color: COLORES[4] },
-        ],
-      },
-      textoEjemplo: "Inserta un dibujo nuevo de ejemplo con tres relaciones",
       agregarFila: "+ Conjunto o relación",
       placeholder: "{1, 2, 3}  o  (x, y) => x < y  o  {(1, 2)}",
       nombreFila: { porDefecto: nombreConj, titulo: "Nombre del conjunto o relación: A, B, R, S..." },
@@ -9866,13 +9894,6 @@
         tamTexto: "M", fuente: "normal", titulos: true, general: true, escribirOperacion: true,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "x * y = 2xy", conjunto: "ℝ", color: COLORES[0] },
-          { texto: "x ∘ y = x + y", conjunto: "ℝ", color: COLORES[1] },
-        ],
-      },
-      textoEjemplo: "Inserta un desarrollo de ejemplo con dos operaciones (incluye la distributiva)",
       agregarFila: "+ Operación",
       placeholder: "Ej: x * y = x + y - 3",
       extrasFila: [
@@ -9918,17 +9939,6 @@
         colorResultado: true, recuadro: false,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "P 4", color: COLORES[0] },
-          { texto: "6 V 2", color: COLORES[1] },
-          { texto: "6 C 2", color: COLORES[2] },
-          { texto: "3 VR 2", color: COLORES[3] },
-          { texto: "4 CR 2", color: COLORES[4] },
-          { texto: "PR 6; 3, 2", color: COLORES[5] },
-        ],
-      },
-      textoEjemplo: "Inserta un cálculo nuevo de ejemplo con los seis tipos",
       agregarFila: "+ Cálculo",
       placeholder: "Ej: 6 V 2  ·  5 C 3  ·  P 4",
       simbolos: [["P", "P ", "Permutaciones: P 5"], ["V", " V ", "Variaciones: 6 V 2"], ["C", " C ", "Combinaciones: 6 C 2"],
@@ -9971,14 +9981,6 @@
         tamTexto: "M", fuente: "normal", titulos: true, colorResultado: true, recuadro: false,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "24, 36", color: COLORES[0] },
-          { texto: "15, 28", color: COLORES[1] },
-          { texto: "60, 90, 150", color: COLORES[2] },
-        ],
-      },
-      textoEjemplo: "Inserta un cálculo nuevo de ejemplo con tres listas de números",
       agregarFila: "+ Números",
       placeholder: "Ej: 12, 18, 30",
       simbolos: [],
@@ -10017,13 +10019,6 @@
         tamTexto: "L", fuente: "codigo", colorLineas: true,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "|1 − x| + 7 ≥ 2", color: "#e64980" },
-          { texto: "3 + |x − 4| = 2x", color: COLORES[0] },
-        ],
-      },
-      textoEjemplo: "Inserta dos ejemplos: |1 − x| + 7 ≥ 2 y 3 + |x − 4| = 2x",
       agregarFila: "+ Ecuación",
       placeholder: "Ej: |x + 7/4| = 9/4",
       simbolos: [["|", "|", "Barra del valor absoluto: |x + 1|"], ["−", " − ", "Resta"], ["·", "·", "Producto"],
@@ -10076,13 +10071,6 @@
         notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo",
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "0 < (5x − 2)(3 − 6x)", color: "#e64980" },
-          { texto: "x² − 5x + 6 ≤ 0", color: COLORES[0] },
-        ],
-      },
-      textoEjemplo: "Inserta dos ejemplos: 0 < (5x − 2)(3 − 6x) y x² − 5x + 6 ≤ 0",
       agregarFila: "+ Inecuación",
       placeholder: "Ej: (5x − 2)(3 − 6x) > 0  ·  x² − 5x + 6 ≤ 0",
       simbolos: [["x²", "x²", "x al cuadrado (también x^2)"], ["−", " − ", "Resta"], ["<", " < ", "Menor"], [">", " > ", "Mayor"],
@@ -10116,13 +10104,6 @@
         notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo",
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "(2x + 1)/(3 − 4x) < −2", color: "#e64980" },
-          { texto: "(x − 1)/(x + 2) ≥ 0", color: COLORES[0] },
-        ],
-      },
-      textoEjemplo: "Inserta dos ejemplos: (2x + 1)/(3 − 4x) < −2 y (x − 1)/(x + 2) ≥ 0",
       agregarFila: "+ Inecuación",
       placeholder: "Ej: (2x + 1)/(3 − 4x) < −2",
       simbolos: [["/", "/", "Fracción: (2x + 1)/(3 − 4x)"], ["−", " − ", "Resta"], ["<", " < ", "Menor"], [">", " > ", "Mayor"],
@@ -10157,13 +10138,6 @@
         tamTexto: "L", fuente: "codigo",
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { nombre: "", texto: "x² − 8x + 12", color: COLORES[0] },
-          { nombre: "", texto: "x² + 3x + 1", color: COLORES[1] },
-        ],
-      },
-      textoEjemplo: "Inserta dos ejemplos: x² − 8x + 12 (se factoriza por los tres métodos) y x² + 3x + 1 (raíces irracionales)",
       agregarFila: "+ Polinomio",
       placeholder: "Ej: 6x² − 7x − 3",
       nombreFila: { porDefecto: nombrePoli, titulo: "Nombre del polinomio: P, Q, R... o P(x)" },
@@ -10206,13 +10180,6 @@
         terminos: 3, potencias: true, resolver: true, notas: true, titulos: true, tamTexto: "L", fuente: "codigo",
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "2n − 1", suma: "n^2", color: COLORES[0] },
-          { texto: "n", suma: "n(n + 1)/2", color: COLORES[4] },
-        ],
-      },
-      textoEjemplo: "Inserta dos ejemplos: 1 + 3 + 5 + … + (2n − 1) = n² y 1 + 2 + 3 + … + n = n(n + 1)/2",
       agregarFila: "+ Sucesión",
       placeholder: "Término general a(n). Ej: 5^(n − 1)",
       extrasFila: [
@@ -10267,14 +10234,6 @@
         notacionPolar: "corchetes", tamTexto: "M", fuente: "normal", titulos: true,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { nombre: "z", texto: "8i", n: "3", color: COLORES[0] },
-          { nombre: "w", texto: "-16", n: "4", color: COLORES[1] },
-          { nombre: "u", texto: "1 + i", n: "2", color: COLORES[2] },
-        ],
-      },
-      textoEjemplo: "Inserta tres ejemplos: raíces cúbicas de 8i, cuartas de −16 y cuadradas de 1 + i",
       agregarFila: "+ Raíz",
       placeholder: "Número: 8i  ·  1 + i  ·  [16; 60°]",
       nombreFila: { porDefecto: nombreRaizC, titulo: "Nombre del número: z, w, z₁..." },
@@ -10333,16 +10292,6 @@
         tamTexto: "M", fuente: "normal", titulos: true, colorResultado: true,
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { nombre: "z₁", texto: "-3 + 4i", color: COLORES[0] },
-          { nombre: "z₂", texto: "(1, -1)", color: COLORES[1] },
-          { nombre: "z₃", texto: "2(cos 60° + i sen 60°)", color: COLORES[2] },
-          { nombre: "z₄", texto: "z₁ + z₂", color: COLORES[3] },
-          { nombre: "z₅", texto: "z₁ / z₂", color: COLORES[4] },
-        ],
-      },
-      textoEjemplo: "Inserta un cálculo nuevo de ejemplo con tres números en distintas formas, una suma y un cociente",
       agregarFila: "+ Número u operación",
       placeholder: "3 + 4i  ·  (3, 4)  ·  [5; 53°]  ·  z₁ · z₂",
       nombreFila: { porDefecto: nombreComplejo, titulo: "Nombre del número: z₁, z₂, w..." },
@@ -10402,14 +10351,6 @@
         valores: "VF", tamTexto: "M", fuente: "codigo",
       },
       contenido: ["filas"],
-      ejemplo: {
-        filas: [
-          { texto: "p → q, q → r, p ∴ r", color: COLORES[0] },
-          { texto: "p ∨ q, ¬p ∴ q", color: COLORES[2] },
-          { texto: "p → q, q ∴ p", color: COLORES[1] },
-        ],
-      },
-      textoEjemplo: "Inserta tres razonamientos: dos válidos y uno que no lo es (afirmación del consecuente)",
       agregarFila: "+ Razonamiento",
       placeholder: "Ej: p → q, ¬q ∴ ¬p",
       simbolos: [["¬", "¬", "Negación"], ["∧", " ∧ ", "Conjunción"], ["∨", " ∨ ", "Disyunción"],
@@ -10443,8 +10384,6 @@
     simpLogica: genSimp("logica", {
       clave: "pizarra-generador-simp-logica",
       filas: [{ texto: "¬(p → q) ∨ (p ∧ q)", color: COLORES[0] }],
-      ejemplo: [{ texto: "(p → q) ∧ p", color: COLORES[0] }, { texto: "¬(p ∨ ¬q) ∨ (¬p ∧ q)", color: COLORES[1] },
-        { texto: "[(p → q) ∧ p] → q", color: COLORES[2] }],
       placeholder: "Ej: ¬(p → q) ∨ (p ∧ q)",
       consenso: "(p ∧ q) ∨ (¬p ∧ r) ∨ (q ∧ r) ≡ (p ∧ q) ∨ (¬p ∧ r)",
       simbolos: [["¬", "¬", "Negación"], ["∧", " ∧ ", "Conjunción"], ["∨", " ∨ ", "Disyunción"],
@@ -10456,8 +10395,6 @@
     simpBoole: genSimp("boole", {
       clave: "pizarra-generador-simp-boole",
       filas: [{ nombre: "F", texto: "AB + AB' + A'B", color: COLORES[0] }],
-      ejemplo: [{ nombre: "F", texto: "A + A'B", color: COLORES[0] }, { nombre: "G", texto: "(A + B)(A + B')", color: COLORES[1] },
-        { nombre: "H", texto: "(AB)' + A", color: COLORES[2] }],
       placeholder: "Ej: AB + AB' + A'B",
       consenso: "AB + A'C + BC = AB + A'C",
       nombreFila: { porDefecto: nombreBoole, titulo: "Nombre de la función: F, G, H..." },
@@ -10469,8 +10406,6 @@
     simpConjuntos: genSimp("conj", {
       clave: "pizarra-generador-simp-conjuntos",
       filas: [{ texto: "(A − B) ∪ (A ∩ B)", color: COLORES[0] }],
-      ejemplo: [{ texto: "(A ∪ B) ∩ (A ∪ B')", color: COLORES[0] }, { texto: "(A ∪ B)' ∪ A", color: COLORES[1] },
-        { texto: "A − (A − B)", color: COLORES[2] }],
       placeholder: "Ej: (A − B) ∪ (A ∩ B)",
       consenso: "(A ∩ B) ∪ (A' ∩ C) ∪ (B ∩ C) = (A ∩ B) ∪ (A' ∩ C)",
       simbolos: [["∪", " ∪ ", "Unión"], ["∩", " ∩ ", "Intersección"], ["−", " − ", "Diferencia"],
@@ -10491,8 +10426,6 @@
         notacion: "par", espaciado: false, op1: "*", op2: "+", repeticion: "R",
       }, marcarPlantillas(["pl_reflexiva", "pl_simetrica", "pl_transitiva"])),
       contenido: CLAVES_PLANTILLAS.concat(["filas", "op1", "op2"]),
-      ejemplo: marcarPlantillas(["pl_lci", "pl_asociativa", "pl_neutro", "pl_inverso", "pl_conmutativa"]),
-      textoEjemplo: "Inserta las definiciones de grupo abeliano (L.C.I., asociativa, neutro, inverso, conmutativa)",
       agregarFila: "", placeholder: "", simbolos: [],
       ayuda: "Marcá las definiciones y tocá «Insertar en el centro»: se escriben una debajo de otra, " +
         "como texto editable. Seleccioná unas plantillas ya insertadas para cambiarlas.",
@@ -10523,6 +10456,283 @@
       },
     },
   };
+
+  // ------------------------------------------------------------ ejemplos
+  // Lo que ofrece el boton «Ejemplos ▾» de cada generador: { nombre, descripcion, op }.
+  // `op` tiene solo el contenido (filas y lo que se grafica); al elegirlo, las claves
+  // de `contenido` vuelven a su valor predeterminado y despues se aplica `op`, asi no
+  // quedan restos del ejemplo anterior. El aspecto elegido se mantiene.
+  // Las filas pueden ser textos o objetos; el color se pone en orden si falta.
+  function filasEj(lista, primero) {
+    return lista.map(function (f, i) {
+      var r = typeof f === "string" ? { texto: f } : copiar(f);
+      if (!r.color) r.color = i === 0 && primero ? primero : COLORES[i % COLORES.length];
+      return r;
+    });
+  }
+  function ej(nombre, descripcion, op) { return { nombre: nombre, descripcion: descripcion, op: op }; }
+  var ROSA = "#e64980";
+
+  var EJEMPLOS = {
+    recta: [
+      ej("Unión de dos intervalos", "[−3, 2) ∪ (0, 5]", { filas: filasEj(["[-3, 2)", "(0, 5]"]), operacion: "union" }),
+      ej("Intersección", "[−4, 3] ∩ (1, ∞)", { filas: filasEj(["[-4, 3]", "(1, ∞)"]), operacion: "interseccion" }),
+      ej("Intervalos con infinito", "(−∞, −1] ∪ [2, ∞): sin elementos en común", { filas: filasEj(["(-∞, -1]", "[2, ∞)"]), operacion: "union" }),
+      ej("Fracciones, π y raíces", "(−π/2, √2] ∪ [1/2, 3)", { filas: filasEj(["(-π/2, √2]", "[1/2, 3)"]), operacion: "union" }),
+      ej("Varios intervalos en una fila", "((−5, −2) ∪ [0, 1]) ∩ [−3, 4)", {
+        filas: filasEj(["(-5, -2) ∪ [0, 1]", "[-3, 4)"]), operacion: "interseccion" }),
+    ],
+    funcion: [
+      ej("Parábola y recta", "x² − 4 y 2x + 1 (desde x = −2), con puntos marcados", {
+        filas: [{ nombre: "f", texto: "x => x**2 - 4", color: COLORES[0], puntos: "-3, -2, -1, 0, 1, 2, 3" },
+          { nombre: "g", texto: "x => 2*x + 1", color: COLORES[1], dominio: "x >= -2", puntos: "-2, 0, 2" }],
+        xMin: "-4", xMax: "4", yAuto: true }),
+      ej("Trigonométricas", "sen x y cos x entre −2π y 2π", {
+        filas: [{ nombre: "f", texto: "x => sin(x)", color: COLORES[0] }, { nombre: "g", texto: "x => cos(x)", color: COLORES[1] }],
+        xMin: "-2π", xMax: "2π", yAuto: false, yMin: "-2", yMax: "2" }),
+      ej("Exponencial y logarítmica", "eˣ y ln x (solo para x > 0)", {
+        filas: [{ nombre: "f", texto: "x => exp(x)", color: COLORES[0] },
+          { nombre: "g", texto: "x => log(x)", color: COLORES[1], dominio: "x > 0" }],
+        xMin: "-3", xMax: "5", yAuto: false, yMin: "-3", yMax: "5" }),
+      ej("Valor absoluto y raíz", "|x − 1| y √x", {
+        filas: [{ nombre: "f", texto: "x => abs(x - 1)", color: COLORES[0] },
+          { nombre: "g", texto: "x => sqrt(x)", color: COLORES[1], dominio: "x >= 0" }],
+        xMin: "-3", xMax: "5", yAuto: true }),
+      ej("Función definida por partes", "x + 1 si x < 1; 3 − x si x ≥ 1", {
+        filas: [{ nombre: "f", texto: "x => x + 1", color: COLORES[0], dominio: "x < 1" },
+          { nombre: "f", texto: "x => 3 - x", color: COLORES[0], dominio: "x >= 1" }],
+        xMin: "-3", xMax: "5", yAuto: true }),
+      ej("Hipérbola", "1/x, con el eje y manual", {
+        filas: [{ nombre: "f", texto: "x => 1/x", color: COLORES[0] }],
+        xMin: "-4", xMax: "4", yAuto: false, yMin: "-4", yMax: "4" }),
+    ],
+    tabla: [
+      ej("Modus ponens (tautología)", "[(p → q) ∧ p] → q", { filas: filasEj(["[(p → q) ∧ p] → q"]), nVars: 2 }),
+      ej("Contradicción", "p ∧ ¬p", { filas: filasEj(["p ∧ ¬p"]), nVars: 1 }),
+      ej("Contingencia con tres variables", "(p ∨ q) → ¬r", { filas: filasEj(["(p ∨ q) → ¬r"]), nVars: 3 }),
+      ej("Equivalencia del condicional", "p → q y ¬p ∨ q dan la misma columna", { filas: filasEj(["p → q", "¬p ∨ q"]), nVars: 2 }),
+      ej("Leyes de De Morgan", "¬(p ∧ q) y ¬p ∨ ¬q", { filas: filasEj(["¬(p ∧ q)", "¬p ∨ ¬q"]), nVars: 2 }),
+      ej("Bicondicional y disyunción excluyente", "p ↔ q y p ⊻ q (una es la negación de la otra)", {
+        filas: filasEj(["p ↔ q", "p ⊻ q"]), nVars: 2 }),
+    ],
+    boole: [
+      ej("Cuatro variables", "F por minitérminos y G como producto de sumas", { nVars: 4, filas: [
+        { nombre: "F", texto: "m(0, 2, 5, 7, 8, 10, 13, 15)", color: COLORES[0] },
+        { nombre: "G", texto: "(A + B)(A + C' + D)", color: COLORES[1] }] }),
+      ej("Tres variables (consenso)", "AB + A'C + BC: el término BC sobra", { nVars: 3, filas: [
+        { nombre: "F", texto: "AB + A'C + BC", color: COLORES[0] }] }),
+      ej("Por maxitérminos", "F = ΠM(0, 2, 5) con tres variables", { nVars: 3, filas: [
+        { nombre: "F", texto: "M(0, 2, 5)", color: COLORES[0] }] }),
+      ej("Función mayoría", "Vale 1 si al menos dos de A, B, C valen 1", { nVars: 3, filas: [
+        { nombre: "F", texto: "AB + AC + BC", color: COLORES[0] }] }),
+      ej("O exclusivo y equivalencia", "A ⊕ B y A ⊙ B", { nVars: 2, filas: [
+        { nombre: "F", texto: "A ⊕ B", color: COLORES[0] }, { nombre: "G", texto: "A ⊙ B", color: COLORES[1] }] }),
+    ],
+    conjuntos: [
+      ej("Operaciones en un universo finito", "U = {1, …, 10}: unión, intersección, complemento", {
+        universo: "finito", universoTexto: "1, 2, ..., 10", conCero: false, filas: [
+          { nombre: "A", texto: "x => x % 2 == 0", color: COLORES[0] },
+          { nombre: "B", texto: "{1, 2, 3, 4, 5}", color: COLORES[1] },
+          { nombre: "C", texto: "A ∪ B", color: COLORES[2] },
+          { nombre: "D", texto: "A ∩ B", color: COLORES[3] },
+          { nombre: "E", texto: "(A ∪ B)'", color: COLORES[4] },
+          { nombre: "F", texto: "x => B(x) && !A(x)", color: COLORES[5] }] }),
+      ej("En ℕ, por comprensión", "Múltiplos de 3, diferencia, diferencia simétrica", {
+        universo: "N", conCero: false, filas: [
+          { nombre: "A", texto: "x => x % 3 == 0", color: COLORES[0] },
+          { nombre: "B", texto: "{1, 2, 3, 4, 5, 6}", color: COLORES[1] },
+          { nombre: "C", texto: "A ∩ B", color: COLORES[2] },
+          { nombre: "D", texto: "B − A", color: COLORES[3] },
+          { nombre: "E", texto: "A Δ B", color: COLORES[4] },
+          { nombre: "F", texto: "B'", color: COLORES[5] },
+          { nombre: "G", texto: "x => B(x) || A(x) && x < 20", color: "#e8590c" }] }),
+      ej("Leyes de De Morgan", "(A ∪ B)' = A' ∩ B' en U = {1, …, 8}", {
+        universo: "finito", universoTexto: "1, 2, ..., 8", conCero: false, filas: [
+          { nombre: "A", texto: "{1, 2, 3, 4}", color: COLORES[0] },
+          { nombre: "B", texto: "{3, 4, 5, 6}", color: COLORES[1] },
+          { nombre: "C", texto: "(A ∪ B)'", color: COLORES[2] },
+          { nombre: "D", texto: "A' ∩ B'", color: COLORES[3] }] }),
+      ej("Producto cartesiano y partes", "A × B y P(A)", {
+        universo: "finito", universoTexto: "1, 2, 3", conCero: false, filas: [
+          { nombre: "A", texto: "{1, 2}", color: COLORES[0] },
+          { nombre: "B", texto: "{2, 3}", color: COLORES[1] },
+          { nombre: "C", texto: "A × B", color: COLORES[2] },
+          { nombre: "D", texto: "P(A)", color: COLORES[3] }] }),
+    ],
+    venn: [
+      ej("Fichas de colores", "38 fichas: verdes, rojas y azules (con cardinales de conjuntos)", {
+        nombres: "V, R, A", filas: filasEj(["U = 38", "|V| = 18", "|R| = 23", "|A| = 29", "solo R = 3", "solo A = 8",
+          "R ∩ A − V = 9", "los tres = 5"]) }),
+      ej("Tres conjuntos por zonas", "U = 60, con los datos de cada zona", {
+        nombres: "A, B, C", filas: filasEj(["U = 60", "solo A = 15", "|A ∩ B| = 11", "solo C = 12", "|A ∩ C| = 8",
+          "solo B = 10", "|B ∩ C| = 5", "los tres = 3"]) }),
+      ej("Dos conjuntos", "U = 50, |A| = 30, |B| = 25, |A ∩ B| = 10", {
+        nombres: "A, B", filas: filasEj(["U = 50", "|A| = 30", "|B| = 25", "|A ∩ B| = 10"]) }),
+      ej("Con la unión", "|A ∪ B| = 40 y los que no están en ninguno", {
+        nombres: "A, B", filas: filasEj(["U = 45", "|A ∪ B| = 40", "|A| = 28", "|B| = 20"]) }),
+    ],
+    relaciones: [
+      ej("Divisibilidad (orden parcial)", "y es múltiplo de x en {1, 2, 3, 4}", { filas: [
+        { nombre: "A", texto: "{1, 2, 3, 4}", color: COLORES[0] },
+        { nombre: "R", texto: "(x, y) => y % x == 0", base: "A × A", color: COLORES[1] }] }),
+      ej("Relación de equivalencia", "Congruencia módulo 3 en {1, …, 6}, con sus clases", { clases: true, filas: [
+        { nombre: "A", texto: "{1, 2, 3, 4, 5, 6}", color: COLORES[0] },
+        { nombre: "R", texto: "(x, y) => (x - y) % 3 == 0", base: "A × A", color: COLORES[1] }] }),
+      ej("Por extensión", "R = {(1, 1), (1, 2), (2, 1), (2, 2), (3, 3)}", { filas: [
+        { nombre: "A", texto: "{1, 2, 3}", color: COLORES[0] },
+        { nombre: "R", texto: "{(1, 1), (1, 2), (2, 1), (2, 2), (3, 3)}", base: "A × A", color: COLORES[1] }] }),
+      ej("Entre dos conjuntos e inversa", "S ⊆ A × B, T ⊆ A × A y la inversa de S", { filas: [
+        { nombre: "A", texto: "{1, 2, 3}", color: COLORES[0] },
+        { nombre: "B", texto: "{a, b}", color: COLORES[2] },
+        { nombre: "S", texto: "{(1, a), (2, a), (3, b)}", base: "A × B", color: COLORES[1] },
+        { nombre: "T", texto: "(x, y) => (x + y) % 2 == 0", base: "A × A", color: COLORES[3] },
+        { nombre: "Q", texto: "(x, y) => S(y, x)", base: "B × A", color: COLORES[4] }] }),
+    ],
+    estructuras: [
+      ej("Grupo en ℤ", "x * y = x + y − 3", { filas: [{ texto: "x * y = x + y - 3", conjunto: "ℤ", color: COLORES[0] }] }),
+      ej("Dos operaciones (distributiva)", "x * y = 2xy sobre x ∘ y = x + y, en ℝ", { filas: [
+        { texto: "x * y = 2xy", conjunto: "ℝ", color: COLORES[0] }, { texto: "x ∘ y = x + y", conjunto: "ℝ", color: COLORES[1] }] }),
+      ej("Promedio", "a △ b = (a + b)/2 en ℝ (no es asociativa)", { filas: [
+        { texto: "a △ b = (a + b)/2", conjunto: "ℝ", color: COLORES[0] }] }),
+      ej("x ∘ y = x + y + xy", "En ℝ: neutro 0; el −1 no tiene inverso", { filas: [
+        { texto: "x ∘ y = x + y + xy", conjunto: "ℝ", color: COLORES[0] }] }),
+    ],
+    combinatoria: [
+      ej("Los seis tipos", "P, V, C, VR, CR y PR", { filas: filasEj(["P 4", "6 V 2", "6 C 2", "3 VR 2", "4 CR 2", "PR 6; 3, 2"]) }),
+      ej("Permutaciones", "P 5, 7! y P 3", { filas: filasEj(["P 5", "7!", "P 3"]) }),
+      ej("Variaciones y combinaciones", "10 V 3, 10 C 3 y 8 C 5", { filas: filasEj(["10 V 3", "10 C 3", "8 C 5"]) }),
+      ej("Con repetición", "2 VR 5, 5 CR 3 y PR 7; 2, 2, 3", { filas: filasEj(["2 VR 5", "5 CR 3", "PR 7; 2, 2, 3"]) }),
+    ],
+    mcm: [
+      ej("Tres listas", "24, 36 · 15, 28 · 60, 90, 150", { filas: filasEj(["24, 36", "15, 28", "60, 90, 150"]) }),
+      ej("Dos números", "12 y 18", { filas: filasEj(["12, 18"]) }),
+      ej("Coprimos", "8, 15 y 14, 25: el MCD es 1", { filas: filasEj(["8, 15", "14, 25"]) }),
+      ej("Muchos números", "12, 18, 24, 36, 48", { filas: filasEj(["12, 18, 24, 36, 48"]) }),
+    ],
+    valorAbsoluto: [
+      ej("Ecuación", "|x + 7/4| = 9/4", { filas: filasEj(["|x + 7/4| = 9/4"], ROSA) }),
+      ej("Inecuaciones", "|1 − x| + 7 ≥ 2 y |2x − 3| < 5", { filas: filasEj(["|1 − x| + 7 ≥ 2", "|2x − 3| < 5"], ROSA) }),
+      ej("Con x fuera del valor absoluto", "3 + |x − 4| = 2x", { filas: filasEj(["3 + |x − 4| = 2x"], ROSA) }),
+      ej("Dos valores absolutos", "|x − 1| + |x + 2| = 5", { filas: filasEj(["|x − 1| + |x + 2| = 5"], ROSA) }),
+    ],
+    inecuaciones2: [
+      ej("Factorizada", "0 < (5x − 2)(3 − 6x)", { filas: filasEj(["0 < (5x − 2)(3 − 6x)"], ROSA) }),
+      ej("Desarrollada", "x² − 5x + 6 ≤ 0", { filas: filasEj(["x² − 5x + 6 ≤ 0"], ROSA) }),
+      ej("Con un número adelante", "2(x − 1)(x + 3) ≤ 0", { filas: filasEj(["2(x − 1)(x + 3) ≤ 0"], ROSA) }),
+      ej("Raíces irracionales", "x² + 2x − 1 > 0", { filas: filasEj(["x² + 2x − 1 > 0"], ROSA) }),
+    ],
+    racionales: [
+      ej("Con un número del otro lado", "(2x + 1)/(3 − 4x) < −2", { filas: filasEj(["(2x + 1)/(3 − 4x) < −2"], ROSA) }),
+      ej("Comparada con 0", "(x − 1)/(x + 2) ≥ 0", { filas: filasEj(["(x − 1)/(x + 2) ≥ 0"], ROSA) }),
+      ej("Comparada con 1", "(3x − 1)/(x + 4) > 1", { filas: filasEj(["(3x − 1)/(x + 4) > 1"], ROSA) }),
+      ej("Menor o igual que 0", "(x + 3)/(2 − x) ≤ 0", { filas: filasEj(["(x + 3)/(2 − x) ≤ 0"], ROSA) }),
+    ],
+    factorizacion: [
+      ej("Raíces enteras", "x² − 8x + 12", { filas: filasEj([{ nombre: "", texto: "x² − 8x + 12" }]) }),
+      ej("Raíces racionales", "6x² − 7x − 3", { filas: filasEj([{ nombre: "", texto: "6x² − 7x − 3" }]) }),
+      ej("Raíces irracionales", "x² + 3x + 1", { filas: filasEj([{ nombre: "", texto: "x² + 3x + 1" }]) }),
+      ej("Trinomio cuadrado perfecto", "x² − 6x + 9: una raíz doble", { filas: filasEj([{ nombre: "", texto: "x² − 6x + 9" }]) }),
+      ej("Sin raíces reales", "x² + 2x + 5: no se factoriza en ℝ", { filas: filasEj([{ nombre: "", texto: "x² + 2x + 5" }]) }),
+      ej("Con fracciones", "5/2x² + 14/3x + 2", { filas: filasEj([{ nombre: "", texto: "5/2x² + 14/3x + 2" }]) }),
+    ],
+    raicesC: [
+      ej("Raíces cúbicas de 8i", "z = 8i, n = 3", { filas: [{ nombre: "z", texto: "8i", n: "3", color: COLORES[0] }] }),
+      ej("Raíces cuartas de −16", "w = −16, n = 4", { filas: [{ nombre: "w", texto: "-16", n: "4", color: COLORES[0] }] }),
+      ej("Raíces cuadradas de 1 + i", "u = 1 + i, n = 2", { filas: [{ nombre: "u", texto: "1 + i", n: "2", color: COLORES[0] }] }),
+      ej("Raíces sextas de la unidad", "z = 1, n = 6: un hexágono", { filas: [{ nombre: "z", texto: "1", n: "6", color: COLORES[0] }] }),
+      ej("Las tres primeras juntas", "8i (n = 3), −16 (n = 4) y 1 + i (n = 2)", { filas: [
+        { nombre: "z", texto: "8i", n: "3", color: COLORES[0] }, { nombre: "w", texto: "-16", n: "4", color: COLORES[1] },
+        { nombre: "u", texto: "1 + i", n: "2", color: COLORES[2] }] }),
+    ],
+    complejos: [
+      ej("Pasaje entre formas", "Binómica, polar y trigonométrica", { filas: [
+        { nombre: "z₁", texto: "3 + 4i", color: COLORES[0] }, { nombre: "z₂", texto: "[2; 30°]", color: COLORES[1] },
+        { nombre: "z₃", texto: "2(cos 45° + i sen 45°)", color: COLORES[2] }] }),
+      ej("Suma y resta", "z₁ + z₂ y z₁ − z₂ (con el paralelogramo)", { filas: [
+        { nombre: "z₁", texto: "2 + 3i", color: COLORES[0] }, { nombre: "z₂", texto: "-1 + i", color: COLORES[1] },
+        { nombre: "z₃", texto: "z₁ + z₂", color: COLORES[2] }, { nombre: "z₄", texto: "z₁ − z₂", color: COLORES[3] }] }),
+      ej("Producto y cociente", "z₁ · z₂ y z₁ / z₂", { filas: [
+        { nombre: "z₁", texto: "1 + i", color: COLORES[0] }, { nombre: "z₂", texto: "[2; 60°]", color: COLORES[1] },
+        { nombre: "z₃", texto: "z₁ · z₂", color: COLORES[2] }, { nombre: "z₄", texto: "z₁ / z₂", color: COLORES[3] }] }),
+      ej("Distintas formas y operaciones", "Tres números, una suma y un cociente", { filas: [
+        { nombre: "z₁", texto: "-3 + 4i", color: COLORES[0] }, { nombre: "z₂", texto: "(1, -1)", color: COLORES[1] },
+        { nombre: "z₃", texto: "2(cos 60° + i sen 60°)", color: COLORES[2] },
+        { nombre: "z₄", texto: "z₁ + z₂", color: COLORES[3] }, { nombre: "z₅", texto: "z₁ / z₂", color: COLORES[4] }] }),
+      ej("Operaciones combinadas", "(z₁ + z₂) · z₃ y |z₁| / |z₂|", { filas: [
+        { nombre: "z₁", texto: "3 + 4i", color: COLORES[0] }, { nombre: "z₂", texto: "1 − i", color: COLORES[1] },
+        { nombre: "z₃", texto: "2i", color: COLORES[2] },
+        { nombre: "z₄", texto: "(z₁ + z₂) · z₃", color: COLORES[3] }, { nombre: "z₅", texto: "|z₁| / |z₂|", color: COLORES[4] }] }),
+    ],
+    razonamientos: [
+      ej("Modus tollens", "p → q, ¬q ∴ ¬p", { filas: filasEj(["p → q, ¬q ∴ ¬p"]) }),
+      ej("Silogismo hipotético", "p → q, q → r ∴ p → r", { filas: filasEj(["p → q, q → r ∴ p → r"]) }),
+      ej("Silogismo disyuntivo", "p ∨ q, ¬p ∴ q", { filas: filasEj(["p ∨ q, ¬p ∴ q"]) }),
+      ej("Dilema constructivo", "p → q, r → s, p ∨ r ∴ q ∨ s", { filas: filasEj(["p → q, r → s, p ∨ r ∴ q ∨ s"]) }),
+      ej("Falacia: afirmación del consecuente", "p → q, q ∴ p (no es válido)", { filas: filasEj(["p → q, q ∴ p"]) }),
+      ej("Dos válidos y uno que no", "Encadenado, disyuntivo y afirmación del consecuente", {
+        filas: [{ texto: "p → q, q → r, p ∴ r", color: COLORES[0] }, { texto: "p ∨ q, ¬p ∴ q", color: COLORES[2] },
+          { texto: "p → q, q ∴ p", color: COLORES[1] }] }),
+    ],
+    simpLogica: [
+      ej("Absorción", "p ∨ (p ∧ q)", { filas: filasEj(["p ∨ (p ∧ q)"]) }),
+      ej("Con condicional", "(p → q) ∧ p", { filas: filasEj(["(p → q) ∧ p"]) }),
+      ej("De Morgan y distributiva", "¬(p ∨ ¬q) ∨ (¬p ∧ q)", { filas: filasEj(["¬(p ∨ ¬q) ∨ (¬p ∧ q)"]) }),
+      ej("Tautología", "[(p → q) ∧ p] → q (se simplifica a V)", { filas: filasEj(["[(p → q) ∧ p] → q"]) }),
+      ej("Consenso", "(p ∧ q) ∨ (¬p ∧ r) ∨ (q ∧ r)", { filas: filasEj(["(p ∧ q) ∨ (¬p ∧ r) ∨ (q ∧ r)"]) }),
+    ],
+    simpBoole: [
+      ej("Absorción del complemento", "A + A'B", { filas: [{ nombre: "F", texto: "A + A'B", color: COLORES[0] }] }),
+      ej("Producto de sumas", "(A + B)(A + B')", { filas: [{ nombre: "F", texto: "(A + B)(A + B')", color: COLORES[0] }] }),
+      ej("Con De Morgan", "(AB)' + A (da 1)", { filas: [{ nombre: "F", texto: "(AB)' + A", color: COLORES[0] }] }),
+      ej("Tres términos", "AB + AB' + A'B", { filas: [{ nombre: "F", texto: "AB + AB' + A'B", color: COLORES[0] }] }),
+      ej("Consenso", "AB + A'C + BC", { filas: [{ nombre: "F", texto: "AB + A'C + BC", color: COLORES[0] }] }),
+    ],
+    simpConjuntos: [
+      ej("Distributiva y complemento", "(A ∪ B) ∩ (A ∪ B')", { filas: filasEj(["(A ∪ B) ∩ (A ∪ B')"]) }),
+      ej("Con De Morgan", "(A ∪ B)' ∪ A", { filas: filasEj(["(A ∪ B)' ∪ A"]) }),
+      ej("Diferencias", "A − (A − B)", { filas: filasEj(["A − (A − B)"]) }),
+      ej("Diferencia e intersección", "(A − B) ∪ (A ∩ B)", { filas: filasEj(["(A − B) ∪ (A ∩ B)"]) }),
+      ej("Consenso", "(A ∩ B) ∪ (A' ∩ C) ∪ (B ∩ C)", { filas: filasEj(["(A ∩ B) ∪ (A' ∩ C) ∪ (B ∩ C)"]) }),
+    ],
+    induccion: [
+      ej("Polinomio: impares", "1 + 3 + … + (2n − 1) = n² (trinomio cuadrado perfecto)", { filas: filasEj([{ texto: "2n − 1", suma: "n^2" }]) }),
+      ej("Polinomio: naturales", "1 + 2 + … + n = n(n + 1)/2 (denominador y factor común)", {
+        filas: filasEj([{ texto: "n", suma: "n(n + 1)/2" }]) }),
+      ej("Polinomio: cuadrados", "Σ k² = n(n + 1)(2n + 1)/6 (factor común y factorizar)", {
+        filas: filasEj([{ texto: "n^2", suma: "n(n + 1)(2n + 1)/6" }]) }),
+      ej("Potencias (geométrica)", "1 + 5 + 5² + … + 5ⁿ⁻¹ = 1/4(5ⁿ − 1)", { filas: filasEj([{ texto: "5^(n − 1)", suma: "1/4(5^n − 1)" }]) }),
+      ej("Potencia con coeficiente", "Σ k·2ᵏ = (n − 1)·2ⁿ⁺¹ + 2", { filas: filasEj([{ texto: "n·2^n", suma: "(n − 1)·2^(n + 1) + 2" }]) }),
+      ej("Potencias en el denominador", "Σ 1/2ᵏ = 1 − 1/2ⁿ (igual denominador)", { filas: filasEj([{ texto: "1/2^n", suma: "1 − 1/2^n" }]) }),
+      ej("Potencias de −1", "Σ (−1)ᵏ⁺¹k² = (−1)ⁿ⁺¹·n(n + 1)/2", {
+        filas: filasEj([{ texto: "(−1)^(n + 1)·n^2", suma: "(−1)^(n + 1)·n(n + 1)/2" }]) }),
+      ej("Fracciones (telescópica)", "Σ 1/(k(k + 1)) = n/(n + 1) (común denominador)", {
+        filas: filasEj([{ texto: "1/(n(n + 1))", suma: "n/(n + 1)" }]) }),
+      ej("Potencia por fracción (telescópica)", "Σ k·2ᵏ/((k + 1)(k + 2)) = 2ⁿ⁺¹/(n + 2) − 1", {
+        filas: filasEj([{ texto: "n·2^n/((n + 1)(n + 2))", suma: "2^(n + 1)/(n + 2) − 1" }]) }),
+      ej("Factoriales", "Σ k·k! = (n + 1)! − 1 (definición de factorial)", { filas: filasEj([{ texto: "n·n!", suma: "(n + 1)! − 1" }]) }),
+    ],
+    plantillas: [
+      ej("Grupo abeliano", "L.C.I., asociativa, neutro, inverso y conmutativa",
+        marcarPlantillas(["pl_lci", "pl_asociativa", "pl_neutro", "pl_inverso", "pl_conmutativa"])),
+      ej("Relación de equivalencia", "Reflexiva, simétrica y transitiva",
+        marcarPlantillas(["pl_reflexiva", "pl_simetrica", "pl_transitiva"])),
+      ej("Relación de orden", "Reflexiva, antisimétrica y transitiva",
+        marcarPlantillas(["pl_reflexiva", "pl_antisimetrica", "pl_transitiva"])),
+      ej("Funciones", "Inyectiva, sobreyectiva y biyectiva",
+        marcarPlantillas(["pl_inyectiva", "pl_sobreyectiva", "pl_biyectiva"])),
+      ej("Sucesión aritmética", "Definición, término general, suma y distancia",
+        marcarPlantillas(["pl_ar_definicion", "pl_ar_general", "pl_ar_desdek", "pl_ar_suma", "pl_ar_d1", "pl_ar_dk"])),
+      ej("Sucesión geométrica", "Definición, término general, suma y razón",
+        marcarPlantillas(["pl_ge_definicion", "pl_ge_general", "pl_ge_desdek", "pl_ge_suma", "pl_ge_r1", "pl_ge_rm"])),
+      ej("Combinatoria", "Las fórmulas de los seis tipos",
+        marcarPlantillas(["pl_permutaciones", "pl_variaciones", "pl_combinaciones", "pl_variacionesR", "pl_combinacionesR",
+          "pl_permutacionesR"])),
+    ],
+  };
+  // inducción: tambien todos los casos juntos
+  EJEMPLOS.induccion.push(ej("Todos los casos", "Los diez de arriba, uno debajo del otro", {
+    filas: filasEj(EJEMPLOS.induccion.map(function (e) { return { texto: e.op.filas[0].texto, suma: e.op.filas[0].suma }; })) }));
+  Object.keys(EJEMPLOS).forEach(function (k) { GEN[k].ejemplos = EJEMPLOS[k]; });
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
   var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "venn", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
@@ -10766,6 +10976,16 @@
     ".pz-color.oscuro .hex b{border-color:#3a3a43}",
     ".pz-color .hex input{flex:1;min-width:0;border:0;background:transparent;color:inherit;padding:4px 7px;font:inherit;outline:0}",
     ".pz-color .hex.mal{border-color:#e03131}",
+    // menu del boton «Ejemplos ▾»: cada opcion con su nombre y lo que inserta
+    ".pz-ejemplos{position:fixed;z-index:30;width:310px;overflow:auto;background:#fff;color:#1b1b1f;border:1px solid #e0dfe6;",
+    "border-radius:10px;box-shadow:0 4px 18px rgba(0,0,0,.18);padding:6px;font:13px/1.35 Assistant,system-ui,sans-serif}",
+    ".pz-ejemplos.oscuro{background:#232329;color:#e3e3e8;border-color:#3a3a43}",
+    ".pz-ejemplos .tit{font-size:12px;opacity:.7;padding:2px 8px 4px}",
+    ".pz-ejemplos button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;width:100%;text-align:left;border:0;",
+    "background:transparent;color:inherit;padding:6px 8px;border-radius:6px;cursor:pointer;font:inherit}",
+    ".pz-ejemplos button:hover,.pz-ejemplos button:focus-visible{background:rgba(127,127,127,.14);outline:0}",
+    ".pz-ejemplos b{font-weight:600}",
+    ".pz-ejemplos small{font-size:12px;opacity:.7}",
     ".pz-gen .error{color:#e03131;font-size:12px;margin:2px 0 0 2px}",
     ".pz-gen .opc .error{grid-column:1/3;margin:0}",
     ".pz-gen .botones{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}",
@@ -10883,6 +11103,72 @@
     }
   };
 
+  // Menu del boton «Ejemplos ▾»: una opcion por conjunto de ejemplos (nombre y lo
+  // que inserta). Se elige con el mouse o con las flechas y Enter; se cierra con
+  // Escape, al tocar fuera o al volver a tocar el boton.
+  var menuEjemplos = {
+    el: null, boton: null,
+    abrir: function (boton, lista, oscuro, alElegir, conTeclado) {
+      if (this.el && this.boton === boton) { this.cerrar(); return; }
+      this.cerrar();
+      var self = this, el = this.el = document.createElement("div");
+      this.boton = boton;
+      el.className = "pz-ejemplos" + (oscuro ? " oscuro" : "");
+      el.setAttribute("role", "menu");
+      var tit = document.createElement("div");
+      tit.className = "tit";
+      tit.textContent = "Insertar un ejemplo nuevo";
+      el.appendChild(tit);
+      lista.forEach(function (x) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.setAttribute("role", "menuitem");
+        var n = document.createElement("b"), d = document.createElement("small");
+        n.textContent = x.nombre;
+        d.textContent = x.descripcion;
+        b.appendChild(n);
+        b.appendChild(d);
+        b.onclick = function () { self.cerrar(); alElegir(x); };
+        el.appendChild(b);
+      });
+      // que Excalidraw no reciba las teclas ni la rueda del menu
+      ["keydown", "keyup", "wheel"].forEach(function (ev) { el.addEventListener(ev, function (e) { e.stopPropagation(); }); });
+      document.body.appendChild(el);
+      boton.setAttribute("aria-expanded", "true");
+      // abajo del boton si entra; si no, donde haya mas lugar (con scroll)
+      var r = boton.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+      var abajo = innerHeight - r.bottom - 14, arriba = r.top - 14, y;
+      if (h <= abajo || abajo >= arriba) { el.style.maxHeight = abajo + "px"; y = r.bottom + 6; }
+      else { el.style.maxHeight = arriba + "px"; y = Math.max(8, r.top - 6 - Math.min(h, arriba)); }
+      el.style.left = Math.max(8, Math.min(r.right - w, innerWidth - w - 8)) + "px";
+      el.style.top = y + "px";
+      if (conTeclado) el.querySelector("button").focus();
+      this.fuera = function (e) { if (!el.contains(e.target) && e.target !== boton) self.cerrar(); };
+      this.tecla = function (e) {
+        var bs = [].slice.call(el.querySelectorAll("button")), i = bs.indexOf(document.activeElement);
+        if (e.key === "Escape") {
+          e.preventDefault(); e.stopPropagation();
+          self.cerrar();
+          boton.focus();
+        } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault(); e.stopPropagation();
+          var abajoK = e.key === "ArrowDown";
+          bs[i < 0 ? (abajoK ? 0 : bs.length - 1) : (i + (abajoK ? 1 : bs.length - 1)) % bs.length].focus();
+        }
+      };
+      document.addEventListener("pointerdown", self.fuera, true);
+      document.addEventListener("keydown", self.tecla, true);
+    },
+    cerrar: function () {
+      if (!this.el) return;
+      this.el.remove();
+      if (this.boton) this.boton.setAttribute("aria-expanded", "false");
+      this.el = this.boton = null;
+      document.removeEventListener("pointerdown", this.fuera, true);
+      document.removeEventListener("keydown", this.tecla, true);
+    },
+  };
+
   // true si Escape le toca a Excalidraw y no al panel `el`: hay un dialogo suyo
   // abierto, se esta escribiendo un texto o en un campo de fuera del panel, o se
   // esta dibujando (una linea de varios puntos, un trazo)
@@ -10919,7 +11205,7 @@
         '<div class="botones"><button class="b principal insertar">Insertar en el centro</button>' +
         '<button class="b copia">Insertar copia</button>' +
         '<button class="b restablecer">Restablecer</button>' +
-        '<button class="b ejemplo">Ejemplo</button></div>' +
+        '<button class="b ejemplo" aria-haspopup="menu" aria-expanded="false">Ejemplos ▾</button></div>' +
         '<div class="ayuda"></div>';
       document.body.appendChild(el);
       this.el = el;
@@ -10929,15 +11215,21 @@
       el.querySelector(".cerrar").onclick = function () { self.alternar(false); };
       el.querySelector(".insertar").onclick = function () { aplicar(self.tipo, self.op, !vinculo); };
       el.querySelector(".copia").onclick = function () { aplicar(self.tipo, self.op, true); };
-      // dibujo nuevo de ejemplo: carga su contenido y lo inserta en el centro.
-      // No toca el dibujo que este seleccionado; el aspecto elegido se mantiene.
-      el.querySelector(".ejemplo").onclick = function () {
-        clearTimeout(self.temporizador);
-        var ej = copiar(self.gen().ejemplo);
-        for (var k in ej) self.op[k] = ej[k];
-        self.pintarTodo();
-        self.guardar();
-        aplicar(self.tipo, self.op, true);
+      // dibujo nuevo de ejemplo: el menu ofrece varios conjuntos; el elegido carga su
+      // contenido (lo demas del contenido vuelve a lo predeterminado) y se inserta en
+      // el centro. No toca el dibujo que este seleccionado; el aspecto se mantiene.
+      el.querySelector(".ejemplo").onclick = function (e) {
+        var gen = self.gen();
+        menuEjemplos.abrir(this, gen.ejemplos || [], el.classList.contains("oscuro"), function (x) {
+          clearTimeout(self.temporizador);
+          var d = copiar(gen.defecto);
+          gen.contenido.forEach(function (k) { if (k in d) self.op[k] = d[k]; });
+          var ej = copiar(x.op);
+          for (var k in ej) self.op[k] = ej[k];
+          self.pintarTodo();
+          self.guardar();
+          aplicar(self.tipo, self.op, true);
+        }, e.detail === 0);
       };
       // opciones a los valores predeterminados; el contenido (lo que se grafica)
       // se mantiene
@@ -10957,7 +11249,7 @@
       // Excalidraw, o lo que se este dibujando o escribiendo en la pizarra.
       window.addEventListener("keydown", function (e) {
         if (!self.abierto || e.key !== "Escape" || e.isComposing) return;
-        if (selectorColor.el || menu.abierto || escapeEsDeExcalidraw(el)) return;
+        if (selectorColor.el || menuEjemplos.el || menu.abierto || escapeEsDeExcalidraw(el)) return;
         e.preventDefault();
         e.stopPropagation();
         if (el.contains(document.activeElement)) document.activeElement.blur();
@@ -11006,7 +11298,10 @@
         b.onclick = function () { self.escribir(s[1]); };
         sim.appendChild(b);
       });
-      this.el.querySelector(".ejemplo").title = gen.textoEjemplo;
+      menuEjemplos.cerrar();
+      var bEj = this.el.querySelector(".ejemplo");
+      bEj.title = "Elegí un ejemplo para insertarlo como dibujo nuevo";
+      bEj.style.display = gen.ejemplos && gen.ejemplos.length ? "" : "none";
       this.el.querySelector(".restablecer").title =
         "Vuelve el aspecto a los valores predeterminados (lo que se grafica se mantiene)";
       this.el.querySelector(".ayuda").textContent = gen.ayuda;
@@ -11272,7 +11567,7 @@
     alternar: function (abrir) {
       this.abierto = abrir === undefined ? !this.abierto : abrir;
       this.el.style.display = this.abierto ? "" : "none";
-      if (!this.abierto) selectorColor.cerrar();
+      if (!this.abierto) selectorColor.cerrar(), menuEjemplos.cerrar();
       else if (window.__pizarraHojas) window.__pizarraHojas.cerrar();
       boton.actualizar();
       if (this.abierto) seleccionado = undefined, seleccionCambio();
