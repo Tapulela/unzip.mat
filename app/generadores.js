@@ -8676,7 +8676,7 @@
         var I = par(n.a, precInd(n.a) < 1.5), D = par(n.b, precInd(n.b) < 2);
         var punto = /^[0-9−]/.test(D) || /\//.test(I) || (/[A-Za-z]$/.test(I) && /^[A-Za-z]/.test(D));
         return I + (punto ? "·" : "") + D;
-      case "/": return par(n.a, precInd(n.a) < 9) + "/" + par(n.b, precInd(n.b) < 9);
+      case "/": return par(n.a, precInd(n.a) < 9) + "/" + par(n.b, precInd(n.b) < 4);
       case "^":
         var e = linInd(n.b).replace(/ /g, "");
         var sup = e.split("").every(function (c) { return SUP_LIN[c]; })
@@ -8750,6 +8750,7 @@
   function escalarInd(q, n) {
     if (frUno(q)) return n;
     if (n.k === "num") return numInd(frMul(q, n.v));
+    if (n.k === "/" && n.a.k === "num") return opInd("/", numInd(frMul(q, n.a.v)), n.b);
     if (n.k === "*" && n.a.k === "num") {
       var c = frMul(q, n.a.v);
       return frUno(c) ? n.b : opInd("*", numInd(c), n.b);
@@ -8835,24 +8836,58 @@
     return pasos;
   }
 
-  // c·b^(k+m) (b natural) o null
+  // p(k)·b^(k+m) (s = 1) o p(k)/b^(k+m) (s = −1), con b natural y p un polinomio
+  // en k (cp: sus coeficientes); null si el termino no tiene esa forma
+  function esPotVarInd(n) { return n.k === "^" && tieneVarInd(n.b); }
   function terminoExpInd(t) {
-    var c = fr(1), x = t;
-    for (var g = 0; g < 8; g++) {
+    var c = fr(1), x = t, s = 1, cp = null;
+    for (var g = 0; g < 10; g++) {
       if (x.k === "neg") { c = frNeg(c); x = x.a; }
       else if (x.k === "/" && !tieneVarInd(x.b)) { c = frDiv(c, valInd(x.b)); x = x.a; }
+      else if (x.k === "/" && s > 0 && !cp && esPotVarInd(x.b) && (!tieneVarInd(x.a) || poliInd(x.a))) {
+        if (tieneVarInd(x.a)) cp = poliInd(x.a); else c = frMul(c, valInd(x.a));
+        s = -1; x = x.b;
+      }
       else if (x.k === "*" && !tieneVarInd(x.a)) { c = frMul(c, valInd(x.a)); x = x.b; }
       else if (x.k === "*" && !tieneVarInd(x.b)) { c = frMul(c, valInd(x.b)); x = x.a; }
+      else if (x.k === "*" && !cp && esPotVarInd(x.b) && poliInd(x.a)) { cp = poliInd(x.a); x = x.b; }
+      else if (x.k === "*" && !cp && esPotVarInd(x.a) && poliInd(x.b)) { cp = poliInd(x.b); x = x.a; }
       else break;
     }
     if (x.k !== "^" || x.a.k !== "num" || x.a.v.d !== 1 || x.a.v.n < 2) return null;
     var p = poliInd(x.b);
     if (!p || gradoInd(p) !== 1 || !frUno(p[1]) || p[0].d !== 1) return null;
-    return { c: c, b: x.a.v.n, m: p[0].n };
+    return { cp: (cp || [fr(1)]).map(function (q) { return frMul(q, c); }), b: x.a.v.n, m: p[0].n, s: s };
   }
   function tieneExpInd(n) {
     return (n.k === "^" && tieneVarInd(n.b)) || (!!n.a && tieneExpInd(n.a)) || (!!n.b && tieneExpInd(n.b));
   }
+  // ayudas para coeficientes polinomicos
+  function cteP(cp) { return gradoInd(cp) === 0; }
+  function negP(cp) { var c = cp[gradoInd(cp)]; return !!c && c.n < 0; }
+  function sumaP(p, q) {
+    var r = [];
+    for (var i = 0; i < Math.max(p.length, q.length); i++) r.push(frSuma(p[i] || fr(0), q[i] || fr(0)));
+    return r;
+  }
+  function porP(p, q) { return p.map(function (c) { return frMul(c, q); }); }
+  // cuantas veces divide b a todos los coeficientes (enteros)
+  function bEnP(cp, b) {
+    if (cp.some(function (c) { return c.d !== 1; })) return 0;
+    var nz = cp.filter(function (c) { return c.n; });
+    if (!nz.length) return 0;
+    var g = nz.reduce(function (m, c) { return m ? mcdAbs(m, c.n) : Math.abs(c.n); }, 0), j = 0;
+    while (g && g % b === 0) { g /= b; j++; }
+    return j;
+  }
+  // el coeficiente como nodo; con varios terminos va entre parentesis
+  function coefNodoInd(cp) {
+    var n = polyNodoInd(cp, "k");
+    if (monomiosInd(cp, "k").length > 1) { var c = {}; for (var q in n) c[q] = n[q]; c.sust = true; n = c; }
+    return n;
+  }
+  function potEnteraInd(b, j) { var r = fr(1); for (var i = 0; i < j; i++) r = frMul(r, fr(b)); return r; }
+
   function exponencialInd(I) {
     var ts = terminosSumaInd(I).map(function (t) {
       if (!tieneVarInd(t)) return { cte: t };
@@ -8861,53 +8896,94 @@
     if (ts.some(function (t) { return t.malo; })) return null;
     var pasos = [];
     var potN = function (b, m) { return opInd("^", numInd(fr(b)), linealInd([fr(m), fr(1)], "k")); };
-    var expNodo = function (t) { var x = potN(t.b, t.m); return frUno(t.c) ? x : opInd("*", numInd(t.c), x); };
+    // p·x o p/x, con el signo afuera (asi se escribe restando)
+    var conCoef = function (cp, x, s) {
+      var neg = negP(cp), c = neg ? cp.map(frNeg) : cp, r;
+      if (s < 0) r = opInd("/", polyNodoInd(c, "k"), x);
+      else r = cteP(c) && frUno(c[0]) ? x : opInd("*", coefNodoInd(c), x);
+      return neg ? { k: "neg", a: r } : r;
+    };
+    var expNodo = function (t) { return conCoef(t.cp, potN(t.b, t.m), t.s); };
     var push = function (nota, color) {
       pasos.push({ n: sumaNodosInd(ts.map(function (t) { return t.nodo || t.cte || expNodo(t); })), nota: nota, color: color });
     };
-    var bases = [];
-    ts.forEach(function (t) { if (t.b && bases.indexOf(t.b) < 0) bases.push(t.b); });
-    bases.forEach(function (b) {
-      var gr = ts.filter(function (t) { return t.b === b; });
+    var grupos = [];
+    ts.forEach(function (t) {
+      if (t.b && !grupos.some(function (G) { return G.b === t.b && G.s === t.s; })) grupos.push({ b: t.b, s: t.s });
+    });
+    grupos.forEach(function (G) {
+      var b = G.b, gr = ts.filter(function (t) { return t.b === b && t.s === G.s; });
       if (gr.length < 2) return;
+      var resta = gr.slice(1).some(function (t) { return negP(t.cp); }), C, j;
+      if (G.s < 0) {
+        // fracciones: todas con el denominador mas grande, b^(k+M)
+        var M = Math.max.apply(null, gr.map(function (t) { return t.m; }));
+        var cambian = gr.filter(function (t) { return t.m !== M; });
+        if (cambian.length) {
+          var notas = cambian.map(function (t) {
+            var d = M - t.m, abs = negP(t.cp) ? t.cp.map(frNeg) : t.cp;
+            var antes = conCoef(abs, potN(b, t.m), -1);
+            t.cp = porP(t.cp, potEnteraInd(b, d)); t.m = M;
+            t.nodo = pintInd(expNodo(t), COLOR_PRODUCTO);
+            return "Escribir " + linInd(antes) + " = " + linInd(conCoef(porP(abs, potEnteraInd(b, d)), potN(b, M), -1));
+          });
+          push(notas.concat(["(para tener igual denominador)"]), COLOR_PRODUCTO);
+          cambian.forEach(function (t) { t.nodo = null; });
+        }
+        C = gr.reduce(function (s, t) { return sumaP(s, t.cp); }, [fr(0)]);
+        gr.slice(1).forEach(function (t) { t.fuera = true; });
+        ts = ts.filter(function (t) { return !t.fuera; });
+        gr[0].cp = C; gr[0].m = M; gr[0].nodo = pintInd(expNodo(gr[0]), COLOR_SUMA);
+        push([resta ? "Restar las fracciones" : "Sumar las fracciones", "(igual denominador)"], COLOR_SUMA);
+        // simplificar las b del numerador con el denominador
+        j = bEnP(C, b);
+        if (j > 0) {
+          var bj = potEnteraInd(b, j);
+          gr[0].cp = C.map(function (c) { return frDiv(c, bj); }); gr[0].m = M - j;
+          gr[0].nodo = pintInd(expNodo(gr[0]), COLOR_PRODUCTO);
+          push(["Simplificar " + frTexto(bj)], COLOR_PRODUCTO);
+        }
+        gr[0].nodo = null;
+        return;
+      }
       var m0 = Math.min.apply(null, gr.map(function (t) { return t.m; }));
       // 1) todas como b^(k+m0): b^(k+m) = b^d·b^(k+m0)
-      var cambian = gr.filter(function (t) { return t.m !== m0; });
-      if (cambian.length) {
-        var notas = cambian.map(function (t) {
+      var cambianP = gr.filter(function (t) { return t.m !== m0; });
+      if (cambianP.length) {
+        var notasP = cambianP.map(function (t) {
           var d = t.m - m0, bd = d === 1 ? numInd(fr(b)) : opInd("^", numInd(fr(b)), numInd(fr(d)));
           var x = opInd("*", bd, potN(b, m0));
-          t.nodo = pintInd(frUno(t.c) ? x : opInd("*", numInd(t.c), x), COLOR_PRODUCTO);
+          t.nodo = pintInd(conCoef(t.cp, x, 1), COLOR_PRODUCTO);
           return "Escribir " + linInd(potN(b, t.m)) + " = " + linInd(x);
         });
-        push(notas.concat(["(producto de potencias de igual base)"]), COLOR_PRODUCTO);
-        cambian.forEach(function (t) {
-          for (var j = 0; j < t.m - m0; j++) t.c = frMul(t.c, fr(b));
-          t.m = m0; t.nodo = null;
-        });
+        push(notasP.concat(["(producto de potencias de igual base)"]), COLOR_PRODUCTO);
+        cambianP.forEach(function (t) { t.cp = porP(t.cp, potEnteraInd(b, t.m - m0)); t.m = m0; t.nodo = null; });
         push(["Resolver la multiplicación"], COLOR_PRODUCTO);
       }
       // 2) factor comun b^(k+m0)
       var P = potN(b, m0);
-      gr[0].nodo = opInd("*", pintInd(P, COLOR_PRODUCTO), sumaNodosInd(gr.map(function (t) { return numInd(t.c); })));
+      gr[0].nodo = opInd("*", pintInd(P, COLOR_PRODUCTO), sumaNodosInd(gr.map(function (t) { return coefNodoInd(t.cp); })));
       gr.slice(1).forEach(function (t) { t.fuera = true; });
       ts = ts.filter(function (t) { return !t.fuera; });
       push(["Sacar factor común " + linInd(P)], COLOR_PRODUCTO);
       // 3) la suma de los coeficientes
-      var C = gr.reduce(function (s, t) { return frSuma(s, t.c); }, fr(0));
-      var resta = gr.slice(1).some(function (t) { return t.c.n < 0; });
-      gr[0].nodo = opInd("*", P, pintInd(numInd(C), COLOR_SUMA));
-      push([resta ? "Resolver la resta" : "Resolver la suma"], COLOR_SUMA);
-      // 4) si da una potencia de b: producto de potencias de igual base
-      var q = C.n, j = 0;
-      if (C.d === 1 && q > 1) while (q % b === 0) { q /= b; j++; }
-      if (C.d === 1 && q === 1 && j > 0) {
-        gr[0].nodo = pintInd(potN(b, m0 + j), COLOR_PRODUCTO);
-        push(["Aplicar producto de potencias", "de igual base"], COLOR_PRODUCTO);
+      C = gr.reduce(function (s, t) { return sumaP(s, t.cp); }, [fr(0)]);
+      gr[0].nodo = opInd("*", P, pintInd(cteP(C) ? numInd(C[0]) : coefNodoInd(C), COLOR_SUMA));
+      push([resta ? "Resolver la resta" : cteP(C) ? "Resolver la suma" : "Sumar los términos semejantes"], COLOR_SUMA);
+      // 4) las b del coeficiente pasan a la potencia (producto de potencias de igual base)
+      j = bEnP(C, b);
+      gr[0].cp = C; gr[0].m = m0;
+      if (j > 0) {
+        var bj2 = potEnteraInd(b, j);
+        gr[0].cp = C.map(function (c) { return frDiv(c, bj2); }); gr[0].m = m0 + j;
+        gr[0].nodo = pintInd(expNodo(gr[0]), COLOR_PRODUCTO);
+        push(["Aplicar producto de potencias", "de igual base: " + linInd(opInd("*", numInd(bj2), P)) + " = " + linInd(potN(b, m0 + j))],
+          COLOR_PRODUCTO);
       } else {
-        gr[0].nodo = null; gr[0].c = C; gr[0].m = m0; gr[0].b = b;
+        gr[0].nodo = null;
         push(["Ordenar"], TINTA);
       }
+      gr[0].nodo = null;
     });
     return pasos;
   }
