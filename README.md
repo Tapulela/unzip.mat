@@ -120,7 +120,13 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   con ese generador. Uno de ellos genera una recta real con intervalos (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
   (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
   con la sala y se puede editar. Las opciones quedan en `customData` del grupo:
-  al seleccionar la recta con el panel abierto, se regenera en vivo.
+  al seleccionar la recta con el panel abierto, se regenera en vivo. Con el panel
+  cerrado, al seleccionar un dibujo generado se abre su panel (solo cuando la
+  selección pasa a otro dibujo; se desactiva en Preferencias → «Abrir la
+  herramienta al seleccionar un dibujo», activada por defecto; el interruptor es
+  otro `OPS` en el submenú Preferencias del build, `assets/index-*.js`). Escape
+  cierra el panel de generadores y el de Hojas A4, salvo que haya algo encima
+  (selector de color, menú, diálogo de Excalidraw, texto o línea a medio hacer).
   Los elementos se crean en orden de "dibujo" (útil para animar la escena, por
   ejemplo con excalidraw-animate): recta y graduación (más el marco de la
   referencia); luego, por cada conjunto, su línea en la referencia y, por cada

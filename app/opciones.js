@@ -4,6 +4,8 @@
 //  - window.__ocultarPunteros: no dibuja los cursores de otros colaboradores.
 //  - window.__comprimirPng: comprime los PNG al exportar o copiar (compresion.js).
 //  - window.__comprimirAlPegar: comprime las imagenes al pegarlas (compresion.js).
+//  - window.__abrirHerramientaAlSeleccionar: abre el panel del generador al
+//    seleccionar un dibujo generado (generadores.js).
 (function () {
   var OPCIONES = [
     { clave: "pizarra-ocultar-seleccion-remota", bandera: "__ocultarSeleccionRemota",
@@ -16,6 +18,9 @@
     // Ver compresion.js: comprime las imagenes al pegarlas o insertarlas.
     { clave: "pizarra-comprimir-al-pegar", bandera: "__comprimirAlPegar",
       texto: "Comprimir imágenes al pegar", defecto: true },
+    // Ver generadores.js: al seleccionar un dibujo generado se abre su panel.
+    { clave: "pizarra-abrir-herramienta", bandera: "__abrirHerramientaAlSeleccionar",
+      texto: "Abrir la herramienta al seleccionar un dibujo", defecto: true },
   ];
 
   OPCIONES.forEach(function (o) {

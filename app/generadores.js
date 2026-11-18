@@ -9745,6 +9745,18 @@
     }
   };
 
+  // true si Escape le toca a Excalidraw y no al panel `el`: hay un dialogo suyo
+  // abierto, se esta escribiendo un texto o en un campo de fuera del panel, o se
+  // esta dibujando (una linea de varios puntos, un trazo)
+  function escapeEsDeExcalidraw(el) {
+    if (document.querySelector(".excalidraw .Modal, .excalidraw .Dialog")) return true;
+    var f = document.activeElement;
+    if (f && !el.contains(f) && (f.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(f.tagName))) return true;
+    var A = api(), st = A && A.getAppState();
+    return !!(st && (st.editingTextElement || st.multiElement || st.newElement || st.editingLinearElement));
+  }
+  window.__pizarraEscapeEsDeExcalidraw = escapeEsDeExcalidraw;
+
   var panel = {
     el: null, abierto: false, tipo: "recta", ops: {}, temporizador: null,
 
@@ -9802,6 +9814,17 @@
       ["keydown", "keyup", "wheel", "paste", "copy", "cut"].forEach(function (ev) {
         el.addEventListener(ev, function (e) { e.stopPropagation(); });
       });
+      // Escape cierra el panel, este donde este el foco. Antes se cierra lo que
+      // este encima: el selector de color, el menu de generadores, un dialogo de
+      // Excalidraw, o lo que se este dibujando o escribiendo en la pizarra.
+      window.addEventListener("keydown", function (e) {
+        if (!self.abierto || e.key !== "Escape" || e.isComposing) return;
+        if (selectorColor.el || menu.abierto || escapeEsDeExcalidraw(el)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (el.contains(document.activeElement)) document.activeElement.blur();
+        self.alternar(false);
+      }, true);
     },
 
     // muestra el generador `tipo` con sus opciones actuales
@@ -10119,21 +10142,44 @@
   };
 
   // Al seleccionar un dibujo generado, el panel cambia a su generador y lo carga
-  function seleccionCambio() {
-    var A = api();
-    if (!A || !panel.abierto) return;
-    var st = A.getAppState();
-    panel.el.classList.toggle("oscuro", st.theme === "dark");
+  // dibujo generado (gid y tipo) que esta en la seleccion, o gid null
+  function generadoSeleccionado(A, st) {
     var ids = Object.keys(st.selectedElementIds || {});
-    var gid = null, tipo = null;
+    var r = { gid: null, tipo: null };
     if (ids.length) {
       var porId = {};
       A.getSceneElements().forEach(function (e) { porId[e.id] = e; });
-      for (var i = 0; i < ids.length && !gid; i++) {
+      for (var i = 0; i < ids.length && !r.gid; i++) {
         var d = datosDe(porId[ids[i]]);
-        if (d && GEN[d.tipo]) gid = d.gid, tipo = d.tipo;
+        if (d && GEN[d.tipo]) r.gid = d.gid, r.tipo = d.tipo;
       }
     }
+    return r;
+  }
+
+  // Con el panel cerrado, al seleccionar un dibujo generado se abre su panel
+  // (Preferencias -> «Abrir la herramienta al seleccionar un dibujo»). Solo
+  // cuando la seleccion pasa a otro dibujo: si se cierra el panel con el dibujo
+  // todavia seleccionado, no se vuelve a abrir.
+  var visto = null;
+  function abrirAlSeleccionar(A, st) {
+    var gid = generadoSeleccionado(A, st).gid;
+    if (gid === visto) return;
+    visto = gid;
+    if (gid && window.__abrirHerramientaAlSeleccionar !== false && !st.viewModeEnabled) {
+      if (menu.abierto) menu.alternar(false);
+      panel.alternar(true);
+    }
+  }
+
+  function seleccionCambio() {
+    var A = api();
+    if (!A) return;
+    var st = A.getAppState();
+    if (!panel.abierto) { abrirAlSeleccionar(A, st); return; }
+    panel.el.classList.toggle("oscuro", st.theme === "dark");
+    var sel = generadoSeleccionado(A, st), gid = sel.gid, tipo = sel.tipo;
+    visto = gid;
     if (gid === seleccionado) return; // solo se reacciona cuando cambia la seleccion
     seleccionado = gid;
     vinculo = gid;

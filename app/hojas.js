@@ -1511,6 +1511,17 @@
       ["keydown", "keyup", "wheel", "paste", "copy", "cut"].forEach(function (ev) {
         el.addEventListener(ev, function (e) { e.stopPropagation(); });
       });
+      // Escape cierra el panel, este donde este el foco, salvo que le toque a
+      // Excalidraw (dialogo abierto, texto o dibujo en curso; ver generadores.js)
+      window.addEventListener("keydown", function (e) {
+        if (!panel.abierto || e.key !== "Escape" || e.isComposing) return;
+        var deExc = window.__pizarraEscapeEsDeExcalidraw;
+        if (deExc && deExc(el)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (el.contains(document.activeElement)) document.activeElement.blur();
+        panel.alternar(false);
+      }, true);
       this.pintar();
     },
     pintar: function () {
