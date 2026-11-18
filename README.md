@@ -251,14 +251,17 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   las fracciones; con potencias b^(k+m) (también con un polinomio en k delante,
   como (k − 1)·2^(k+1)) se llevan a la misma potencia, se saca factor común, se
   suma y las b del coeficiente pasan a la potencia (producto de potencias de igual
-  base: 2·2^(k+1) = 2^(k+2)); con potencias en el denominador (1/2^k, (k + 2)/2^k)
+  base: 2·2^(k+1) = 2^(k+2)); con (−1)^k todo se lleva a la potencia de −1 de
+  S(k + 1) ((−1)^(k+1) = −(−1)^(k+2)), se saca factor común y lo de adentro se
+  resuelve como polinomio (los coeficientes quedan como están escritos, por
+  ejemplo k(k + 1)/2, para poder sacar factor común (k + 1)); con potencias en el denominador (1/2^k, (k + 2)/2^k)
   se llevan al denominador más grande, se suman las fracciones y se simplifica; con
   polinomios, factor común (lo que queda se factoriza según S(k + 1)) o
   desarrollar y sumar los términos semejantes; con k en el denominador, común
   denominador, sumar, factorizar el numerador y simplificar; con factoriales,
   factor común (k + 1)! y m·(m − 1)! = m!. Cada renglón se controla con números
   (k = 1…9, fracciones exactas): si alguno no da lo mismo, o no hay estrategia
-  (por ejemplo con (−1)ⁿ, o con 2ⁿ/n), se corta y queda «(El resto queda para completar a
+  (por ejemplo con 2ⁿ/n, o con dos potencias con k en un mismo término), se corta y queda «(El resto queda para completar a
   mano)». Si la
   fórmula no vale para algún n de 1 a 8, lo avisa debajo de la fila. Los
   exponentes son un ítem propio de `dibujarBloqueF` (`{ sup: [...] }`, más chico
