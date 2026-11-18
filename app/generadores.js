@@ -8616,7 +8616,7 @@
     var p = n.k === "+" || n.k === "-" || n.sust ? poliInd(n) : null;
     if (p && gradoInd(p) <= 1) {
       var l = linealInd(p, nom);
-      if (textoPlanoInd(l) !== textoPlanoInd(n) || n.sust) return l;
+      if (textoPlanoInd(l) !== textoPlanoInd(n) || n.sust) { l.reemplazo = true; return l; }
     }
     var r = { k: n.k };
     if (n.a) r.a = simplificarInd(n.a, nom);
@@ -8664,12 +8664,13 @@
     "+": "⁺", "−": "⁻", "(": "⁽", ")": "⁾", k: "ᵏ", n: "ⁿ" };
   // texto en un renglon (para las notas): 5ᵏ, 1/4·4·5ᵏ, (k + 1)²
   function linInd(n) {
-    var par = function (x, poner) { var s = linInd(x); return poner ? "(" + s + ")" : s; };
+    // lo reemplazado (k + 1) va entre parentesis dentro de una operacion
+    var par = function (x, poner) { var s = linInd(x); return poner || (x.sust && precInd(x) < 9) ? "(" + s + ")" : s; };
     switch (n.k) {
       case "num": return frTexto(n.v);
       case "var": return n.nom;
-      case "+": return linInd(n.a) + " + " + par(n.b, precInd(n.b) === 1.5);
-      case "-": return linInd(n.a) + " − " + par(n.b, precInd(n.b) <= 1.5);
+      case "+": return par(n.a, false) + " + " + par(n.b, precInd(n.b) === 1.5);
+      case "-": return par(n.a, false) + " − " + par(n.b, precInd(n.b) <= 1.5);
       case "neg": return "−" + par(n.a, precInd(n.a) < 2);
       case "*":
         var I = par(n.a, precInd(n.a) < 1.5), D = par(n.b, precInd(n.b) < 2);
@@ -9017,7 +9018,25 @@
   }
 
   // pasos desde S(k) + a(k + 1) hasta S(k + 1): [{ n, nota, color }] y si se llego
-  function resolverInd(Sk, ak1, T, textoInicial) {
+  // S(k + 1) tal como quedo al reemplazar (Traw) frente a su version simplificada
+  // (T, de simplificarInd): devuelve Traw con lo que cambia en color y anota los pares
+  function diferenciasInd(raw, simp, pares) {
+    // (k + 1) y k + 1 son lo mismo: solo cambian los parentesis
+    if (textoPlanoInd(raw) === textoPlanoInd(simp) || linInd(raw) === linInd(simp)) return raw;
+    if (simp.reemplazo || raw.k !== simp.k) { pares.push([simp, raw]); return pintInd(raw, COLOR_PRODUCTO); }
+    var r = {};
+    for (var q in raw) r[q] = raw[q];
+    if (raw.a) r.a = diferenciasInd(raw.a, simp.a, pares);
+    if (raw.b) r.b = diferenciasInd(raw.b, simp.b, pares);
+    return r;
+  }
+  function sinColorInd(n) {
+    var c = copiar(n);
+    (function f(x) { delete x.color; if (x.a) f(x.a); if (x.b) f(x.b); })(c);
+    return c;
+  }
+  // Traw: el miembro derecho sin tocar; el izquierdo tiene que terminar escrito igual
+  function resolverInd(Sk, ak1, T, textoInicial, Traw) {
     var L0 = opInd("+", Sk, ak1), pasos = [], fallo = false, ult = textoInicial;
     function paso(n, nota, color) {
       if (fallo) return;
@@ -9061,7 +9080,13 @@
       if (!(e && e.msjInd)) throw e;
       fallo = true;
     }
-    return { pasos: pasos, ok: !fallo && ult === textoPlanoInd(T) };
+    // del S(k + 1) simplificado al escrito en el miembro derecho: k + 2 = (k + 1) + 1
+    var meta = Traw ? textoPlanoInd(Traw) : textoPlanoInd(T);
+    if (Traw && !fallo && ult === textoPlanoInd(T) && ult !== meta) {
+      var pares = [], final = diferenciasInd(Traw, T, pares);
+      paso(final, pares.map(function (q) { return "Escribir " + linInd(q[0]) + " = " + linInd(q[1]); }), COLOR_PRODUCTO);
+    }
+    return { pasos: pasos, ok: !fallo && ult === meta };
   }
 
   function analizarInd(fila) {
@@ -9144,15 +9169,17 @@
     // los k primeros terminos pasan a ser S(k); lo lineal en k, simplificado
     var SkHi = copiar(Sk);
     SkHi.color = COLOR_HI;
+    // el miembro derecho queda como se escribio al reemplazar n = k + 1 (no se toca);
+    // la version simplificada solo guia los pasos del izquierdo
     var ak1s = simplificarInd(ak1, "k"), Tk1 = simplificarInd(Sk1, "k");
     var suma = sumaInd([SkHi, ak1s]);
-    var lHiAp = LnF(suma.its, "=", escribirInd(Tk1));
+    var lHiAp = LnF(suma.its, "=", escribirInd(Sk1));
     L.push(lHiAp);
     // se trabaja el miembro izquierdo hasta llegar a S(k + 1)
     if (op.resolver) {
-      var res = resolverInd(limpioInd(Sk), limpioInd(ak1s), limpioInd(Tk1), planoItsInd(suma.its));
+      var res = resolverInd(limpioInd(Sk), limpioInd(ak1s), limpioInd(Tk1), planoItsInd(suma.its), sinColorInd(Sk1));
       res.pasos.forEach(function (p) {
-        L.push(LnF(escribirInd(p.n), "=", escribirInd(Tk1), notaF(p.nota, p.color)));
+        L.push(LnF(escribirInd(p.n), "=", escribirInd(Sk1), notaF(p.nota, p.color)));
       });
       if (res.ok) {
         L[L.length - 1].der.push(MarcaF(true));

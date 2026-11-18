@@ -242,7 +242,9 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   inducción» al renglón donde se reemplazan por S(k) (lo lineal en k se
   simplifica: `5^((k + 1) − 1)` pasa a `5^k`). Con «Resolver el paso 3»
   (activada por defecto) sigue trabajando el miembro izquierdo hasta llegar a
-  S(k + 1), con el miembro derecho repetido en cada renglón, la nota antes de cada
+  S(k + 1), con el miembro derecho repetido sin tocar en cada renglón (tal como
+  quedó al reemplazar n = k + 1: el izquierdo termina con «Escribir k + 2 =
+  (k + 1) + 1» si hace falta), la nota antes de cada
   paso, la marca y «por inducción, vale para todo n ∈ ℕ». Estrategias
   (`resolverInd`): si S es c·(…) se reescribe a(k + 1) = c·(a(k + 1)/c) y se saca
   factor común c; si es (…)/d, se multiplica y divide a(k + 1) por d y se suman
