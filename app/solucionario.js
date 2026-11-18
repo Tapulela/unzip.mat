@@ -159,6 +159,27 @@
     // izquierda que acompaña cada renglón, también si la sección sigue en otra hoja.
     // barras: las líneas de las secciones que encierran a un bloque [{ x, id }]
     var sangSec = tam * 1.4, nSec = 0;
+
+    // marcador del PDF (Hojas A4 → «Agregar marcadores a un PDF»): en un
+    // ejercicio, un ítem o una sección, «marcador» es true (el título es el
+    // rótulo y el enunciado, o el título de la sección), un texto (el título) o
+    // { titulo, nivel } (nivel 1 a 3). Se agrega a la pieza del título un texto
+    // violeta que no se imprime, en el margen izquierdo, a la altura del primer
+    // renglón: el lector de PDF lo muestra en su panel y lleva a ese lugar.
+    var tamM = 10;
+    function marcar(p, valor, tituloPorDefecto, nivelPorDefecto, altoRenglon) {
+      if (!valor || !p) return;
+      var lhR = altoRenglon || lh;
+      var o = typeof valor === "object" ? valor : {};
+      var titulo = String(typeof valor === "string" ? valor : o.titulo || tituloPorDefecto).replace(/\s+/g, " ").trim();
+      if (!titulo) return;
+      var nivel = Math.max(1, Math.min(3, (o.nivel | 0) || nivelPorDefecto || 1));
+      var w = g.medir(titulo, tamM, fuente);
+      var e = g.texto(-w - 6, (lhR - tamM * fuente.lh) / 2, titulo, tamM, fuente, "#6965db", "left");
+      e.customData = { pizarraMarcador: { nivel: nivel, imprime: false } };
+      p.els.push(e);
+    }
+
     function bloques(lista, x, ruta, barras) {
       barras = barras || [];
       var n0 = piezas.length;
@@ -179,6 +200,7 @@
           p.agregar(g.trazo([[x, yS + 1], [x + wS, yS + 1]], { strokeColor: colS, strokeWidth: 1.5 }));
           p.barras = barras;
           p.espacio = lh * 0.3;
+          marcar(p, b.marcador, String(b.seccion), barras.length + 1);
           piezas.push(p);
           var hijas = barras.concat([{ x: x + sangSec * 0.35, id: ++nSec, color: colS }]);
           bloques(b.bloques, x + sangSec, rb, hijas);
@@ -251,18 +273,25 @@
       var xResto = sangE === null ? x + wE : x + Math.min(sangE, wE);
       if (texto) escribirParrafo(texto, x + wE, 0, maxW - x - wE, tamN, fuenteE, COLOR_ENUNCIADO, p.agregar, xResto);
       p.espacio = lh * 0.4;
-      if (p.els.length) piezas.push(p);
+      if (!p.els.length) return null;
+      piezas.push(p);
+      p.alto1 = tamN * fuenteE.lh; // alto del primer renglón (para el marcador)
+      return p;
     }
 
     (sol.ejercicios || []).forEach(function (ej, i) {
       var r = "ejercicios[" + i + "]", nEj = ej.numero !== undefined ? ej.numero : i + 1;
       if (i) piezas.push({ hueco: lh * 1.2 });
-      enunciado(nEj === "" ? "" : rotulo(plEj, nEj), ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
+      var rEj = nEj === "" ? "" : rotulo(plEj, nEj);
+      var pEj = enunciado(rEj, ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
+      marcar(pEj, ej.marcador, (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1);
       bloques(ej.bloques, sangria * 0.5, r);
       (ej.items || []).forEach(function (it, j) {
         piezas.push({ hueco: lh * 0.6 });
         var nIt = it.numero !== undefined ? it.numero : String.fromCharCode(97 + j);
-        enunciado(nIt === "" ? "" : rotulo(plIt, nEj, nIt), it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
+        var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt);
+        var pIt = enunciado(rIt, it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
+        marcar(pIt, it.marcador, (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1);
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
       });
     });
