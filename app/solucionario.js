@@ -247,19 +247,23 @@
           // notas: "arriba" escribe la nota de cada paso arriba de su renglon;
           // si no, van a la derecha y, si el bloque va al lado de otro (alLado) y
           // no entra, se rehace con las notas arriba (rehacer)
-          var opArriba = {}; for (var kk in opPasos) opArriba[kk] = opPasos[kk];
+          // tam: tamaño del texto de este bloque (S, M, L, XL), por ejemplo un
+          // renglón largo en S para que entre a lo ancho de la hoja
+          var opB = {}; for (var kb in opPasos) opB[kb] = opPasos[kb];
+          if (b.tam && g.TAMANOS[b.tam]) opB.tamTexto = b.tam;
+          var opArriba = {}; for (var kk in opB) opArriba[kk] = opB[kk];
           opArriba.notasArriba = true;
-          p = nuevaPieza();
+          p = nuevaPieza(!!b.unir); // unir: no se separa de lo que le sigue
           p.entero = !!b.entero; // entero: el desarrollo no se parte entre hojas (si entra en una)
-          try { g.dibujarBloqueF(L, x, 0, b.notas === "arriba" ? opArriba : opPasos, p.agregar); }
+          try { g.dibujarBloqueF(L, x, 0, b.notas === "arriba" ? opArriba : opB, p.agregar); }
           catch (e) { errores.push(rb + ": no se pudo dibujar (" + (e && e.message || e) + ")"); return; }
-          if (b.notas !== "arriba") p.rehacer = (function (L, x, entero) {
+          if (b.notas !== "arriba") p.rehacer = (function (L, x, entero, unir) {
             return function () {
-              var q = nuevaPieza(); q.entero = entero;
+              var q = nuevaPieza(unir); q.entero = entero;
               g.dibujarBloqueF(L, x, 0, opArriba, q.agregar);
               return q;
             };
-          })(L, x, p.entero);
+          })(L, x, p.entero, p.unir);
           piezas.push(p);
         } else if (b.generador) {
           var gen = g.GEN[b.generador];
