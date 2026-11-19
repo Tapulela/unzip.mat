@@ -4414,7 +4414,8 @@
     var nC = R.casos.length;
     bloques.forEach(function (els, ic) {
       var y0 = ic ? inicios[ic] : yLlave, y1 = ic < nC - 1 ? inicios[ic + 1] : medios[ic];
-      c.agregar(anotarCorte(trazo([[xTallo, y0], [xTallo, y1]], ln), { caso: ic }));
+      // corto: hasta la flecha del caso (si la hoja se corta despues de este caso)
+      c.agregar(anotarCorte(trazo([[xTallo, y0], [xTallo, y1]], ln), { caso: ic, tallo: true, corto: medios[ic] - y0 }));
       els.forEach(function (e) { c.agregar(anotarCorte(e, { caso: ic })); });
     });
     var R1 = R.casos[0].res, R2 = R.casos[1].res, tU = textoConjuntoAbs(R.tramos), union = textoConjuntoAbs(R1) + " ∪ " + textoConjuntoAbs(R2);

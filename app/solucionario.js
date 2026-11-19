@@ -372,12 +372,15 @@
   // con el primer caso es un solo bloque, y cada caso que sigue, otro, que
   // lleva lo necesario para repetir la cabecera si empieza una hoja.
   function renglonesConCortes(p) {
-    var g = G(), libres = [], cab = [], casos = {}, info = null;
+    var g = G(), libres = [], cab = [], casos = {}, tallos = {}, info = null;
     p.els.forEach(function (e, i) {
       var ct = p.cortes[i];
       if (!ct) libres.push(e);
       else if (ct.cab) { cab.push(e); info = ct; }
-      else (casos[ct.caso] = casos[ct.caso] || []).push(e);
+      else {
+        (casos[ct.caso] = casos[ct.caso] || []).push(e);
+        if (ct.tallo) tallos[ct.caso] = { el: e, corto: ct.corto };
+      }
     });
     var out = renglones(libres);
     function bloque(els) {
@@ -396,7 +399,9 @@
         // copia de la cabecera tal como sale del generador: los originales se
         // corren despues a su hoja y no sirven para ubicar la repeticion
         b.repetir = { els: cab.map(function (e) { return g.copiar(e); }), y0: y0cab, yLlave: info.yLlave, sep: info.sep, xTallo: info.xTallo,
-          estilo: { strokeColor: t ? t.strokeColor : g.TINTA, strokeWidth: t ? t.strokeWidth : 2 } };
+          estilo: { strokeColor: t ? t.strokeColor : g.TINTA, strokeWidth: t ? t.strokeWidth : 2 },
+          // el tramo del caso anterior, que se acorta hasta su flecha si la hoja se corta aca
+          recortar: tallos[ks[j - 1]] };
       }
       out.push(b);
     });
@@ -531,6 +536,10 @@
         // un caso de la regla de los signos que empieza la hoja: arriba se repite
         // la cabecera (la inecuacion con su llave y la regla) y el tallo baja hasta el caso
         var rep = seq[0].repetir;
+        if (rep && rep.recortar) {
+          var tr = rep.recortar.el, largo = rep.recortar.corto;
+          tr.points = [[0, 0], [0, largo]]; tr.height = largo;
+        }
         if (rep) {
           var dyc = hoja.y - rep.y0, gidc = seq[0].q.els[0].groupIds[0];
           rep.els.forEach(function (e0) {
