@@ -279,6 +279,12 @@
               gen.generar(op, x, 0, function (e) { tmp.push(e); return e; });
             }
           }
+          // un dibujo que se extiende a la izquierda de su origen (un plano con la
+          // parte negativa del eje real) no se sale del area util: si se sale, se
+          // corre a la derecha hasta alinearse con el rotulo de su item
+          var x0g = Infinity, minX = Math.max(0, x - sangria * 0.5);
+          tmp.forEach(function (e) { x0g = Math.min(x0g, g.caja(e).x0); });
+          if (x0g < 0) tmp.forEach(function (e) { e.x += minX - x0g; });
           // cortes: donde se puede partir el dibujo entre hojas (regla de los signos)
           var cortes = g.corteDe ? [] : null, unidos = [];
           tmp.forEach(function (e) {
@@ -390,17 +396,25 @@
       // un QR ocupa su columna entera, aunque su direccion sea mas angosta o mas ancha
       if (A.columna) { ca.x0 = A.columna.x0; ca.x1 = A.columna.x1; }
       if (B.columna) { cb.x0 = B.columna.x0; cb.x1 = B.columna.x1; }
-      var dx = ca.x1 + tam * 2 - cb.x0;
+      // separacion entre los dos: la de siempre (dos letras) y, si no entra, la mitad
+      function corrimientoQueEntra(c, angosta) {
+        var d = ca.x1 + tam * (angosta ? 1 : 2) - c.x0;
+        return c.x1 + d <= maxW + 1 ? d : null;
+      }
+      var dx = corrimientoQueEntra(cb);
       // un desarrollo que no entra con las notas a la derecha se prueba con las
       // notas arriba de cada renglon (mas angosto)
-      if (cb.x1 + dx > maxW + 1 && B.rehacer) {
-        var B2 = B.rehacer(), cb2 = limites(B2), dx2 = ca.x1 + tam * 2 - cb2.x0;
-        if (cb2.x1 + dx2 <= maxW + 1) {
+      if (dx === null && B.rehacer) {
+        var B2 = B.rehacer(), cb2 = limites(B2), dx2 = corrimientoQueEntra(cb2);
+        // con la separacion de siempre; si no, la mitad (primero el original)
+        if (dx2 === null && (dx = corrimientoQueEntra(cb, true)) === null) dx2 = corrimientoQueEntra(cb2, true);
+        if (dx === null && dx2 !== null) {
           ["unir", "continua", "espacio"].forEach(function (k) { if (B[k] !== undefined) B2[k] = B[k]; });
           piezas[piezas.length - 1] = B2; B = B2; cb = cb2; dx = dx2;
         }
       }
-      if (cb.x1 + dx > maxW + 1) { avisos.push(r + ".alLado: no entra al lado del bloque anterior; va debajo"); return; }
+      if (dx === null && !B.rehacer) dx = corrimientoQueEntra(cb, true);
+      if (dx === null) { avisos.push(r + ".alLado: no entra al lado del bloque anterior; va debajo"); return; }
       var dy = modo === "centro" ? (ca.y0 + ca.y1) / 2 - (cb.y0 + cb.y1) / 2 : ca.y0 - cb.y0;
       // cada parte conserva su grupo (el de un grafico, el de su dibujo)
       [A, B].forEach(function (p) {
@@ -781,9 +795,10 @@
           var i = listos.indexOf(t.el);
           if (i >= 0) listos.splice(i, 1);
         } else {
-          t = tramos[b.id] = { hoja: hoja.f.id, y0: yTop - r.lh * 0.15 };
+          // un poco arriba del primer renglon, pero nunca fuera del area util
+          t = tramos[b.id] = { hoja: hoja.f.id, y0: Math.max(hoja.area.y0, yTop - r.lh * 0.15) };
         }
-        t.el = g.trazo([[x, t.y0], [x, yBot]], { strokeColor: b.color, strokeWidth: 1.5 });
+        t.el = g.trazo([[x, t.y0], [x, Math.min(hoja.area.y1, yBot)]], { strokeColor: b.color, strokeWidth: 1.5 });
         t.el.frameId = hoja.f.id; t.el.groupIds = [g.nuevoId()];
         listos.push(t.el);
       });
