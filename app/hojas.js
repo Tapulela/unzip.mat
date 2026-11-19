@@ -90,23 +90,53 @@
   }
 
   // cabecera y pie de pagina: marcos especiales que se repiten en todas las
-  // hojas (salvo la primera, si es portada)
+  // hojas (salvo la primera, si es portada).
+  //  - La cabecera (o el pie) general no tiene `desde` y vale desde la Hoja 1.
+  //  - Una banda con `desde` (el id de una hoja) vale desde esa hoja hasta la
+  //    hoja anterior a la de la proxima banda del mismo tipo con `desde`. Asi
+  //    un cuadernillo tiene una cabecera por parte (cada trabajo practico con
+  //    la suya). Sigue a su hoja aunque se inserten o se renumeren hojas.
+  //  - Una hoja con `sinBandas` (la caratula, una hoja en blanco) no lleva
+  //    cabecera ni pie, ni numero de pagina.
   var SEP = 4; // mm entre la cabecera (o el pie) y el contenido
   function datosBanda(e) { return e && e.customData && e.customData.pizarraBanda; }
   function esBanda(e) { return e && !e.isDeleted && e.type === "frame" && !!datosBanda(e); }
   function bandasDe(todos) {
-    var r = { cab: null, pie: null, sinPortada: false };
+    var r = { cab: null, pie: null, sinPortada: false, lista: [] }, nDe = {};
+    todos.forEach(function (e) { if (esHoja(e)) nDe[e.id] = datosHoja(e).n; });
     todos.forEach(function (e) {
       if (!esBanda(e)) return;
-      var d = datosBanda(e);
-      if (d.tipo === "cabecera" && !r.cab) r.cab = e;
-      if (d.tipo === "pie" && !r.pie) r.pie = e;
+      var d = datosBanda(e), tipo = d.tipo === "pie" ? "pie" : "cab";
+      if (d.desde) {
+        // si su hoja ya no esta, la banda no se usa
+        if (nDe[d.desde] !== undefined) r.lista.push({ banda: e, tipo: tipo, desde: nDe[d.desde] });
+        return;
+      }
+      if (!r[tipo]) r[tipo] = e;
       if (d.sinPortada) r.sinPortada = true;
     });
+    return r.cab || r.pie || r.lista.length ? r : null;
+  }
+  // la cabecera y el pie de una hoja: { cab, pie } (cualquiera puede ser null)
+  function bandasDeHoja(f, bandas) {
+    if (!bandas) return null;
+    var d = datosHoja(f), n = d.n;
+    if (d.sinBandas) return null;
+    var portada = bandas.sinPortada && n === 1;
+    function elegir(tipo) {
+      var mejor = null;
+      bandas.lista.forEach(function (b) {
+        if (b.tipo === tipo && b.desde <= n && (!mejor || b.desde >= mejor.desde)) mejor = b;
+      });
+      if (mejor) return mejor.banda;
+      return portada ? null : bandas[tipo];
+    }
+    var r = { cab: elegir("cab"), pie: elegir("pie") };
     return r.cab || r.pie ? r : null;
   }
-  function bandasDeHoja(f, bandas) {
-    return bandas && !(bandas.sinPortada && datosHoja(f).n === 1) ? bandas : null;
+  // hay algun pie de pagina (entonces no se numera aparte)
+  function hayPie(bandas) {
+    return !!(bandas && (bandas.pie || bandas.lista.some(function (b) { return b.tipo === "pie"; })));
   }
 
   // area util de una hoja, en coordenadas de la pizarra (sin margenes, ni
@@ -409,17 +439,21 @@
       startBinding: null, endBinding: null, startArrowhead: null, endArrowhead: null,
     });
   }
-  function marcoBanda(tipo, x, y, w, h) {
-    var ahora = Date.now();
+  // extra (opcional): { desde: id de la hoja desde la que vale, nombre: lo que
+  // se agrega al nombre del marco, por ejemplo «T.P. 1» }
+  function marcoBanda(tipo, x, y, w, h, extra) {
+    var ahora = Date.now(), datos = { tipo: tipo, sinPortada: op.sinPortada };
+    if (extra && extra.desde) datos.desde = extra.desde;
     return {
-      id: nuevoId(), type: "frame", name: tipo === "pie" ? "Pie de página" : "Cabecera",
+      id: nuevoId(), type: "frame",
+      name: (tipo === "pie" ? "Pie de página" : "Cabecera") + (extra && extra.nombre ? " · " + extra.nombre : ""),
       x: x, y: y, width: w, height: h, angle: 0,
       strokeColor: "#bbb", backgroundColor: "transparent", fillStyle: "solid",
       strokeWidth: 2, strokeStyle: "solid", roughness: 0, opacity: 100,
       groupIds: [], frameId: null, index: null, roundness: null,
       seed: rnd(), version: 1, versionNonce: rnd(), isDeleted: false,
       boundElements: null, updated: ahora, created: ahora, link: null, locked: false,
-      customData: { pizarraBanda: { tipo: tipo, sinPortada: op.sinPortada } },
+      customData: { pizarraBanda: datos },
     };
   }
 
@@ -463,11 +497,11 @@
       "{total} la cantidad de hojas y {titulo} el título del panel.");
   }
 
-  // lleva la vista a la cabecera y al pie
   // Para solucionario.js: cabecera y pie nuevos, sin agregarlos a la escena,
   // arriba de (x0, y0). textos: { cab, pie }; una banda se crea si su texto es
   // un string (vacio: solo la linea). Puede tener varios renglones (\n).
-  function nuevasBandas(textos, x0, y0) {
+  // extra (opcional): { desde, nombre }, ver marcoBanda.
+  function nuevasBandas(textos, x0, y0, extra) {
     var u = PX_MM / op.impresion;
     var w = anchoBanda() * u, hc = op.alto.cab * u, hp = op.alto.pie * u, gap = 25 * u;
     var hayCab = typeof textos.cab === "string", hayPie = typeof textos.pie === "string";
@@ -484,26 +518,120 @@
       });
     }
     if (hayCab) {
-      var c = marcoBanda("cabecera", x0, y, w, hc);
+      var c = marcoBanda("cabecera", x0, y, w, hc, extra);
       nuevos.push(c, lineaBanda(c.x, c.y + hc - 2 * u, w, c.id));
       if (textos.cab) nuevos.push(textoVarios(textos.cab, c.x, c.y + (hc - 2 * u) / 2, false, c.id));
     }
     if (hayPie) {
-      var p = marcoBanda("pie", x0 + (hayCab ? w + gap : 0), y, w, hp);
+      var p = marcoBanda("pie", x0 + (hayCab ? w + gap : 0), y, w, hp, extra);
       nuevos.push(p, lineaBanda(p.x, p.y + 2 * u, w, p.id));
       if (textos.pie) nuevos.push(textoVarios(textos.pie, p.x + w / 2, p.y + (hp + 2 * u) / 2, true, p.id));
     }
     return nuevos;
   }
 
-  // lleva la vista a la cabecera y al pie
+  // lleva la vista a la cabecera y al pie (los de la hoja que se esta mirando,
+  // si hay una a la vista; si no, los generales)
   function verBandas(avisar) {
     var A = api();
     if (!A) return;
-    var b = bandasDe(A.getSceneElements());
+    var todos = A.getSceneElements(), b = bandasDe(todos);
     if (!b) { avisar("Todavía no hay cabecera ni pie.", true); return; }
-    var r = cajaDeLista([b.cab, b.pie].filter(Boolean));
+    var f = hojaALaVista(todos, A.getAppState()), bs = f ? bandasDeHoja(f, b) : null;
+    var lista = bs ? [bs.cab, bs.pie] : [b.cab, b.pie];
+    lista = lista.filter(Boolean);
+    if (!lista.length) lista = b.lista.map(function (x) { return x.banda; });
+    if (f && !bs) avisar(f.name + " no lleva cabecera ni pie.");
+    var r = cajaDeLista(lista);
     A.updateScene({ appState: mostrarRect({ x0: r.x0 - 40, y0: r.y0 - 60, x1: r.x1 + 40, y1: r.y1 + 40 }, A.getAppState(), true) });
+  }
+
+  // la hoja seleccionada (o la de lo seleccionado) o, si no hay, la que esta
+  // en el centro de la vista
+  function hojaALaVista(todos, st) {
+    var hojas = hojasDe(todos), sel = st.selectedElementIds || {};
+    var f = hojas.filter(function (h) { return sel[h.id]; })[0];
+    if (!f) {
+      var marcos = {};
+      todos.forEach(function (e) { if (sel[e.id] && e.frameId) marcos[e.frameId] = true; });
+      f = hojas.filter(function (h) { return marcos[h.id]; })[0];
+    }
+    if (!f) {
+      var z = st.zoom.value, cx = -st.scrollX + st.width / z / 2, cy = -st.scrollY + st.height / z / 2;
+      f = hojas.filter(function (h) { return adentro(h, cx, cy); })[0];
+    }
+    return f || null;
+  }
+
+  // «Cabecera nueva desde esta hoja»: copia la cabecera que tiene la hoja (o
+  // la general) y la hace valer desde esa hoja en adelante, hasta la proxima
+  // cabecera propia. Va arriba de la hoja, para dibujar en ella.
+  function cabeceraDesde(avisar) {
+    var A = api();
+    if (!A) return;
+    var todos = A.getSceneElementsIncludingDeleted(), vivos = todos.filter(function (e) { return !e.isDeleted; });
+    var st = A.getAppState(), f = hojaALaVista(vivos, st);
+    if (!f) { avisar("Seleccioná la hoja (o mirala) desde la que cambia la cabecera.", true); return; }
+    var bandas = bandasDe(vivos), ya = null;
+    if (bandas) bandas.lista.forEach(function (b) { if (b.tipo === "cab" && datosBanda(b.banda).desde === f.id) ya = b.banda; });
+    if (ya) {
+      A.updateScene({ appState: mostrarRect(caja(ya), st, true) });
+      avisar(f.name + " ya tiene su propia cabecera.");
+      return;
+    }
+    var u = porMm(f), w = anchoBanda() * u, h = op.alto.cab * u;
+    var bs = bandasDeHoja(f, bandas), base = bs && bs.cab;
+    if (!base && bandas) base = bandas.cab;
+    var x = f.x, y = f.y - 25 * u - h;
+    // no se encima a otra banda que ya este arriba de la hoja
+    vivos.forEach(function (e) { if (esBanda(e) && seTocan(caja(e), { x0: x, y0: y, x1: x + w, y1: y + h })) y = Math.min(y, e.y - 10 * u - h); });
+    var nueva = marcoBanda("cabecera", x, y, w, base ? base.height : h, { desde: f.id, nombre: "desde la " + f.name });
+    var nuevos = [nueva];
+    if (base) {
+      var dx = nueva.x - base.x, dy = nueva.y - base.y, grupos = {};
+      contenidoDe(base, vivos).forEach(function (e) {
+        var c = copiar(e);
+        c.id = nuevoId(); c.seed = rnd(); c.versionNonce = rnd(); c.version = 1;
+        c.x += dx; c.y += dy; c.frameId = nueva.id; c.boundElements = null; c.containerId = null;
+        c.groupIds = (e.groupIds || []).map(function (g) { return grupos[g] = grupos[g] || nuevoId(); });
+        nuevos.push(c);
+      });
+    } else {
+      nuevos.push(textoBanda("{titulo}", nueva.x, nueva.y + h / 2 - 1.5 * u, false, nueva.id),
+        lineaBanda(nueva.x, nueva.y + h - 2 * u, w, nueva.id));
+    }
+    A.updateScene({
+      elements: todos.concat(nuevos),
+      appState: Object.assign({ selectedElementIds: {}, selectedGroupIds: {} }, mostrarRect(cajaDeLista(nuevos), st, true) || {}),
+      captureUpdate: "IMMEDIATELY",
+    });
+    avisar("Cabecera nueva desde la " + f.name + ": cambiá su texto. Para quitarla, borrá su marco.");
+  }
+
+  // «Sin cabecera ni pie»: las hojas seleccionadas (o la que se esta mirando)
+  // dejan de llevar cabecera, pie y numero, o los vuelven a llevar
+  function alternarSinBandas(avisar) {
+    var A = api();
+    if (!A) return;
+    var todos = A.getSceneElementsIncludingDeleted(), vivos = todos.filter(function (e) { return !e.isDeleted; });
+    var st = A.getAppState(), sel = st.selectedElementIds || {};
+    var elegidas = hojasDe(vivos).filter(function (h) { return sel[h.id]; });
+    if (!elegidas.length) { var f = hojaALaVista(vivos, st); if (f) elegidas = [f]; }
+    if (!elegidas.length) { avisar("Seleccioná la hoja (o mirala).", true); return; }
+    var poner = !datosHoja(elegidas[0]).sinBandas, ids = {};
+    elegidas.forEach(function (h) { ids[h.id] = true; });
+    var bandas = bandasDe(vivos), cambios = {};
+    elegidas.forEach(function (h) {
+      var nueva = conDatos(h, { sinBandas: poner || undefined });
+      if (!poner) delete nueva.customData.pizarraHoja.sinBandas;
+      cambios[h.id] = nueva;
+      // el contenido sigue al area util (que crece o se achica arriba)
+      var c = corrimiento(h, nueva, bandas);
+      if (c.dx || c.dy) contenidoDe(h, vivos).forEach(function (e) { cambios[e.id] = modificado(e, { x: e.x + c.dx, y: e.y + c.dy }); });
+    });
+    A.updateScene({ elements: todos.map(function (e) { return cambios[e.id] || e; }), captureUpdate: "IMMEDIATELY" });
+    var nombres = elegidas.map(function (h) { return h.name; }).join(", ");
+    avisar(poner ? nombres + ": sin cabecera ni pie." : nombres + ": con cabecera y pie.");
   }
 
   // marca «sin portada» en la cabecera y el pie que ya estan en la pizarra
@@ -743,7 +871,7 @@
 
   // ------------------------------------------------------------ marcadores
   // Un marcador es un texto de una hoja con customData.pizarraMarcador
-  // { nivel: 1..3, imprime }. Su texto es el titulo que se ve en el panel de
+  // { nivel: 1..4, imprime }. Su texto es el titulo que se ve en el panel de
   // marcadores del lector de PDF, y lleva al lugar del texto en su pagina.
   //  - Un texto de la hoja que se marca sigue imprimiendose (imprime: true).
   //  - Uno creado aparte (violeta, imprime: false) no se imprime ni cuenta
@@ -751,7 +879,7 @@
   // El PDF lo arma el dialogo de impresion, que no pone marcadores: se los
   // agrega despues «Agregar marcadores a un PDF», con pdf-lib (app/vendor/),
   // sobre el PDF ya guardado.
-  var NIVELES = 3, VIOLETA = "#6965db";
+  var NIVELES = 4, VIOLETA = "#6965db";
   function datosMarcador(e) { return e && e.customData && e.customData.pizarraMarcador; }
   function esMarcador(e) { return e && !e.isDeleted && e.type === "text" && !!datosMarcador(e); }
   function marcadorOculto(e) { return esMarcador(e) && datosMarcador(e).imprime === false; }
@@ -855,7 +983,7 @@
     avisar("Marcador agregado en " + f.name + ". Doble clic en «Marcador» para escribir su título; no se imprime.");
   }
 
-  // cambia el nivel de un marcador (1 a 3) o lo quita (el creado aparte se borra)
+  // cambia el nivel de un marcador (1 a 4) o lo quita (el creado aparte se borra)
   function cambiarMarcador(id, cambio) {
     var A = api();
     if (!A) return;
@@ -899,6 +1027,113 @@
     return cargaPdfLib;
   }
 
+  // destino de un marcador en el PDF: su pagina, a la altura de su texto (un
+  // poco mas arriba)
+  function destinoDe(ctx, paginas, m) {
+    var pag = paginas[m.pagina], c = pag.getMediaBox();
+    var y = Math.max(0, m.papel.y - 4) / A4.h;
+    return ctx.obj([pag.ref, "XYZ", c.x, c.y + c.height * (1 - y), null]);
+  }
+
+  // ------------------------------------------------------- enlaces e indice
+  // Un enlace es un elemento de una hoja con customData.pizarraEnlace
+  // { a: id del texto marcador al que lleva, fila: id que comparten los
+  // elementos de un mismo renglon, pagina: true en el numero de pagina },
+  // o { url, fila }: lleva a una direccion de internet (un codigo QR).
+  // Los arma el importador de soluciones en el indice de un cuadernillo: el
+  // titulo, la linea de puntos y el numero de pagina de cada renglon. En el
+  // PDF, cada renglon es una zona que se puede tocar y lleva a su marcador.
+  // El numero de pagina se actualiza solo antes de imprimir (si se agregaron
+  // o se sacaron hojas).
+  function datosEnlace(e) { return e && e.customData && e.customData.pizarraEnlace; }
+  var FAMILIAS = { 3: "Cascadia", 5: "Excalifont", 6: "Nunito" };
+
+  // la hoja de un elemento: la de su marco o en la que cae su centro
+  function hojaDeElemento(e, hojas) {
+    if (e.frameId) return hojas.filter(function (f) { return f.id === e.frameId; })[0] || null;
+    var c = caja(e);
+    return hojas.filter(function (f) { return adentro(f, (c.x0 + c.x1) / 2, (c.y0 + c.y1) / 2); })[0] || null;
+  }
+
+  // rectangulo de la pizarra en mm del papel de su hoja (con la hoja apaisada girada)
+  function rectEnPapel(f, c) {
+    var u = porMm(f);
+    return esApaisada(f)
+      ? { x0: (c.y0 - f.y) / u, x1: (c.y1 - f.y) / u, y0: A4.h - (c.x1 - f.x) / u, y1: A4.h - (c.x0 - f.x) / u }
+      : { x0: (c.x0 - f.x) / u, x1: (c.x1 - f.x) / u, y0: (c.y0 - f.y) / u, y1: (c.y1 - f.y) / u };
+  }
+
+  // numeros de pagina del indice que cambiaron: los elementos con el numero nuevo
+  // (alineado a la derecha, el borde derecho queda donde estaba)
+  function numerosDelIndice(todos) {
+    var pag = {}, cambios = [];
+    marcadoresDe(todos).lista.forEach(function (m) { pag[m.el.id] = m.pagina + 1; });
+    todos.forEach(function (e) {
+      var d = datosEnlace(e);
+      if (!d || !d.pagina || e.isDeleted || e.type !== "text" || !pag[d.a]) return;
+      var t = String(pag[d.a]);
+      if (e.text === t) return;
+      medidor.font = e.fontSize + "px " + (FAMILIAS[e.fontFamily] || "Nunito") + ", sans-serif";
+      var w = Math.ceil(medidor.measureText(t).width), x1 = e.x + e.width;
+      cambios.push(modificado(e, { text: t, originalText: t, width: w, x: e.textAlign === "left" ? e.x : x1 - w }));
+    });
+    return cambios;
+  }
+  function actualizarIndice() {
+    var A = api();
+    if (!A) return 0;
+    var cambios = numerosDelIndice(A.getSceneElements()), porId = {};
+    if (!cambios.length) return 0;
+    cambios.forEach(function (e) { porId[e.id] = e; });
+    A.updateScene({
+      elements: A.getSceneElementsIncludingDeleted().map(function (e) { return porId[e.id] || e; }),
+      captureUpdate: "IMMEDIATELY",
+    });
+    return cambios.length;
+  }
+
+  // zonas de los enlaces: una por renglon y por hoja, con el destino
+  function enlacesDe(todos) {
+    var hojas = hojasDe(todos), pagDe = {}, destino = {}, zonas = {}, sinDestino = 0;
+    hojas.forEach(function (f, i) { pagDe[f.id] = i; });
+    marcadoresDe(todos).lista.forEach(function (m) { destino[m.el.id] = m; });
+    todos.forEach(function (e) {
+      var d = datosEnlace(e);
+      if (!d || e.isDeleted) return;
+      var f = hojaDeElemento(e, hojas);
+      if (!f) return;
+      var k = (d.fila || e.id) + "|" + f.id, c = caja(e);
+      var z = zonas[k] = zonas[k] || { hoja: f, pagina: pagDe[f.id], a: d.a, url: d.url, x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+      z.x0 = Math.min(z.x0, c.x0); z.y0 = Math.min(z.y0, c.y0); z.x1 = Math.max(z.x1, c.x1); z.y1 = Math.max(z.y1, c.y1);
+    });
+    var lista = [];
+    Object.keys(zonas).forEach(function (k) {
+      var z = zonas[k];
+      if (z.url) { /* enlace a una direccion de internet (un codigo QR) */ }
+      else if (!destino[z.a]) { sinDestino++; return; }
+      else z.destino = destino[z.a];
+      z.papel = rectEnPapel(z.hoja, z);
+      lista.push(z);
+    });
+    return { lista: lista, sinDestino: sinDestino };
+  }
+
+  // agrega al PDF una anotacion /Link por zona, sin borde
+  function ponerEnlaces(L, doc, zonas) {
+    var ctx = doc.context, paginas = doc.getPages();
+    zonas.forEach(function (z) {
+      var pag = paginas[z.pagina], c = pag.getMediaBox(), s = c.width / A4.w, p = z.papel, pad = 0.8;
+      var anot = ctx.obj({
+        Type: "Annot", Subtype: "Link",
+        Rect: [c.x + (p.x0 - pad) * s, c.y + c.height - (p.y1 + pad) * s, c.x + (p.x1 + pad) * s, c.y + c.height - (p.y0 - pad) * s],
+        Border: [0, 0, 0],
+      });
+      if (z.url) anot.set(L.PDFName.of("A"), ctx.obj({ S: "URI", URI: L.PDFString.of(z.url) }));
+      else anot.set(L.PDFName.of("Dest"), destinoDe(ctx, paginas, z.destino));
+      pag.node.addAnnot(ctx.register(anot));
+    });
+  }
+
   // Arma el indice del PDF (/Outlines) con los marcadores. Cada uno lleva a
   // su pagina, a la altura de su texto (un poco mas arriba); el nivel arma el
   // arbol: un marcador cuelga del anterior de nivel menor.
@@ -914,12 +1149,10 @@
     function contar(n) { return n.hijos.reduce(function (s, h) { return s + 1 + contar(h); }, 0); }
     function escribir(lista, padre) {
       lista.forEach(function (n, i) {
-        var pag = paginas[n.m.pagina], caja = pag.getMediaBox();
-        var y = Math.max(0, n.m.papel.y - 4) / A4.h;
         var d = {
           Title: L.PDFHexString.fromText(n.m.titulo),
           Parent: padre,
-          Dest: ctx.obj([pag.ref, "XYZ", caja.x, caja.y + caja.height * (1 - y), null]),
+          Dest: destinoDe(ctx, paginas, n.m),
         };
         if (i > 0) d.Prev = lista[i - 1].ref;
         if (i < lista.length - 1) d.Next = lista[i + 1].ref;
@@ -969,7 +1202,10 @@
     var A = api();
     if (!A || !archivo) return;
     var todos = A.getSceneElements(), hojas = hojasDe(todos), marcas = marcadoresDe(todos).lista;
-    if (!marcas.length) { avisar("No hay marcadores en las hojas. Agregá alguno con «Agregar marcador».", true); return; }
+    var enlaces = enlacesDe(todos);
+    if (!marcas.length && !enlaces.lista.length) { avisar("No hay marcadores en las hojas. Agregá alguno con «Agregar marcador».", true); return; }
+    // el indice tiene que tener los numeros de pagina que se imprimieron
+    var desfasados = numerosDelIndice(todos).length;
     try {
       avisar("Leyendo " + archivo.name + "…");
       var L = await pdfLib(), bytes = new Uint8Array(await archivo.arrayBuffer());
@@ -986,14 +1222,23 @@
           (hojas.length === 1 ? " hoja" : " hojas") + ". Elegí el PDF que se guardó desde «Imprimir / PDF» con estas hojas.", true);
         return;
       }
-      ponerMarcadores(L, doc, marcas);
+      if (marcas.length) ponerMarcadores(L, doc, marcas);
+      if (enlaces.lista.length) ponerEnlaces(L, doc, enlaces.lista);
       var titulo = (op.titulo || "").trim();
       if (titulo) doc.setTitle(titulo, { showInWindowTitleBar: true });
       var salida = await doc.save();
       var r = await guardarPdf(salida, archivo.name);
       if (r === "cancelado") { avisar("No se guardó el PDF."); return; }
-      avisar((marcas.length === 1 ? "1 marcador agregado" : marcas.length + " marcadores agregados") +
-        (r === "guardado" ? ". PDF guardado." : ": el PDF se descargó como «" + archivo.name + "»."));
+      var hecho = [];
+      if (marcas.length) hecho.push(marcas.length === 1 ? "1 marcador" : marcas.length + " marcadores");
+      if (enlaces.lista.length) hecho.push(enlaces.lista.length === 1 ? "1 enlace" : enlaces.lista.length + " enlaces");
+      var extra = [];
+      if (enlaces.sinDestino) extra.push(enlaces.sinDestino === 1 ? "1 enlace del índice no tiene a dónde ir (se borró su marcador)" :
+        enlaces.sinDestino + " enlaces del índice no tienen a dónde ir (se borraron sus marcadores)");
+      if (desfasados) extra.push("el índice tiene números de página viejos: volvé a imprimir el PDF (se actualizan solos) y agregale los marcadores");
+      avisar(hecho.join(" y ") + " agregados" +
+        (r === "guardado" ? ". PDF guardado." : ": el PDF se descargó como «" + archivo.name + "».") +
+        (extra.length ? " Ojo: " + extra.join("; ") + "." : ""), !!desfasados);
     } catch (e) {
       console.warn("hojas.js: no se pudieron agregar los marcadores", e);
       avisar("No se pudieron agregar los marcadores: " + (e && e.message || e), true);
@@ -1012,44 +1257,15 @@
     var A = api(), exportar = window.__pizarraSvg;
     if (!A || imprimiendo) return;
     if (!exportar) { avisar("Esta versión de la pizarra no puede exportar las hojas.", true); return; }
+    // los numeros de pagina del indice (si los hay), al dia
+    actualizarIndice();
     var elementos = A.getSceneElements().filter(function (e) { return !marcadorOculto(e); });
     var hojas = hojasDe(elementos), archivos = A.getFiles();
     var bandas = bandasDe(elementos);
     if (!hojas.length) { avisar("No hay hojas para imprimir.", true); return; }
     imprimiendo = true;
     try {
-      var paginas = [];
-      for (var i = 0; i < hojas.length; i++) {
-        avisar("Preparando " + (hojas.length === 1 ? "la hoja" : "la hoja " + (i + 1) + " de " + hojas.length) + "…");
-        var f = hojas[i];
-        var svg = await exportar(elementos, {
-          exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false,
-          exportScale: 1, exportPadding: 0, exportEmbedScene: false,
-          frameRendering: { enabled: true, name: false, outline: false, clip: true },
-        }, archivos, { exportingFrame: f });
-        idsPropios(svg, "h" + (i + 1) + "-");
-        if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", "0 0 " + f.width + " " + f.height);
-        var ap = esApaisada(f);
-        svg.setAttribute("width", ap ? "297mm" : "210mm");
-        svg.setAttribute("height", ap ? "210mm" : "297mm");
-        svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-        svg.setAttribute("class", "contenido");
-        // cabecera y pie: en coordenadas del papel (no se giran con la hoja)
-        var html = svg.outerHTML;
-        var util = areaUtil(f, bandas);
-        for (var j = 0; j < util.bandas.length; j++) {
-          var b = util.bandas[j], p = b.papel;
-          var sb = await svgBanda(b.banda, elementos, i + 1, hojas.length, "h" + (i + 1) + "b" + j + "-");
-          sb.setAttribute("width", p.w + "mm");
-          sb.setAttribute("height", p.h + "mm");
-          sb.setAttribute("class", "banda");
-          sb.setAttribute("style", "left:" + p.x + "mm;top:" + p.y + "mm");
-          html += sb.outerHTML;
-        }
-        var m = datosHoja(f).margenes || DEFECTO.margenes;
-        // sin pie de pagina, el numero (si se pidio) va centrado abajo
-        paginas.push({ svg: html, n: i + 1, inf: m.inf, apaisada: ap, numerar: op.numerar && !(bandas && bandas.pie) });
-      }
+      var paginas = await paginasDe(elementos, hojas, bandas, archivos, avisar);
       await imprimirPaginas(paginas);
       avisar(hojas.length === 1 ? "Se mandó 1 hoja a imprimir." : "Se mandaron " + hojas.length + " hojas a imprimir.");
     } catch (e) {
@@ -1058,6 +1274,89 @@
     } finally {
       imprimiendo = false;
     }
+  }
+
+  // una pagina por hoja: el SVG de la hoja con la cabecera y el pie que le tocan
+  async function paginasDe(elementos, hojas, bandas, archivos, avisar) {
+    var exportar = window.__pizarraSvg, paginas = [];
+    for (var i = 0; i < hojas.length; i++) {
+      avisar("Preparando " + (hojas.length === 1 ? "la hoja" : "la hoja " + (i + 1) + " de " + hojas.length) + "…");
+      var f = hojas[i];
+      var svg = await exportar(elementos, {
+        exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false,
+        exportScale: 1, exportPadding: 0, exportEmbedScene: false,
+        frameRendering: { enabled: true, name: false, outline: false, clip: true },
+      }, archivos, { exportingFrame: f });
+      idsPropios(svg, "h" + (i + 1) + "-");
+      if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", "0 0 " + f.width + " " + f.height);
+      var ap = esApaisada(f);
+      svg.setAttribute("width", ap ? "297mm" : "210mm");
+      svg.setAttribute("height", ap ? "210mm" : "297mm");
+      svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+      svg.setAttribute("class", "contenido");
+      // cabecera y pie: en coordenadas del papel (no se giran con la hoja)
+      var html = svg.outerHTML;
+      var util = areaUtil(f, bandas);
+      for (var j = 0; j < util.bandas.length; j++) {
+        var b = util.bandas[j], p = b.papel;
+        var sb = await svgBanda(b.banda, elementos, i + 1, hojas.length, "h" + (i + 1) + "b" + j + "-");
+        sb.setAttribute("width", p.w + "mm");
+        sb.setAttribute("height", p.h + "mm");
+        sb.setAttribute("class", "banda");
+        sb.setAttribute("style", "left:" + p.x + "mm;top:" + p.y + "mm");
+        html += sb.outerHTML;
+      }
+      var m = datosHoja(f).margenes || DEFECTO.margenes;
+      // sin pie de pagina, el numero (si se pidio) va centrado abajo
+      paginas.push({ svg: html, n: i + 1, inf: m.inf, apaisada: ap,
+        numerar: op.numerar && !hayPie(bandas) && !datosHoja(f).sinBandas });
+    }
+    return paginas;
+  }
+
+  // estilo y cuerpo de las paginas A4 (para el dialogo de impresion o para un PDF automatico)
+  var ESTILO_IMPRESION =
+    "@page{size:A4 portrait;margin:0}" +
+    "html,body{margin:0;padding:0;background:#fff}" +
+    ".hoja{position:relative;width:210mm;height:297mm;overflow:hidden;break-after:page;page-break-after:always}" +
+    ".hoja:last-child{break-after:auto;page-break-after:auto}" +
+    ".hoja svg{display:block}" +
+    // apaisada: girada 90° a la izquierda dentro de la pagina vertical
+    ".hoja.apaisada svg.contenido{position:absolute;left:0;top:0;transform-origin:0 0;transform:translateY(297mm) rotate(-90deg)}" +
+    ".hoja svg.banda{position:absolute}" +
+    ".num{position:absolute;left:0;right:0;text-align:center;font:10pt Assistant,Nunito,system-ui,sans-serif;color:#555}";
+  function cuerpoDe(paginas) {
+    return paginas.map(function (p) {
+      var num = p.numerar
+        ? "<div class='num' style='bottom:" + Math.max(4, p.inf / 2 - 2) + "mm'>" + p.n + "</div>" : "";
+      return "<div class='hoja" + (p.apaisada ? " apaisada" : "") + "'>" + p.svg + num + "</div>";
+    }).join("");
+  }
+
+  // Para armar el PDF sin el dialogo (Chrome sin ventana, con printToPDF): pone
+  // las paginas en este mismo documento, y al imprimir se ve solo eso.
+  // Devuelve la cantidad de paginas; quitarImpresion() lo deshace.
+  async function prepararImpresion() {
+    var A = api();
+    actualizarIndice();
+    var elementos = A.getSceneElements().filter(function (e) { return !marcadorOculto(e); });
+    var hojas = hojasDe(elementos), paginas = await paginasDe(elementos, hojas, bandasDe(elementos), A.getFiles(), function () {});
+    quitarImpresion();
+    var css = document.createElement("style");
+    css.id = "pz-impresion-css";
+    css.textContent = "@media print{body>*:not(#pz-impresion){display:none!important}" +
+      "html,body{overflow:visible!important;height:auto!important}" + ESTILO_IMPRESION + "}" +
+      "@media screen{#pz-impresion{display:none}}";
+    var div = document.createElement("div");
+    div.id = "pz-impresion";
+    div.innerHTML = cuerpoDe(paginas);
+    document.head.appendChild(css);
+    document.body.appendChild(div);
+    if (document.fonts) await document.fonts.ready;
+    return paginas.length;
+  }
+  function quitarImpresion() {
+    ["pz-impresion", "pz-impresion-css"].forEach(function (id) { var n = document.getElementById(id); if (n) n.remove(); });
   }
 
   // Cada SVG define un clipPath por marco con el id del marco, en las
@@ -1094,22 +1393,8 @@
       marcoImp.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
       document.body.appendChild(marcoImp);
       var titulo = (op.titulo || "").trim() || "Hojas";
-      var html = "<!doctype html><html><head><meta charset='utf-8'><title></title><style>" +
-        "@page{size:A4 portrait;margin:0}" +
-        "html,body{margin:0;padding:0;background:#fff}" +
-        ".hoja{position:relative;width:210mm;height:297mm;overflow:hidden;break-after:page;page-break-after:always}" +
-        ".hoja:last-child{break-after:auto;page-break-after:auto}" +
-        ".hoja svg{display:block}" +
-        // apaisada: girada 90° a la izquierda dentro de la pagina vertical
-        ".hoja.apaisada svg.contenido{position:absolute;left:0;top:0;transform-origin:0 0;transform:translateY(297mm) rotate(-90deg)}" +
-        ".hoja svg.banda{position:absolute}" +
-        ".num{position:absolute;left:0;right:0;text-align:center;font:10pt Assistant,Nunito,system-ui,sans-serif;color:#555}" +
-        "</style></head><body>" +
-        paginas.map(function (p) {
-          var num = p.numerar
-            ?"<div class='num' style='bottom:" + Math.max(4, p.inf / 2 - 2) + "mm'>" + p.n + "</div>" : "";
-          return "<div class='hoja" + (p.apaisada ? " apaisada" : "") + "'>" + p.svg + num + "</div>";
-        }).join("") + "</body></html>";
+      var html = "<!doctype html><html><head><meta charset='utf-8'><title></title><style>" + ESTILO_IMPRESION +
+        "</style></head><body>" + cuerpoDe(paginas) + "</body></html>";
       var doc = marcoImp.contentDocument;
       doc.open(); doc.write(html); doc.close();
       doc.title = titulo;
@@ -1406,9 +1691,12 @@
         '<label class="chk"><input type="checkbox" class="portada"> Sin cabecera ni pie en la primera hoja (portada)</label>' +
         "</div>" +
         '<div class="botones"><button class="b bandas">Crear cabecera y pie</button>' +
-        '<button class="b ver-bandas">Ir a cabecera y pie</button></div>' +
+        '<button class="b ver-bandas" title="Lleva a la cabecera y al pie de la hoja que estás mirando">Ir a cabecera y pie</button>' +
+        '<button class="b cab-desde" title="Copia la cabecera de la hoja seleccionada (o la que estás mirando) y la hace valer desde esa hoja hasta la próxima cabecera propia">Cabecera nueva desde esta hoja</button>' +
+        '<button class="b sin-bandas" title="La hoja seleccionada (o la que estás mirando) no lleva cabecera, pie ni número; tocá de nuevo para que los vuelva a llevar">Sin cabecera en esta hoja</button></div>' +
         '<div class="nota-bandas ayuda">Se dibujan con las herramientas de la pizarra y se repiten en todas las hojas. ' +
         "En sus textos, {n} es el número de hoja, {total} la cantidad de hojas y {titulo} el título de abajo. " +
+        "Una cabecera nueva desde una hoja vale hasta la próxima (por ejemplo, una por trabajo práctico); se quita borrando su marco. " +
         "El alto se cambia con «Aplicar a todas».</div>" +
         '<div class="estado estado-bandas"></div></div>' +
         '<div class="imprimir-sec"><div class="opc">' +
@@ -1419,13 +1707,14 @@
         '<div class="estado estado-imprimir"></div></div>' +
         '<div class="imprimir-sec"><div class="opc"><div class="grupo"><b>Marcadores del PDF</b></div></div>' +
         '<div class="botones"><button class="b agregar-marcador" title="Convierte en marcador el título seleccionado; sin selección, crea uno que no se imprime en la hoja que estás mirando">Agregar marcador</button>' +
-        '<button class="b marcar-pdf" title="Elegí el PDF guardado desde «Imprimir / PDF»: se guarda una copia con los marcadores">Agregar marcadores a un PDF…</button>' +
+        '<button class="b marcar-pdf" title="Elegí el PDF guardado desde «Imprimir / PDF»: se guarda una copia con los marcadores y los enlaces del índice">Agregar marcadores y enlaces a un PDF…</button>' +
         '<input type="file" class="archivo-pdf" accept="application/pdf,.pdf" hidden></div>' +
         '<div class="marcadores"></div>' +
         '<div class="ayuda">Un marcador lleva a un lugar del PDF desde el panel de marcadores del lector. ' +
         "Seleccioná un título de la hoja y tocá «Agregar marcador» (se sigue imprimiendo), o tocá sin seleccionar nada " +
         "para crear uno violeta que no se imprime. Con ← → se arman niveles. Primero guardá el PDF con «Imprimir / PDF» " +
-        "y después elegilo en «Agregar marcadores a un PDF…».</div>" +
+        "y después elegilo en «Agregar marcadores y enlaces a un PDF…». Si hay un índice (cuadernillo), cada renglón " +
+        "pasa a ser un enlace a su página, y sus números de página se actualizan solos al imprimir.</div>" +
         '<div class="estado estado-marcadores"></div></div>' +
         '<div class="ayuda">Cada hoja es un marco: lo que sueltes adentro se mueve con ella. ' +
         "La línea punteada marca el área útil; las guías no se imprimen. " +
@@ -1482,6 +1771,8 @@
       }
       el.querySelector(".bandas").onclick = function () { crearBandas(avisarBandas); };
       el.querySelector(".ver-bandas").onclick = function () { verBandas(avisarBandas); };
+      el.querySelector(".cab-desde").onclick = function () { cabeceraDesde(avisarBandas); };
+      el.querySelector(".sin-bandas").onclick = function () { alternarSinBandas(avisarBandas); };
       el.querySelector(".portada").onchange = function () { op.sinPortada = this.checked; guardar(); ponerPortada(); };
       [].forEach.call(el.querySelectorAll("[data-alto]"), function (inp) {
         inp.oninput = function () {
@@ -1691,6 +1982,22 @@
       lugarPara: lugarPara,
       // para solucionario.js: crear hojas con los margenes del panel y saber su area util
       marco: marco, areaUtil: areaUtil, hojasDe: hojasDe, bandasDe: bandasDe, nuevasBandas: nuevasBandas,
+      bandasDeHoja: bandasDeHoja,
+      // indice de un cuadernillo: numeros de pagina y enlaces del PDF
+      actualizarIndice: actualizarIndice, numerosDelIndice: numerosDelIndice, enlacesDe: enlacesDe,
+      marcadoresDe: marcadoresDe,
+      // arma marcadores y enlaces sobre los bytes de un PDF (sin dialogos): devuelve los bytes nuevos
+      marcarBytes: async function (bytes, titulo) {
+        var L = await pdfLib(), doc = await L.PDFDocument.load(bytes, { updateMetadata: false });
+        if (titulo) doc.setTitle(String(titulo), { showInWindowTitleBar: true });
+        var todos = api().getSceneElements(), marcas = marcadoresDe(todos).lista, enl = enlacesDe(todos).lista;
+        if (marcas.length) ponerMarcadores(L, doc, marcas);
+        if (enl.length) ponerEnlaces(L, doc, enl);
+        return doc.save();
+      },
+      pdfLib: pdfLib,
+      // PDF automatico (herramientas/pdf-cuadernillo.mjs en el repositorio de solucionarios)
+      prepararImpresion: prepararImpresion, quitarImpresion: quitarImpresion,
       separacion: function () { return 15 * PX_MM / op.impresion; },
       // para solucionario.js: una solucion puede traer sus margenes (en mm) y el
       // doble faz; se guardan en el panel, como si se hubieran escrito ahi

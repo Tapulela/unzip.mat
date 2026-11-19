@@ -18,6 +18,7 @@ bienvenida y los enlaces a Excalidraw+ y a las redes del proyecto original.
 | `build/armar-exe.mjs`, `.github/workflows/exe.yml` | Propio | MIT |
 | `unzip.mat.exe` (Releases) | Node.js (MIT) + `servidor.js` y `socket.io` empaquetados + `app/` | Ver «Ejecutable de Windows» abajo |
 | `app/vendor/pdf-lib.min.js` | pdf-lib 1.17.1 (Andrew Dillon), sin cambios | MIT (ver «pdf-lib» abajo) |
+| `app/vendor/qrcode.js` | qrcode-generator 2.0.4 (Kazuhiko Arase), sin cambios | MIT (ver «qrcode-generator» abajo) |
 | `node_modules/` (no se versiona) | Dependencias npm (`socket.io` y sus dependencias) | MIT (cada paquete trae su `LICENSE`) |
 
 ## Excalidraw (MIT)
@@ -65,6 +66,14 @@ cuando se usa. Licencia MIT, Copyright (c) 2019 Andrew Dillon; el texto está en
 `app/vendor/pdf-lib.LICENSE.md`. El bundle incluye a su vez `pako` (MIT),
 `upng` (MIT), `@pdf-lib/standard-fonts` y `@pdf-lib/upng` (MIT) y `tslib`
 (Microsoft, su aviso de licencia queda dentro del archivo).
+
+## qrcode-generator (`app/vendor/`)
+
+`app/vendor/qrcode.js` es `dist/qrcode.js` de [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
+2.0.4 tal como se publica en npm. Lo usa `app/solucionario.js` para dibujar los códigos QR
+de las soluciones y se carga recién cuando hace falta. Licencia MIT, Copyright (c) 2009
+Kazuhiko Arase (el aviso está al comienzo del archivo). «QR Code» es una marca registrada
+de DENSO WAVE INCORPORATED.
 
 ## Dependencias npm
 

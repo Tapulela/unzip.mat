@@ -386,12 +386,19 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   borde derecho, girados. En sus textos, `{n}` se reemplaza por el número de hoja,
   `{total}` por la cantidad de hojas y `{titulo}` por el título del panel. Con pie de
   página, el número centrado de «Numerar las páginas» no se agrega.
+  Cabeceras por parte: «Cabecera nueva desde esta hoja» copia la cabecera de la hoja
+  seleccionada (o la que se está mirando) en un marco nuevo arriba de ella, con
+  `pizarraBanda.desde` = el id de esa hoja; vale desde esa hoja hasta la anterior a la
+  próxima cabecera con `desde` (así un cuadernillo lleva una cabecera por trabajo
+  práctico). Sigue a su hoja aunque se inserten o se renumeren hojas; se quita borrando
+  su marco. Lo mismo vale para el pie. «Sin cabecera en esta hoja» marca
+  `pizarraHoja.sinBandas` (carátula, hojas en blanco): sin cabecera, pie ni número.
   El contenido sigue a su hoja: si una hoja (o la cabecera o el pie) se mueve sin su
   contenido, como al alinear o distribuir con Ctrl+Shift+flechas, lo enganchado a su
   marco y lo suelto cuyo centro estaba en ella se mueve lo mismo. Ese ajuste no queda
   como un paso aparte del historial: al deshacer, el contenido vuelve con la hoja.
   Marcadores del PDF: un marcador es un texto de una hoja con
-  `customData.pizarraMarcador` (`{ nivel: 1..3, imprime }`); su texto es el título que
+  `customData.pizarraMarcador` (`{ nivel: 1..4, imprime }`); su texto es el título que
   aparece en el panel de marcadores del lector de PDF y lleva a su página, a la altura
   del texto (con hojas apaisadas, según cómo queda impreso). «Agregar marcador» convierte
   en marcadores los textos seleccionados (o los de las formas seleccionadas), que se
@@ -401,12 +408,24 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   rojo si está fuera de las hojas, y entonces no va al PDF). El panel los lista en el
   orden del documento (por hoja y de arriba abajo), con «Ver», ← → para el nivel (un
   marcador cuelga del anterior de nivel menor) y ✕ para quitarlo. El diálogo de impresión
-  no pone marcadores, así que se agregan después: «Agregar marcadores a un PDF…» pide el
-  PDF guardado desde «Imprimir / PDF» (tiene que tener una página por hoja), le arma el
-  índice (`/Outlines`, con `PageMode /UseOutlines` para que el lector abra el panel) y
-  el título con [pdf-lib](https://github.com/Hopding/pdf-lib) (`app/vendor/pdf-lib.min.js`,
+  no pone marcadores, así que se agregan después: «Agregar marcadores y enlaces a un
+  PDF…» pide el PDF guardado desde «Imprimir / PDF» (tiene que tener una página por
+  hoja), le arma el índice (`/Outlines`, con `PageMode /UseOutlines` para que el lector
+  abra el panel), los enlaces y el título con [pdf-lib](https://github.com/Hopding/pdf-lib) (`app/vendor/pdf-lib.min.js`,
   que se carga recién al usarlo) y lo guarda con «Guardar como» (Chrome, Edge) o como
   descarga. Todo pasa en el navegador: no usa el servidor.
+  Enlaces del índice: un elemento con `customData.pizarraEnlace` (`{ a: id del texto
+  marcador, fila, pagina }`) es parte de un renglón del índice de un cuadernillo; en el
+  PDF cada renglón (los elementos con la misma `fila` en una hoja) pasa a ser una
+  anotación `/Link` sin borde que lleva al marcador. El que tiene `pagina: true` es el
+  número de página: antes de imprimir se actualiza solo con la página actual de su
+  marcador (por si se agregaron o se sacaron hojas). Con `{ url, fila }` el enlace lleva a una
+  dirección de internet (los códigos QR de una solución, bloque `qr`, que se dibujan con
+  rectángulos y `app/vendor/qrcode.js`, cargado recién cuando hace falta).
+  PDF sin diálogo: `__pizarraHojas.prepararImpresion()` pone las páginas en el documento
+  (solo se ven al imprimir) para que un Chrome sin ventana las pase a PDF con `printToPDF`, y
+  `marcarBytes(bytes, titulo)` le agrega marcadores y enlaces; lo usa
+  `herramientas/pdf-cuadernillo.mjs` del repositorio de solucionarios.
 - Importar solución (`app/solucionario.js`): en el menú de Generadores, sección
   «Impresión» → «Importar solución (.json)». Lee una resolución escrita en el formato
   `unzip.mat/solucion@1` (documentado en el repositorio de solucionarios, `FORMATO.md`)
@@ -499,6 +518,7 @@ Dibujar, guardar, exportar y todos los generadores funcionan igual.
 - `app/hojas.js` — hojas A4 con márgenes para preparar material imprimible.
 - `app/solucionario.js` — importa resoluciones en JSON (`unzip.mat/solucion@1`) a hojas A4.
 - `app/vendor/pdf-lib.min.js` — pdf-lib 1.17.1 (MIT), para agregar los marcadores a un PDF.
+- `app/vendor/qrcode.js` — qrcode-generator 2.0.4 (MIT), para los códigos QR de las soluciones.
 - `servidor.js` — servidor HTTP + Socket.IO.
 - `build/armar-exe.mjs` — arma `dist/unzip.mat.exe` (`npm run exe`).
 - `nueva-sesion.js` — genera el link de una sesión compartida nueva (lo usa `Iniciar pizarra.bat`).

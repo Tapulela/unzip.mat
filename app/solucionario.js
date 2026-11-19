@@ -135,9 +135,36 @@
     return { els: els, unir: !!unir, agregar: function (e) { G().expandirRaices(e).forEach(function (p) { els.push(p); }); return e; } };
   }
 
+  // texto violeta que no se imprime: un marcador del PDF (ver hojas.js), en el
+  // margen izquierdo, centrado en un renglon de alto `altoRenglon` que empieza en y0
+  var NIVELES_MARCADOR = 4;
+  function textoMarcador(titulo, nivel, y0, altoRenglon, fuente) {
+    var g = G(), tamM = 10, w = g.medir(titulo, tamM, fuente);
+    var e = g.texto(-w - 6, y0 + (altoRenglon - tamM * fuente.lh) / 2, titulo, tamM, fuente, "#6965db", "left");
+    e.customData = { pizarraMarcador: { nivel: Math.max(1, Math.min(NIVELES_MARCADOR, nivel)), imprime: false } };
+    return e;
+  }
+
+  // titulo de un marcador con una plantilla: {rotulo} es el rotulo sin los dos
+  // puntos o el parentesis del final («Ejercicio 4», «4.a») y {enunciado}, el
+  // primer renglon del enunciado
+  function conPlantilla(pl, rotulo, enunciado) {
+    var r = String(rotulo || "").trim().replace(/[:)\].-]+$/, "").trim();
+    var en = String(enunciado || "").split("\n")[0].trim();
+    return pl.replace(/\{rotulo\}/g, r).replace(/\{enunciado\}/g, en).replace(/\s+/g, " ").replace(/^[\s:]+|[\s:]+$/g, "");
+  }
+
   // devuelve la lista de piezas de toda la solucion y los errores
-  function armar(sol, maxW) {
+  // opc (para un cuadernillo, todo opcional):
+  //   nivelBase: se suma al nivel de los marcadores (los de un TP quedan adentro del TP)
+  //   marcadorTitulo: { titulo, nivel } marcador en el titulo de la solucion
+  //   marcadores: { ejercicio, item } plantillas (ver conPlantilla) para los
+  //     marcadores de los ejercicios y de los items: se ponen aunque la solucion
+  //     no los tenga y reemplazan a los que son `true`
+  function armar(sol, maxW, opc) {
+    opc = opc || {};
     var g = G(), errores = [], avisos = [], piezas = [];
+    var base = opc.nivelBase | 0, plantillas = opc.marcadores || {};
     var est = sol.estilo || {};
     var fuente = g.FUENTES[est.fuente] || g.FUENTES.normal, fKey = g.FUENTES[est.fuente] ? est.fuente : "normal";
     var tamK = g.TAMANOS[est.tam] ? est.tam : "M", tam = g.TAMANOS[tamK], lh = tam * fuente.lh;
@@ -151,6 +178,9 @@
       p.agregar(g.trazo([[0, y + tam * 0.4], [maxW, y + tam * 0.4]], { strokeColor: g.TINTA, strokeWidth: 1.5 }));
       p.unir = false;
       p.espacio = lh;
+      if (opc.marcadorTitulo && opc.marcadorTitulo.titulo) {
+        p.els.push(textoMarcador(opc.marcadorTitulo.titulo, opc.marcadorTitulo.nivel || 1, 0, tT * fuente.lh, fuente));
+      }
       piezas.push(p);
     }
 
@@ -166,18 +196,19 @@
     // { titulo, nivel } (nivel 1 a 3). Se agrega a la pieza del título un texto
     // violeta que no se imprime, en el margen izquierdo, a la altura del primer
     // renglón: el lector de PDF lo muestra en su panel y lleva a ese lugar.
-    var tamM = 10;
     function marcar(p, valor, tituloPorDefecto, nivelPorDefecto, altoRenglon) {
       if (!valor || !p) return;
       var lhR = altoRenglon || lh;
       var o = typeof valor === "object" ? valor : {};
       var titulo = String(typeof valor === "string" ? valor : o.titulo || tituloPorDefecto).replace(/\s+/g, " ").trim();
       if (!titulo) return;
-      var nivel = Math.max(1, Math.min(3, (o.nivel | 0) || nivelPorDefecto || 1));
-      var w = g.medir(titulo, tamM, fuente);
-      var e = g.texto(-w - 6, (lhR - tamM * fuente.lh) / 2, titulo, tamM, fuente, "#6965db", "left");
-      e.customData = { pizarraMarcador: { nivel: nivel, imprime: false } };
-      p.els.push(e);
+      var nivel = Math.max(1, Math.min(3, (o.nivel | 0) || nivelPorDefecto || 1)) + base;
+      p.els.push(textoMarcador(titulo, nivel, 0, lhR, fuente));
+    }
+    // marcador de un ejercicio o un item con la plantilla del cuadernillo
+    function conPlantillaDe(valor, pl, rot, enun) {
+      if (typeof pl !== "string" || (valor !== undefined && valor !== true)) return valor;
+      return conPlantilla(pl, rot, enun) || valor;
     }
 
     function bloques(lista, x, ruta, barras) {
@@ -269,14 +300,70 @@
           // a la hoja siguiente). La parte de cada hoja ya no se regenera desde el panel
           if (b.partir) p.partir = true;
           piezas.push(p);
+        } else if (b.qr !== undefined) {
+          p = bloqueQr(b, x, rb);
+          if (!p) return;
+          piezas.push(p);
         } else {
-          errores.push(rb + ": bloque sin «texto», «pasos», «generador», «seccion», «salto» ni «espacio»");
+          errores.push(rb + ": bloque sin «texto», «pasos», «generador», «seccion», «qr», «salto» ni «espacio»");
         }
         // aviso propio si la hoja se corta justo antes de este bloque (estilo.continuacion)
         if (p && typeof b.continua === "string") p.continua = b.continua;
         // alLado: este bloque va a la derecha del bloque anterior
         if (p && b.alLado) bloqueAlLado(b.alLado, rb);
       });
+    }
+
+    // qr: { qr: "https://…", titulo, lado, ancho }. Un codigo QR dibujado con
+    // rectangulos negros (uno por tramo de modulos oscuros de cada fila), con el
+    // titulo arriba y la direccion escrita abajo, centrados en una columna de
+    // `ancho` (por defecto, media area util: dos QR entran lado a lado con
+    // alLado). En el PDF, la columna entera es un enlace a la direccion.
+    function bloqueQr(b, x, rb) {
+      var url = String(b.qr || "").trim();
+      if (!url) { errores.push(rb + ".qr: falta la dirección"); return null; }
+      var Q = window.qrcode;
+      if (!Q) { errores.push(rb + ".qr: no se pudo cargar el generador de códigos QR"); return null; }
+      var anchoC = typeof b.ancho === "number" && b.ancho > 0 ? b.ancho : (maxW - x - tam * 2) / 2;
+      var lado = Math.min(typeof b.lado === "number" && b.lado > 0 ? b.lado : 200, anchoC);
+      var p = nuevaPieza(), fila = g.nuevoId(), cx = x + anchoC / 2, y = 0;
+      function enlace(e) { e.customData = { pizarraEnlace: { url: url, fila: fila } }; return e; }
+      // renglones centrados; `cortar` parte en cualquier lugar despues de / . - ? = & (una direccion)
+      function centrado(str, tamT, col, cortar) {
+        var partes = cortar ? str.split(/(?<=[\/.\-?=&_])/) : str.split(/(?<= )/), linea = "";
+        function poner(l) { if (!l.trim()) return; p.els.push(enlace(g.texto(cx, y, l.trim(), tamT, fuente, col, "center"))); y += tamT * fuente.lh; }
+        partes.forEach(function (pt) {
+          if (linea && g.medir((linea + pt).trim(), tamT, fuente) > anchoC) { poner(linea); linea = pt; }
+          else linea += pt;
+        });
+        poner(linea);
+      }
+      if (b.titulo) { centrado(String(b.titulo), tam, g.TINTA, false); y += tam * 0.4; }
+      var q;
+      try {
+        if (Q.stringToBytesFuncs && Q.stringToBytesFuncs["UTF-8"]) Q.stringToBytes = Q.stringToBytesFuncs["UTF-8"];
+        q = Q(0, "M"); q.addData(url, "Byte"); q.make();
+      } catch (e) { errores.push(rb + ".qr: no se pudo armar el código (" + (e && e.message || e) + ")"); return null; }
+      var n = q.getModuleCount(), m = lado / n, x0 = cx - lado / 2;
+      y += m * 2; // zona libre arriba (el resto del margen lo da el papel blanco)
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!q.isDark(r, c)) continue;
+          var c1 = c;
+          while (c1 + 1 < n && q.isDark(r, c1 + 1)) c1++;
+          // un poco de trazo del mismo color tapa las juntas entre filas
+          p.els.push(enlace(g.base("rectangle", {
+            x: x0 + c * m, y: y + r * m, width: (c1 - c + 1) * m, height: m,
+            strokeColor: "#000000", backgroundColor: "#000000", fillStyle: "solid", strokeWidth: 0.5, roughness: 0,
+          })));
+          c = c1;
+        }
+      }
+      y += lado + m * 2;
+      centrado(url.replace(/^https?:\/\//, ""), g.TAMANOS.S, color("gris"), true);
+      p.entero = true;
+      p.columna = { x0: x, x1: x + anchoC }; // con alLado, las columnas quedan parejas
+      return p;
     }
 
     // alLado (en un bloque): la ultima pieza se pone a la derecha de la anterior,
@@ -300,6 +387,9 @@
         return c;
       }
       var ca = limites(A), cb = limites(B);
+      // un QR ocupa su columna entera, aunque su direccion sea mas angosta o mas ancha
+      if (A.columna) { ca.x0 = A.columna.x0; ca.x1 = A.columna.x1; }
+      if (B.columna) { cb.x0 = B.columna.x0; cb.x1 = B.columna.x1; }
       var dx = ca.x1 + tam * 2 - cb.x0;
       // un desarrollo que no entra con las notas a la derecha se prueba con las
       // notas arriba de cada renglon (mas angosto)
@@ -401,12 +491,15 @@
       piezas.splice(desdeA, piezas.length - desdeA, junta);
       return true;
     }
+    // bloques sueltos antes de los ejercicios (el texto de una parte de un cuadernillo)
+    if (Array.isArray(sol.bloques)) bloques(sol.bloques, 0, "bloques");
     (sol.ejercicios || []).forEach(function (ej, i) {
       var r = "ejercicios[" + i + "]", nEj = ej.numero !== undefined ? ej.numero : i + 1;
-      if (i) piezas.push({ hueco: lh * 1.2 });
+      if (i || sol.bloques) piezas.push({ hueco: lh * 1.2 });
       var rEj = nEj === "" ? "" : rotulo(plEj, nEj), desdeEj = piezas.length;
       var pEj = enunciado(rEj, ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
-      marcar(pEj, ej.marcador, (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1);
+      marcar(pEj, conPlantillaDe(ej.marcador, plantillas.ejercicio, rEj, ej.enunciado),
+        (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1);
       bloques(ej.bloques, sangria * 0.5, r);
       marcarInicio(desdeEj, "inicioEj");
       var desdeAnt = -1;
@@ -416,7 +509,8 @@
         var nIt = it.numero !== undefined ? it.numero : String.fromCharCode(97 + j);
         var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt), desdeIt = piezas.length;
         var pIt = enunciado(rIt, it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
-        marcar(pIt, it.marcador, (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1);
+        marcar(pIt, conPlantillaDe(it.marcador, plantillas.item, rIt, it.enunciado),
+          (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1);
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
         marcarInicio(desdeIt, "inicioIt");
         if (it.alLado && desdeAnt >= 0 && ponerAlLado(desdeAnt, antesHueco, desdeIt, r + ".items[" + j + "]")) desdeIt = desdeAnt;
@@ -490,6 +584,85 @@
     return [m.materia, m.institucion, m.anio, m.tp].filter(Boolean).join(" · ") || String(sol.titulo || "solucion");
   }
 
+  // Cuadernillo («unzip.mat/cuadernillo@1»): varias partes en un solo juego de
+  // hojas, cada una empezando en una hoja nueva. Tipos de parte:
+  //   caratula  { titulo, subtitulo, lineas: [...], pie }: centrada, sin cabecera ni pie
+  //   texto     { titulo, subtitulo, bloques }: los bloques de siempre
+  //   indice    { titulo, niveles }: los marcadores de las partes que siguen,
+  //             con su numero de pagina; en el PDF, cada renglon es un enlace
+  //   solucion  { solucion: {...solucion@1}, marcadores: { ejercicio, item } }
+  // Toda parte puede traer `cabecera` (si no, la del cuadernillo; una solucion
+  // usa la suya): vale desde la primera hoja de la parte (hojas.js, «desde»).
+  // `marcador`: el titulo del marcador de la parte (true: su titulo; false: sin
+  // marcador). `enIndice: false` la saca del indice. `sinCabecera: true`: sus
+  // hojas sin cabecera ni pie. `impar: false`: no salta a una hoja impar.
+  var FORMATO_CUADERNILLO = "unzip.mat/cuadernillo@1";
+  var TIPOS_PARTE = { caratula: 1, texto: 1, indice: 1, solucion: 1 };
+
+  function tipoDeParte(p) {
+    if (p.tipo) return p.tipo;
+    return p.solucion ? "solucion" : "texto";
+  }
+
+  // los marcadores de una lista de piezas, en orden
+  function marcadoresDePiezas(piezas) {
+    var out = [];
+    piezas.forEach(function (p) {
+      (p.els || []).forEach(function (e) {
+        var d = e.customData && e.customData.pizarraMarcador;
+        if (d) out.push({ id: e.id, titulo: e.text, nivel: d.nivel });
+      });
+    });
+    return out;
+  }
+
+  // Piezas del indice: un renglon por entrada (titulo, linea de puntos y numero
+  // de pagina). Los tres elementos son enlaces a su marcador (hojas.js); el
+  // numero se completa despues de repartir las hojas.
+  function armarIndice(entradas, maxW, est, r) {
+    var g = G(), fuente = r.fuente, tam = r.tam, lh = r.lh, tamS = g.TAMANOS.S;
+    entradas.forEach(function (en, i) {
+      var n1 = en.nivel <= 1, tamR = n1 ? tam : tamS, colR = n1 ? COLOR_EJERCICIO : g.TINTA;
+      if (n1 && i) r.piezas.push({ hueco: lh * 0.5 });
+      var p = nuevaPieza(n1); // un titulo de parte no queda solo al pie
+      var fila = g.nuevoId(), xR = Math.max(0, en.nivel - 1) * tam * 1.5;
+      var wNum = g.medir("000", tamR, fuente), hueco = tam * 0.6;
+      var maxTit = maxW - xR - wNum - hueco * 2;
+      var tit = en.titulo;
+      if (g.medir(tit, tamR, fuente) > maxTit) {
+        while (tit.length > 1 && g.medir(tit + "…", tamR, fuente) > maxTit) tit = tit.slice(0, -1);
+        tit = tit.trim() + "…";
+      }
+      var t = g.texto(xR, 0, tit, tamR, fuente, colR, "left");
+      t.customData = { pizarraEnlace: { a: en.id, fila: fila } };
+      p.els.push(t);
+      var xa = xR + t.width + hueco, xb = maxW - wNum - hueco, yb = tamR * fuente.lh * 0.78;
+      if (xb > xa + tam) {
+        var l = g.trazo([[xa, yb], [xb, yb]], { strokeColor: "#adb5bd", strokeWidth: 1.5, strokeStyle: "dotted" });
+        l.customData = { pizarraEnlace: { a: en.id, fila: fila } };
+        p.els.push(l);
+      }
+      var num = g.texto(maxW, 0, "0", tamR, fuente, colR, "right");
+      num.customData = { pizarraEnlace: { a: en.id, fila: fila, pagina: true } };
+      p.els.push(num);
+      p.espacio = n1 ? lh * 0.25 : lh * 0.1;
+      r.piezas.push(p);
+    });
+  }
+
+  // parte de texto o indice → una solucion sin ejercicios (para armar)
+  function solucionDeParte(parte, est) {
+    return { titulo: parte.titulo, subtitulo: parte.subtitulo, estilo: est, bloques: parte.bloques || [], ejercicios: [] };
+  }
+
+  // estilo de una parte: el del cuadernillo con el de la solucion encima
+  function mezclarEstilo(a, b) {
+    var r = {};
+    for (var k in a || {}) r[k] = a[k];
+    for (k in b || {}) r[k] = b[k];
+    return r;
+  }
+
   function importar(entrada, opciones) {
     var A = api(), g = G(), h = H();
     opciones = opciones || {};
@@ -499,9 +672,24 @@
       try { sol = JSON.parse(entrada); } catch (e) { return { ok: false, errores: ["El archivo no es un JSON válido: " + e.message] }; }
     }
     if (!sol || typeof sol !== "object") return { ok: false, errores: ["El archivo está vacío"] };
-    var avisosFormato = [];
-    if (sol.formato && sol.formato !== FORMATO) avisosFormato.push("Formato «" + sol.formato + "»: esta pizarra lee «" + FORMATO + "»");
-    if (!Array.isArray(sol.ejercicios)) return { ok: false, errores: ["Falta la lista «ejercicios»"] };
+    var avisosFormato = [], esCuad = Array.isArray(sol.partes);
+    if (sol.formato && sol.formato !== FORMATO && sol.formato !== FORMATO_CUADERNILLO) {
+      avisosFormato.push("Formato «" + sol.formato + "»: esta pizarra lee «" + FORMATO + "» y «" + FORMATO_CUADERNILLO + "»");
+    }
+    if (!esCuad && !Array.isArray(sol.ejercicios)) return { ok: false, errores: ["Falta la lista «ejercicios» (o «partes», en un cuadernillo)"] };
+    // una solucion sola es un cuadernillo de una parte, sin marcadores agregados
+    var partes = esCuad ? sol.partes : [{ tipo: "solucion", solucion: sol, sola: true }];
+    var erroresPartes = [];
+    partes.forEach(function (p, i) {
+      var rp = "partes[" + i + "]";
+      if (!p || typeof p !== "object") { erroresPartes.push(rp + ": parte inválida"); return; }
+      var t = tipoDeParte(p);
+      if (!TIPOS_PARTE[t]) erroresPartes.push(rp + ": tipo «" + t + "» desconocido (caratula, texto, indice o solucion)");
+      if (t === "solucion" && (!p.solucion || typeof p.solucion !== "object")) {
+        erroresPartes.push(rp + ": falta «solucion»" + (p.ruta ? " (la ruta «" + p.ruta + "» se completa con herramientas/armar-cuadernillo.mjs del repositorio de solucionarios)" : ""));
+      } else if (t === "solucion" && !Array.isArray(p.solucion.ejercicios)) erroresPartes.push(rp + ".solucion: falta la lista «ejercicios»");
+    });
+    if (erroresPartes.length) return { ok: false, errores: erroresPartes, avisos: avisosFormato };
 
     var clave = claveDe(sol), reemplazados = 0;
     var todos = A.getSceneElementsIncludingDeleted();
@@ -530,14 +718,15 @@
       var bt = g.cajaDe(vivos);
       x0 = bt.x1 + sep * 2; y0 = hojas.length ? hojas[0].y : bt.y0;
     }
-    // cabecera y pie («cabecera» y «pie» de la solucion): se crean los que
-    // falten en la escena, arriba de la primera hoja nueva. Las bandas son de
-    // toda la pizarra: si ya hay, quedan las que estan.
+    // cabecera y pie («cabecera» y «pie» de la solucion o del cuadernillo): se
+    // crean los que falten en la escena, arriba de la primera hoja nueva. Las
+    // bandas generales son de toda la pizarra: si ya hay, quedan las que estan.
+    // En un cuadernillo van un renglon mas arriba: abajo van las de cada parte.
     var faltan = {};
     if (typeof sol.cabecera === "string" && !(bandas && bandas.cab)) faltan.cab = sol.cabecera;
     if (typeof sol.pie === "string" && !(bandas && bandas.pie)) faltan.pie = sol.pie;
     if ((faltan.cab !== undefined || faltan.pie !== undefined) && h.nuevasBandas) {
-      var nb = h.nuevasBandas(faltan, x0, y0);
+      var nb = h.nuevasBandas(faltan, x0, esCuad ? y0 - sep * 4 : y0);
       nb.forEach(function (e) {
         var cd = {};
         for (var k in e.customData || {}) cd[k] = e.customData[k];
@@ -547,28 +736,32 @@
       todos = todos.concat(nb);
       bandas = h.bandasDe(todos);
     }
-    var nuevas = [];
-    function hojaNueva() {
+    // el texto de la cabecera general (para saber si una parte necesita la suya)
+    var cabGeneral = typeof sol.cabecera === "string" ? sol.cabecera : null;
+
+    var nuevas = [], bandasNuevas = [];
+    var parteSinBandas = false; // la parte que se esta repartiendo no lleva cabecera ni pie
+    function hojaNueva(opc) {
+      opc = opc || {};
       var u = nuevas[nuevas.length - 1];
       var f = h.marco(u ? u.x + u.width + sep : x0, y0, n0 + nuevas.length + 1);
+      if (opc.sinBandas || parteSinBandas) f.customData.pizarraHoja.sinBandas = true;
       nuevas.push(f);
+      if (opc.alEmpezar) opc.alEmpezar(f);
       var area = h.areaUtil(f, bandas);
       return { f: f, area: area, y: area.y0 };
     }
-    var hoja = hojaNueva();
-    var maxW = hoja.area.x1 - hoja.area.x0;
-    var r = armar(sol, maxW);
-    if (r.errores.length) return { ok: false, errores: r.errores, avisos: avisosFormato.concat(r.avisos) };
-    var avisos = avisosFormato.concat(r.avisos);
-    var altoUtil = hoja.area.y1 - hoja.area.y0;
+    // ancho util: no depende de la cabecera ni del lado del lomo
+    var prueba = h.areaUtil(h.marco(0, 0, n0 + 1), null);
+    var maxW = prueba.x1 - prueba.x0;
 
-    // reparto: renglon por renglon; una pieza «unir» (enunciado) pasa entera a
-    // la hoja siguiente junto con el primer renglon de lo que le sigue
-    // seq: [{ q: renglon, antes: espacio que lo separa del anterior }]
-    var listos = [], pendiente = null, gap = 0, vacia = true;
+    var hoja = null, vacia = true;
+    var listos = [], pendiente = null, gap = 0, avisos = avisosFormato.slice(), r = null, tramos = {};
+    function altoUtil() { return hoja.area.y1 - hoja.area.y0; }
     // estilo.continuacion: si un ejercicio o un ítem sigue en la hoja siguiente, se avisa
     // en gris al pie de la hoja (y se reserva ese lugar en todas las hojas)
-    var tamAviso = g.TAMANOS.S, altoAviso = r.continuacion ? Math.ceil(tamAviso * r.fuente.lh + 8) : 0;
+    var tamAviso = g.TAMANOS.S;
+    function altoAviso() { return r.continuacion ? Math.ceil(tamAviso * r.fuente.lh + 8) : 0; }
     function textoAviso(seq) {
       var it = seq[0];
       // empieza un ejercicio o un ítem: no hay nada que continúe
@@ -581,7 +774,6 @@
     }
     // líneas verticales de las secciones: un tramo por hoja y por sección, que
     // se alarga hasta el último renglón puesto (cubre también los espacios)
-    var tramos = {};
     function barrasDe(p, yTop, yBot) {
       (p.barras || []).forEach(function (b) {
         var t = tramos[b.id], x = hoja.area.x0 + b.x;
@@ -599,7 +791,7 @@
     function poner(seq) {
       var alto = seq.reduce(function (s, it, i) { return s + (i ? it.antes : 0) + (it.q.y1 - it.q.y0); }, 0);
       var arranque = vacia ? 0 : seq[0].antes;
-      if (!vacia && hoja.y + arranque + alto > hoja.area.y1 - altoAviso) {
+      if (!vacia && hoja.y + arranque + alto > hoja.area.y1 - altoAviso()) {
         var aviso = r.continuacion && textoAviso(seq);
         if (aviso) {
           var ea = g.texto(hoja.area.x0, hoja.y + 6, "(" + aviso + ")", tamAviso, r.fuente, color("gris"), "left");
@@ -630,7 +822,7 @@
           hoja.y = yCaso;
         }
       }
-      if (alto > altoUtil + 1) avisos.push("Un renglón es más alto que el área útil de la hoja " + hoja.f.customData.pizarraHoja.n + ": se sale por abajo");
+      if (alto > altoUtil() + 1) avisos.push("Un renglón es más alto que el área útil de la hoja " + hoja.f.customData.pizarraHoja.n + ": se sale por abajo");
       var y = hoja.y + arranque;
       seq.forEach(function (it, i) {
         var q = it.q;
@@ -647,48 +839,192 @@
       hoja.y = y;
       vacia = false;
     }
-    r.piezas.forEach(function (p) {
-      if (p.salto) { if (pendiente) { poner(pendiente); pendiente = null; } if (!vacia) { hoja = hojaNueva(); vacia = true; } return; }
-      if (p.hueco !== undefined) { gap = Math.max(gap, p.hueco); return; }
-      if (!p.els.length) return;
-      // cada pieza en su grupo (las de un generador, en el grupo de su dibujo)
-      var gid = p.gid || g.nuevoId();
-      if (!p.gruposListos) p.els.forEach(function (e) { e.groupIds = [gid]; });
-      var rs = p.cortes ? renglonesConCortes(p) : renglones(p.els);
-      // en un dibujo que se parte, un titulo no queda solo al pie: va con el renglon siguiente
-      if (p.partir && p.unidos) {
-        var juntos = [];
-        rs.forEach(function (q) {
-          var ant = juntos[juntos.length - 1];
-          if (ant && ant.unir) {
-            juntos[juntos.length - 1] = { els: ant.els.concat(q.els), y0: Math.min(ant.y0, q.y0), y1: Math.max(ant.y1, q.y1),
-              x1: Math.max(ant.x1, q.x1), unir: false };
-            ant = juntos[juntos.length - 1];
-          } else { juntos.push({ els: q.els, y0: q.y0, y1: q.y1, x1: q.x1 }); ant = juntos[juntos.length - 1]; }
-          if (q.els.some(function (e) { return p.unidos.indexOf(e) >= 0; })) ant.unir = true;
+
+    // reparte en hojas las piezas de una parte (la salida de armar).
+    // Renglon por renglon; una pieza «unir» (enunciado) pasa entera a la hoja
+    // siguiente junto con el primer renglon de lo que le sigue.
+    // seq: [{ q: renglon, antes: espacio que lo separa del anterior }]
+    function maquetar(rr) {
+      r = rr; tramos = {}; gap = 0; pendiente = null;
+      r.piezas.forEach(function (p) {
+        if (p.salto) { if (pendiente) { poner(pendiente); pendiente = null; } if (!vacia) { hoja = hojaNueva(); vacia = true; } return; }
+        if (p.hueco !== undefined) { gap = Math.max(gap, p.hueco); return; }
+        if (!p.els.length) return;
+        // cada pieza en su grupo (las de un generador, en el grupo de su dibujo)
+        var gid = p.gid || g.nuevoId();
+        if (!p.gruposListos) p.els.forEach(function (e) { e.groupIds = [gid]; });
+        var rs = p.cortes ? renglonesConCortes(p) : renglones(p.els);
+        // en un dibujo que se parte, un titulo no queda solo al pie: va con el renglon siguiente
+        if (p.partir && p.unidos) {
+          var juntos = [];
+          rs.forEach(function (q) {
+            var ant = juntos[juntos.length - 1];
+            if (ant && ant.unir) {
+              juntos[juntos.length - 1] = { els: ant.els.concat(q.els), y0: Math.min(ant.y0, q.y0), y1: Math.max(ant.y1, q.y1),
+                x1: Math.max(ant.x1, q.x1), unir: false };
+              ant = juntos[juntos.length - 1];
+            } else { juntos.push({ els: q.els, y0: q.y0, y1: q.y1, x1: q.x1 }); ant = juntos[juntos.length - 1]; }
+            if (q.els.some(function (e) { return p.unidos.indexOf(e) >= 0; })) ant.unir = true;
+          });
+          rs = juntos;
+        }
+        // el dibujo de un generador no se parte si entra en una hoja: un grafico
+        // partido queda con su titulo en una hoja y el dibujo en otra, y ya no se
+        // puede regenerar desde su panel. La regla de los signos si se parte,
+        // entre caso y caso (con la cabecera repetida en la hoja nueva)
+        if (!p.cortes && !p.partir && (p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil()) {
+          rs = [rs.reduce(function (a, q) {
+            return { els: a.els.concat(q.els), y0: Math.min(a.y0, q.y0), y1: Math.max(a.y1, q.y1), x1: Math.max(a.x1, q.x1) };
+          })];
+        }
+        rs.forEach(function (q, i) {
+          var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap, p: p, i: i, repetir: q.repetir }];
+          if (pendiente) { seq = pendiente.concat(seq); pendiente = null; }
+          // un enunciado no se corta entre hojas: todos sus renglones esperan al
+          // primero de lo que sigue
+          if (p.unir) { pendiente = seq; return; }
+          poner(seq);
         });
-        rs = juntos;
-      }
-      // el dibujo de un generador no se parte si entra en una hoja: un grafico
-      // partido queda con su titulo en una hoja y el dibujo en otra, y ya no se
-      // puede regenerar desde su panel. La regla de los signos si se parte,
-      // entre caso y caso (con la cabecera repetida en la hoja nueva)
-      if (!p.cortes && !p.partir && (p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil) {
-        rs = [rs.reduce(function (a, q) {
-          return { els: a.els.concat(q.els), y0: Math.min(a.y0, q.y0), y1: Math.max(a.y1, q.y1), x1: Math.max(a.x1, q.x1) };
-        })];
-      }
-      rs.forEach(function (q, i) {
-        var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap, p: p, i: i, repetir: q.repetir }];
-        if (pendiente) { seq = pendiente.concat(seq); pendiente = null; }
-        // un enunciado no se corta entre hojas: todos sus renglones esperan al
-        // primero de lo que sigue
-        if (p.unir) { pendiente = seq; return; }
-        poner(seq);
+        gap = p.espacio !== undefined ? p.espacio : r.lh * 0.6;
       });
-      gap = p.espacio !== undefined ? p.espacio : r.lh * 0.6;
+      if (pendiente) { poner(pendiente); pendiente = null; }
+    }
+
+    // Cada parte empieza en una hoja nueva. Con doble faz y
+    // estilo.partesEnImpar, en una hoja impar (si hace falta, deja una en
+    // blanco, sin cabecera ni pie). `cab`: el texto de la cabecera de la parte;
+    // si no es el que esta vigente, se crea una cabecera desde esta hoja.
+    // (si la pizarra ya tenia una cabecera general, cada parte lleva la suya)
+    var cabVigente = faltan.cab !== undefined || !(bandas && bandas.cab) ? cabGeneral : null, enImpar = esCuad && estH.partesEnImpar === true && estH.dobleFaz === true;
+    function empezarParte(opc, nombre) {
+      parteSinBandas = false;
+      // impar: false (por ejemplo, el reverso de la caratula) sigue en la hoja que toque
+      if (enImpar && opc.impar !== false && hoja && (n0 + nuevas.length + 1) % 2 === 0) hojaNueva({ sinBandas: true });
+      var cab = opc.cab;
+      hoja = hojaNueva({
+        sinBandas: opc.sinBandas,
+        alEmpezar: function (f) {
+          if (opc.sinBandas || typeof cab !== "string" || cab === cabVigente || !h.nuevasBandas) return;
+          var nbp = h.nuevasBandas({ cab: cab }, f.x, f.y, { desde: f.id, nombre: nombre });
+          bandasNuevas = bandasNuevas.concat(nbp);
+          bandas = h.bandasDe(todos.concat(nuevas, bandasNuevas));
+          cabVigente = cab;
+        },
+      });
+      parteSinBandas = !!opc.sinBandas;
+      vacia = true;
+    }
+
+    // la caratula: centrada en la hoja, sin cabecera ni pie
+    function maquetarCaratula(parte, est) {
+      empezarParte({ sinBandas: true });
+      var fuente = g.FUENTES[est.fuente] || g.FUENTES.normal, area = hoja.area;
+      var w = area.x1 - area.x0, cx = area.x0 + w / 2, els = [], y = 0, gid = g.nuevoId();
+      function centrado(str, tam, col) {
+        String(str).split("\n").forEach(function (par) {
+          var linea = "";
+          par.split(/ +/).forEach(function (pal) {
+            var prueba = linea ? linea + " " + pal : pal;
+            if (linea && g.medir(prueba, tam, fuente) > w) { els.push(g.texto(cx, y, linea, tam, fuente, col, "center")); y += tam * fuente.lh; linea = pal; }
+            else linea = prueba;
+          });
+          if (linea) els.push(g.texto(cx, y, linea, tam, fuente, col, "center"));
+          y += tam * fuente.lh;
+        });
+      }
+      var tamT = typeof parte.tamTitulo === "number" ? parte.tamTitulo : 48;
+      if (parte.antetitulo) { centrado(parte.antetitulo, g.TAMANOS.L, COLOR_ENUNCIADO); y += 24; }
+      var yT = y;
+      if (parte.titulo) centrado(parte.titulo, tamT, g.TINTA);
+      y += 18;
+      els.push(g.trazo([[cx - w * 0.2, y], [cx + w * 0.2, y]], { strokeColor: COLOR_EJERCICIO, strokeWidth: 3 }));
+      y += 30;
+      if (parte.subtitulo) { centrado(parte.subtitulo, g.TAMANOS.XL, COLOR_EJERCICIO); y += 20; }
+      (parte.lineas || []).forEach(function (l) { centrado(l, g.TAMANOS.L, COLOR_ENUNCIADO); y += 6; });
+      // un poco arriba del centro de la hoja
+      var dy = area.y0 + Math.max(0, (area.y1 - area.y0 - y) * 0.38);
+      if (parte.marcador !== false) {
+        var tm = typeof parte.marcador === "string" ? parte.marcador : "Carátula";
+        var mk = textoMarcador(String(tm).replace(/\s+/g, " ").trim(), 1, yT, tamT * fuente.lh, fuente);
+        mk.x += area.x0; // va en el margen de la hoja
+        els.push(mk);
+      }
+      els.forEach(function (e) {
+        G().expandirRaices(e).forEach(function (q) {
+          q.y += dy; q.frameId = hoja.f.id; q.groupIds = [gid];
+          listos.push(q);
+        });
+      });
+      // abajo de todo, el pie de la caratula (por ejemplo, la institucion)
+      if (parte.pie) {
+        var tamP = g.TAMANOS.M, renglonesPie = String(parte.pie).split("\n");
+        var yP = area.y1 - renglonesPie.length * tamP * fuente.lh;
+        renglonesPie.forEach(function (l, i) {
+          var t = g.texto(cx, yP + i * tamP * fuente.lh, l, tamP, fuente, COLOR_ENUNCIADO, "center");
+          t.frameId = hoja.f.id; t.groupIds = [gid];
+          listos.push(t);
+        });
+      }
+      vacia = false;
+    }
+
+    // ---- armar todas las partes (las piezas), despues el indice, y repartir
+    var armadas = [], erroresArmar = [];
+    partes.forEach(function (parte, i) {
+      var t = tipoDeParte(parte), rp = esCuad ? "partes[" + i + "]" : "";
+      var marcadorParte = parte.marcador === false ? null : typeof parte.marcador === "string" ? parte.marcador
+        : typeof parte.marcador === "object" && parte.marcador ? parte.marcador.titulo : null;
+      if (t === "caratula") { armadas.push({ parte: parte, tipo: t }); return; }
+      if (t === "solucion") {
+        var s = parte.solucion, est = parte.sola ? s.estilo : mezclarEstilo(sol.estilo, s.estilo);
+        var s2 = {};
+        for (var k in s) s2[k] = s[k];
+        s2.estilo = est;
+        if (parte.titulo !== undefined) s2.titulo = parte.titulo;
+        var opc = parte.sola ? {} : {
+          nivelBase: 1,
+          marcadorTitulo: parte.marcador === false ? null : { titulo: marcadorParte || String(s2.titulo || "").replace(/\s+/g, " ").trim(), nivel: 1 },
+          marcadores: parte.marcadores || { ejercicio: "{rotulo}" },
+        };
+        var ra = armar(s2, maxW, opc);
+        ra.errores.forEach(function (e) { erroresArmar.push((rp ? rp + ".solucion." : "") + e); });
+        ra.avisos = ra.avisos.map(function (a) { return (rp ? rp + ".solucion." : "") + a; });
+        var cabS = parte.cabecera !== undefined ? parte.cabecera : typeof s.cabecera === "string" ? s.cabecera : cabGeneral;
+        armadas.push({ parte: parte, tipo: t, r: ra, cab: parte.sola ? undefined : cabS, nombre: marcadorParte || s.meta && s.meta.tp });
+        return;
+      }
+      // texto o indice
+      var estT = sol.estilo || {};
+      var rt = armar(solucionDeParte(parte, estT), maxW, {
+        marcadorTitulo: parte.marcador === false || !parte.titulo ? null : { titulo: marcadorParte || parte.titulo, nivel: 1 },
+      });
+      rt.errores.forEach(function (e) { erroresArmar.push(rp + "." + e); });
+      rt.avisos = rt.avisos.map(function (a) { return rp + "." + a; });
+      armadas.push({ parte: parte, tipo: t, r: rt, cab: parte.cabecera !== undefined ? parte.cabecera : cabGeneral, nombre: marcadorParte || parte.titulo });
     });
-    if (pendiente) poner(pendiente);
+    if (erroresArmar.length) return { ok: false, errores: erroresArmar, avisos: avisos };
+
+    // el indice: los marcadores de las partes que van en el (no la caratula ni el
+    // indice mismo), hasta el nivel pedido (por defecto 2: partes y ejercicios)
+    armadas.forEach(function (a, i) {
+      if (a.tipo !== "indice") return;
+      var niveles = a.parte.niveles | 0 || 2, entradas = [];
+      armadas.forEach(function (b, j) {
+        if (j === i || !b.r || b.tipo === "indice" || b.parte.enIndice === false) return;
+        marcadoresDePiezas(b.r.piezas).forEach(function (m) { if (m.nivel <= niveles) entradas.push(m); });
+      });
+      armarIndice(entradas, maxW, sol.estilo || {}, a.r);
+      if (!entradas.length) avisos.push("partes[" + i + "]: el índice no tiene entradas (las partes no tienen marcadores)");
+    });
+
+    armadas.forEach(function (a) {
+      if (a.tipo === "caratula") { maquetarCaratula(a.parte, sol.estilo || {}); return; }
+      avisos = avisos.concat(a.r.avisos);
+      if (a.parte.sola) { if (!hoja) hoja = hojaNueva(); }
+      else empezarParte({ cab: a.cab, sinBandas: a.parte.sinCabecera === true, impar: a.parte.impar }, a.nombre);
+      maquetar(a.r);
+    });
+    if (!hoja) hoja = hojaNueva();
 
     // el grupo de una pieza que quedo repartida en varias hojas se separa por hoja
     var porGrupo = {};
@@ -704,8 +1040,14 @@
       e.groupIds = [renombre[k]];
       if (e.customData && e.customData.pizarra) delete e.customData; // un grafico partido ya no se regenera
     });
+    // numeros de pagina del indice (hojas.js los vuelve a calcular al imprimir)
+    if (h.numerosDelIndice) {
+      var conNumero = {};
+      h.numerosDelIndice(todos.filter(function (e) { return !e.isDeleted; }).concat(nuevas, listos)).forEach(function (e) { conNumero[e.id] = e; });
+      listos = listos.map(function (e) { return conNumero[e.id] || e; });
+    }
     // todo lo importado lleva la clave de la solucion (para reemplazarlo despues)
-    nuevas.concat(listos).forEach(function (e) {
+    nuevas.concat(bandasNuevas, listos).forEach(function (e) {
       var cd = {};
       for (var k in e.customData || {}) cd[k] = e.customData[k];
       cd.pizarraSolucion = clave;
@@ -713,10 +1055,10 @@
     });
     ultimas = nuevas.map(function (f) { return f.id; });
 
-    var st = A.getAppState(), z = st.zoom.value, f0 = nuevas[0];
+    var st = A.getAppState(), f0 = nuevas[0];
     var zn = Math.min(st.width / f0.width, st.height / f0.height) * 0.9;
     A.updateScene({
-      elements: todos.concat(nuevas, listos),
+      elements: todos.concat(nuevas, bandasNuevas, listos),
       appState: {
         selectedElementIds: {}, selectedGroupIds: {}, editingGroupId: null,
         zoom: { value: zn }, scrollX: st.width / zn / 2 - (f0.x + f0.width / 2), scrollY: st.height / zn / 2 - (f0.y + f0.height / 2),
@@ -861,7 +1203,24 @@
     var g = G();
     if (!g) return Promise.resolve({ ok: false, errores: ["La pizarra todavía no terminó de cargar"] });
     var cargas = Object.keys(g.FUENTES).map(function (k) { return document.fonts.load("20px " + g.FUENTES[k].css).catch(function () {}); });
+    // el generador de QR (app/vendor/qrcode.js) se carga solo si la solucion tiene alguno
+    var texto = typeof entrada === "string" ? entrada : JSON.stringify(entrada || {});
+    if (/"qr"\s*:/.test(texto)) cargas.push(cargarQr().catch(function () {}));
     return Promise.all(cargas).then(function () { return importar(entrada, opciones); });
+  }
+  var cargaQr = null;
+  function cargarQr() {
+    if (window.qrcode) return Promise.resolve();
+    if (!cargaQr) {
+      cargaQr = new Promise(function (listo, fallo) {
+        var s = document.createElement("script");
+        s.src = "./vendor/qrcode.js";
+        s.onload = function () { window.qrcode ? listo() : fallo(new Error("qrcode no cargó")); };
+        s.onerror = function () { cargaQr = null; fallo(new Error("no se pudo cargar qrcode.js")); };
+        document.head.appendChild(s);
+      });
+    }
+    return cargaQr;
   }
 
   window.__pizarraSolucionario = { abrir: abrir, importar: importarConFuentes, imagenes: imagenes, FORMATO: FORMATO };
