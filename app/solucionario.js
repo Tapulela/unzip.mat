@@ -227,7 +227,13 @@
           var gid = g.nuevoId(), tmp = [];
           try { gen.generar(op, x, 0, function (e) { tmp.push(e); return e; }); }
           catch (e) { errores.push(rb + ": el generador «" + b.generador + "» falló (" + (e && e.message || e) + ")"); return; }
-          tmp.forEach(function (e) { g.expandirRaices(e).forEach(function (q) { p.els.push(q); }); });
+          // cortes: donde se puede partir el dibujo entre hojas (regla de los signos)
+          var cortes = g.corteDe ? [] : null;
+          tmp.forEach(function (e) {
+            var ct = cortes && g.corteDe(e);
+            g.expandirRaices(e).forEach(function (q) { p.els.push(q); if (cortes) cortes.push(ct); });
+          });
+          if (cortes && cortes.some(Boolean)) p.cortes = cortes;
           // avisos propios del generador (datos inconsistentes o que no alcanzan...)
           if (gen.avisos) gen.avisos(op).forEach(function (a) { avisos.push(rb + ": " + a); });
           if (!p.els.length) { avisos.push(rb + ": el generador «" + b.generador + "» no dibujó nada (¿datos con errores?)"); return; }
@@ -361,6 +367,42 @@
     return out;
   }
 
+  // Renglones de un dibujo con cortes (la regla de los signos): lo que no tiene
+  // corte (los pasos previos) se parte en renglones como siempre; la cabecera
+  // con el primer caso es un solo bloque, y cada caso que sigue, otro, que
+  // lleva lo necesario para repetir la cabecera si empieza una hoja.
+  function renglonesConCortes(p) {
+    var g = G(), libres = [], cab = [], casos = {}, info = null;
+    p.els.forEach(function (e, i) {
+      var ct = p.cortes[i];
+      if (!ct) libres.push(e);
+      else if (ct.cab) { cab.push(e); info = ct; }
+      else (casos[ct.caso] = casos[ct.caso] || []).push(e);
+    });
+    var out = renglones(libres);
+    function bloque(els) {
+      var b = { els: els, y0: Infinity, y1: -Infinity, x1: -Infinity };
+      els.forEach(function (e) { var c = g.caja(e); b.y0 = Math.min(b.y0, c.y0); b.y1 = Math.max(b.y1, c.y1); b.x1 = Math.max(b.x1, c.x1); });
+      return b;
+    }
+    var ks = Object.keys(casos).map(Number).sort(function (a, b) { return a - b; });
+    var y0cab = cab.length ? bloque(cab).y0 : 0;
+    ks.forEach(function (k, j) {
+      if (j === 0) { out.push(bloque(cab.concat(casos[k]))); return; }
+      var b = bloque(casos[k]);
+      if (info && cab.length) {
+        // el tramo del tallo de este caso marca el estilo de la linea
+        var t = casos[k].filter(function (e) { return e.type === "line" || e.type === "arrow"; })[0];
+        // copia de la cabecera tal como sale del generador: los originales se
+        // corren despues a su hoja y no sirven para ubicar la repeticion
+        b.repetir = { els: cab.map(function (e) { return g.copiar(e); }), y0: y0cab, yLlave: info.yLlave, sep: info.sep, xTallo: info.xTallo,
+          estilo: { strokeColor: t ? t.strokeColor : g.TINTA, strokeWidth: t ? t.strokeWidth : 2 } };
+      }
+      out.push(b);
+    });
+    return out.sort(function (a, b) { return a.y0 - b.y0; });
+  }
+
   // ------------------------------------------------------------- importar
   // clave de una solucion: con `reemplazar`, lo que se importo antes con la
   // misma clave se borra (sirve para corregir y volver a importar)
@@ -486,6 +528,24 @@
           listos.push(ea);
         }
         hoja = hojaNueva(); vacia = true; arranque = 0;
+        // un caso de la regla de los signos que empieza la hoja: arriba se repite
+        // la cabecera (la inecuacion con su llave y la regla) y el tallo baja hasta el caso
+        var rep = seq[0].repetir;
+        if (rep) {
+          var dyc = hoja.y - rep.y0, gidc = seq[0].q.els[0].groupIds[0];
+          rep.els.forEach(function (e0) {
+            var e = g.copiar(e0);
+            e.id = g.nuevoId(); e.seed = Math.floor(Math.random() * 2e9); e.versionNonce = Math.floor(Math.random() * 2e9);
+            e.x += hoja.area.x0; e.y += dyc; e.frameId = hoja.f.id; e.groupIds = [gidc];
+            if (e.customData) delete e.customData.pizarra;
+            listos.push(e);
+          });
+          var yLl = rep.yLlave + dyc, yCaso = yLl + rep.sep;
+          var tallo = g.trazo([[hoja.area.x0 + rep.xTallo, yLl], [hoja.area.x0 + rep.xTallo, yCaso]], rep.estilo);
+          tallo.frameId = hoja.f.id; tallo.groupIds = [gidc];
+          listos.push(tallo);
+          hoja.y = yCaso;
+        }
       }
       if (alto > altoUtil + 1) avisos.push("Un renglón es más alto que el área útil de la hoja " + hoja.f.customData.pizarraHoja.n + ": se sale por abajo");
       var y = hoja.y + arranque;
@@ -511,17 +571,18 @@
       // cada pieza en su grupo (las de un generador, en el grupo de su dibujo)
       var gid = p.gid || g.nuevoId();
       if (!p.gruposListos) p.els.forEach(function (e) { e.groupIds = [gid]; });
-      var rs = renglones(p.els);
+      var rs = p.cortes ? renglonesConCortes(p) : renglones(p.els);
       // el dibujo de un generador no se parte si entra en una hoja: un grafico
       // partido queda con su titulo en una hoja y el dibujo en otra, y ya no se
-      // puede regenerar desde su panel
-      if ((p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil) {
+      // puede regenerar desde su panel. La regla de los signos si se parte,
+      // entre caso y caso (con la cabecera repetida en la hoja nueva)
+      if (!p.cortes && (p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil) {
         rs = [rs.reduce(function (a, q) {
           return { els: a.els.concat(q.els), y0: Math.min(a.y0, q.y0), y1: Math.max(a.y1, q.y1), x1: Math.max(a.x1, q.x1) };
         })];
       }
       rs.forEach(function (q, i) {
-        var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap, p: p, i: i }];
+        var seq = [{ q: q, antes: i ? q.y0 - rs[i - 1].y1 : gap, p: p, i: i, repetir: q.repetir }];
         if (pendiente) { seq = pendiente.concat(seq); pendiente = null; }
         // un enunciado no se corta entre hojas: todos sus renglones esperan al
         // primero de lo que sigue

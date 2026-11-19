@@ -409,13 +409,16 @@
         paso = pasoSiguiente(paso);
       }
     }
+    // sin la numeracion, los extremos van en el renglon de la grilla (pegados a
+    // la recta) y el 0 se escribe solo si no es un extremo (ya lo escribe su color)
+    var ceroEsExtremo = ints.some(function (r) { return r.izq.valor === 0 || r.der.valor === 0; });
     for (var k = Math.ceil(vmin / paso); k * paso <= vmax + 1e-9; k++) {
       var v = k * paso, xv = X(v), cero = Math.abs(v) < 1e-9, m = cero ? 14 : 7;
       agregar(linea(xv, oy - m, [[0, 0], [0, 2 * m]], {}));
-      if (!op.ocultarNumeros || cero) agregar(texto(xv, yGrilla, formatear(v), tamG, fuente, TINTA, "center"));
+      if (!op.ocultarNumeros || (cero && !ceroEsExtremo)) agregar(texto(xv, yGrilla, formatear(v), tamG, fuente, TINTA, "center"));
     }
 
-    var yExtremos = yGrilla + tamG * fuente.lh + 8;
+    var yExtremos = op.ocultarNumeros ? yGrilla - 2 : yGrilla + tamG * fuente.lh + 8;
     var dx = Math.max(4, Math.round(sep * 0.35)), dy = 12, h = sg.h, w = sg.w;
 
     // 1. (cont.) marco de la referencia: cuadro arriba a la derecha
@@ -4186,6 +4189,7 @@
         var opR = Object.assign(copiar(GEN.recta.defecto), {
           filas: filasR, operacion: "interseccion", mostrarUnion: false, mostrarResultado: false, referencia: false,
           ocultarNumeros: true, largo: x1 - xTallo > 760 ? "media" : "corta", tamExtremos: c.op.tamTexto, fuente: c.op.fuente,
+          estilo: c.op.estiloRecta === "lineas" ? "lineas" : "rayado",
         });
         var tmp = [];
         generarRecta(opR, 0, 0, function (e) { tmp.push(e); return e; });
@@ -4321,8 +4325,19 @@
     return { casos: casos, tramos: unir(casos[0].res, casos[1].res) };
   }
 
+  // Puntos de corte de un dibujo (para repartirlo en hojas A4, ver
+  // solucionario.js): a cada elemento de la regla de los signos se le anota si
+  // es de la cabecera ({ cab }) o de que caso es ({ caso }). En un WeakMap, para
+  // que no quede nada guardado en los elementos.
+  var CORTES = typeof WeakMap === "function" ? new WeakMap() : null;
+  function anotarCorte(e, info) { if (CORTES) CORTES.set(e, info); return e; }
+  function corteDe(e) { return CORTES ? CORTES.get(e) : undefined; }
+
   // Dibuja la cabecera (con llave y la regla: → +·+ ∨ −·−), los dos casos y
   // el conjunto solucion. c como en dibujarNodoAbs. Devuelve la y de abajo.
+  // El tallo de la llave va en un tramo por caso, que llega hasta donde
+  // empieza el caso siguiente: asi se puede cortar la hoja entre dos casos
+  // (repitiendo la cabecera arriba de la hoja nueva).
   function dibujarSignos(cab, R, x, y, c) {
     var tam = c.tam, fuente = c.fuente, lh = c.lh;
     var ln = { strokeColor: c.color, strokeWidth: 2 };
@@ -4335,12 +4350,14 @@
     var altoEtq = Math.max.apply(null, mEtq.map(function (m) { return m.ar; })) - lh / 2;
     var xTallo = x + tam * 1.2, xEtq = xTallo + tam * 3, yy = yLlave + lh * 0.7 + altoEtq, medios = [], bloques = [], x1 = x + wCab;
     var wEtq = Math.max.apply(null, mEtq.map(function (m) { return m.w; }));
+    var inicios = []; // donde empieza (arriba) cada caso
     R.casos.forEach(function (cs, ic) {
       var els = [], cc = {};
       for (var k in c) cc[k] = c[k];
       cc.agregar = function (e) { els.push(e); return e; };
       var yk = yy, ym = yk + lh / 2;
       medios.push(ym);
+      inicios.push(yk - Math.max(0, altoEtq) - 2);
       // → +·+ → columna A  ∧  columna B
       cc.agregar(trazo([[xTallo, ym], [xEtq - tam * 0.5, ym]], fl));
       dibujarItsF(etqs[ic], xEtq, ym, c.color, tam, fuente, cc.agregar);
@@ -4371,6 +4388,7 @@
         var opR = Object.assign(copiar(GEN.recta.defecto), {
           filas: filasR, operacion: "interseccion", mostrarUnion: false, mostrarResultado: false, referencia: false,
           ocultarNumeros: true, largo: x1 - xTallo > 760 ? "media" : "corta", tamExtremos: c.op.tamTexto, fuente: c.op.fuente,
+          estilo: c.op.estiloRecta === "lineas" ? "lineas" : "rayado",
         });
         var tmp = [];
         generarRecta(opR, 0, 0, function (e) { tmp.push(e); return e; });
@@ -4380,20 +4398,28 @@
           yy += tam * 0.4 + (b.y1 - b.y0);
         }
       }
-      yy += lh * 1.2 + altoEtq;
+      // el ultimo caso deja menos lugar: abajo sigue el conjunto solucion
+      yy += ic < R.casos.length - 1 ? lh * 1.2 + altoEtq : lh * 0.5;
       bloques.push(els);
     });
     // cabecera: la inecuacion, la llave, → y la regla de los signos
-    dibujarItsF(cabI, x, ym0, TINTA, tam, fuente, c.agregar);
-    c.agregar(trazo([[x - 4, yLlave - pata], [x - 4, yLlave], [x + wCab + 4, yLlave], [x + wCab + 4, yLlave - pata]], ln));
+    var infoCab = { cab: true, xTallo: xTallo, yLlave: yLlave, sep: inicios[0] - yLlave };
+    var agCab = function (e) { return c.agregar(anotarCorte(e, infoCab)); };
+    dibujarItsF(cabI, x, ym0, TINTA, tam, fuente, agCab);
+    agCab(trazo([[x - 4, yLlave - pata], [x - 4, yLlave], [x + wCab + 4, yLlave], [x + wCab + 4, yLlave - pata]], ln));
     var xr = x + wCab + tam * 0.8;
-    c.agregar(trazo([[xr, ym0], [xr + tam * 2.5, ym0]], fl));
-    dibujarItsF(etqs[0].concat([TF("   ∨   ")], etqs[1]), xr + tam * 3, ym0, c.color, tam, fuente, c.agregar);
-    c.agregar(trazo([[xTallo, yLlave], [xTallo, medios[medios.length - 1]]], ln));
-    bloques.forEach(function (els) { els.forEach(c.agregar); });
+    agCab(trazo([[xr, ym0], [xr + tam * 2.5, ym0]], fl));
+    dibujarItsF(etqs[0].concat([TF("   ∨   ")], etqs[1]), xr + tam * 3, ym0, c.color, tam, fuente, agCab);
+    // el tallo, un tramo por caso; despues, cada caso
+    var nC = R.casos.length;
+    bloques.forEach(function (els, ic) {
+      var y0 = ic ? inicios[ic] : yLlave, y1 = ic < nC - 1 ? inicios[ic + 1] : medios[ic];
+      c.agregar(anotarCorte(trazo([[xTallo, y0], [xTallo, y1]], ln), { caso: ic }));
+      els.forEach(function (e) { c.agregar(anotarCorte(e, { caso: ic })); });
+    });
     var R1 = R.casos[0].res, R2 = R.casos[1].res, tU = textoConjuntoAbs(R.tramos), union = textoConjuntoAbs(R1) + " ∪ " + textoConjuntoAbs(R2);
     var sol = "Conjunto solución: " + union + (!R1.length || !R2.length || tU !== union ? " = " + tU : "");
-    c.agregar(texto(x + tam, yy, sol, tam, fuente, TINTA, "left"));
+    c.agregar(anotarCorte(texto(x + tam, yy, sol, tam, fuente, TINTA, "left"), { caso: nC - 1 }));
     return yy + lh;
   }
 
@@ -10016,7 +10042,7 @@
       defecto: {
         filas: [{ texto: "|x + 7/4| = 9/4", color: "#e64980" }],
         modoAbs: "resolver", casos: "noEstricto", renglones: 4, notas: true, recta: true,
-        tamTexto: "L", fuente: "codigo", colorLineas: true,
+        tamTexto: "L", fuente: "codigo", colorLineas: true, estiloRecta: "rayado",
       },
       contenido: ["filas"],
       agregarFila: "+ Ecuación",
@@ -10049,6 +10075,7 @@
           if (op.modoAbs !== "plantilla") {
             ui.chk("Escribir qué se hizo en cada paso", "notas");
             ui.chk("Recta real en cada caso", "recta");
+            ui.seg("Estilo de la recta", "estiloRecta", [["rayado", "Rayado [ ]"], ["lineas", "Líneas ●—○"]]);
           } else {
             ui.campos("Espacio para resolver", [
               { clave: "renglones", prefijo: "", sufijo: "renglones por caso", numero: [0, 20], ancho: 52,
@@ -10068,7 +10095,7 @@
       clave: "pizarra-generador-inecuaciones2",
       defecto: {
         filas: [{ texto: "0 < (5x − 2)(3 − 6x)", color: "#e64980" }],
-        notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo",
+        notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo", estiloRecta: "rayado",
       },
       contenido: ["filas"],
       agregarFila: "+ Inecuación",
@@ -10088,6 +10115,7 @@
         ui.arriba(function () {
           ui.chk("Escribir qué se hizo en cada paso", "notas");
           ui.chk("Recta real en cada caso", "recta");
+          ui.seg("Estilo de la recta", "estiloRecta", [["rayado", "Rayado [ ]"], ["lineas", "Líneas ●—○"]]);
         });
         ui.seg("Texto", "tamTexto", tam);
         ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
@@ -10101,7 +10129,7 @@
       clave: "pizarra-generador-racionales",
       defecto: {
         filas: [{ texto: "(2x + 1)/(3 − 4x) < −2", color: "#e64980" }],
-        notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo",
+        notas: true, recta: true, colorLineas: true, tamTexto: "L", fuente: "codigo", estiloRecta: "rayado",
       },
       contenido: ["filas"],
       agregarFila: "+ Inecuación",
@@ -10121,6 +10149,7 @@
         ui.arriba(function () {
           ui.chk("Escribir qué se hizo en cada paso", "notas");
           ui.chk("Recta real en cada caso", "recta");
+          ui.seg("Estilo de la recta", "estiloRecta", [["rayado", "Rayado [ ]"], ["lineas", "Líneas ●—○"]]);
         });
         ui.seg("Texto", "tamTexto", tam);
         ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
@@ -11909,7 +11938,7 @@
     GEN: GEN, tamTitulo: tamTitulo,
     medir: medir, base: base, texto: texto, trazo: trazo, expandirRaices: expandirRaices,
     dibujarBloqueF: dibujarBloqueF, medirItsF: medirItsF, caja: caja, cajaDe: cajaDe,
-    nuevoId: nuevoId, copiar: copiar,
+    nuevoId: nuevoId, copiar: copiar, corteDe: corteDe,
   };
 
   // ----------------------------------------------------------------- inicio
