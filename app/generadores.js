@@ -589,7 +589,7 @@
   }
 
   // ================================================ GENERADOR: FUNCIONES
-  var ANCHOS = { chico: 500, medio: 800, grande: 1100 };
+  var ANCHOS = { mini: 320, chico: 500, medio: 800, grande: 1100 };
   var GROSORES = { fino: 1.5, normal: 2.5, grueso: 4 };
   var NOMBRES = ["f", "g", "h", "p", "q", "r", "s", "t"];
 
@@ -9577,7 +9577,7 @@
             ], function () { var r = leerRango(op); return r.error || ""; });
           }
         });
-        ui.seg("Tamaño", "tamano", [["chico", "Chico"], ["medio", "Medio"], ["grande", "Grande"]]);
+        ui.seg("Tamaño", "tamano", [["mini", "Mini"], ["chico", "Chico"], ["medio", "Medio"], ["grande", "Grande"]]);
         ui.seg("Números", "tamNumeros", tam);
         ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
         ui.seg("Curvas", "grosor", [["fino", "Finas"], ["normal", "Normales"], ["grueso", "Gruesas"]]);

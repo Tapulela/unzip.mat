@@ -248,7 +248,46 @@
         }
         // aviso propio si la hoja se corta justo antes de este bloque (estilo.continuacion)
         if (p && typeof b.continua === "string") p.continua = b.continua;
+        // alLado: este bloque va a la derecha del bloque anterior
+        if (p && b.alLado) bloqueAlLado(b.alLado, rb);
       });
+    }
+
+    // alLado (en un bloque): la ultima pieza se pone a la derecha de la anterior,
+    // alineada arriba (true) o centrada en vertical ("centro"), y las dos quedan
+    // como una sola pieza entera (no se parten entre hojas). Sirve para un
+    // recuadro al lado de otro, o los resultados al lado de un grafico.
+    function bloqueAlLado(modo, r) {
+      var B = piezas[piezas.length - 1], A = piezas[piezas.length - 2];
+      if (!A || !A.els || !A.els.length || A.esEnunciado) {
+        avisos.push(r + ".alLado: no hay un bloque anterior al que ponerse al lado; va debajo");
+        return;
+      }
+      function limites(p) {
+        var c = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+        p.els.forEach(function (e) {
+          if (esMarcador(e)) return;
+          var k = g.caja(e);
+          c.x0 = Math.min(c.x0, k.x0); c.x1 = Math.max(c.x1, k.x1);
+          c.y0 = Math.min(c.y0, k.y0); c.y1 = Math.max(c.y1, k.y1);
+        });
+        return c;
+      }
+      var ca = limites(A), cb = limites(B);
+      var dx = ca.x1 + tam * 2 - cb.x0;
+      if (cb.x1 + dx > maxW + 1) { avisos.push(r + ".alLado: no entra al lado del bloque anterior; va debajo"); return; }
+      var dy = modo === "centro" ? (ca.y0 + ca.y1) / 2 - (cb.y0 + cb.y1) / 2 : ca.y0 - cb.y0;
+      // cada parte conserva su grupo (el de un grafico, el de su dibujo)
+      [A, B].forEach(function (p) {
+        if (p.gruposListos) return;
+        var gid = p.gid || g.nuevoId();
+        p.els.forEach(function (e) { e.groupIds = [gid]; });
+      });
+      B.els.forEach(function (e) { e.x += dx; e.y += dy; });
+      var junta = { els: A.els.concat(B.els), entero: true, gruposListos: true, unir: A.unir, barras: A.barras };
+      ["inicioEj", "inicioIt", "continua"].forEach(function (k) { if (A[k] !== undefined) junta[k] = A[k]; });
+      if (B.espacio !== undefined) junta.espacio = B.espacio;
+      piezas.splice(piezas.length - 2, 2, junta);
     }
 
     // Consigna (enunciados y su numeracion). Opcional, en `estilo`:
