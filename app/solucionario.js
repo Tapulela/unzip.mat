@@ -213,10 +213,22 @@
         } else if (Array.isArray(b.pasos)) {
           var L = b.pasos.map(function (r, j) { return renglon(r, rb + ".pasos[" + j + "]", errores); });
           if (!L.length) return;
+          // notas: "arriba" escribe la nota de cada paso arriba de su renglon;
+          // si no, van a la derecha y, si el bloque va al lado de otro (alLado) y
+          // no entra, se rehace con las notas arriba (rehacer)
+          var opArriba = {}; for (var kk in opPasos) opArriba[kk] = opPasos[kk];
+          opArriba.notasArriba = true;
           p = nuevaPieza();
           p.entero = !!b.entero; // entero: el desarrollo no se parte entre hojas (si entra en una)
-          try { g.dibujarBloqueF(L, x, 0, opPasos, p.agregar); }
+          try { g.dibujarBloqueF(L, x, 0, b.notas === "arriba" ? opArriba : opPasos, p.agregar); }
           catch (e) { errores.push(rb + ": no se pudo dibujar (" + (e && e.message || e) + ")"); return; }
+          if (b.notas !== "arriba") p.rehacer = (function (L, x, entero) {
+            return function () {
+              var q = nuevaPieza(); q.entero = entero;
+              g.dibujarBloqueF(L, x, 0, opArriba, q.agregar);
+              return q;
+            };
+          })(L, x, p.entero);
           piezas.push(p);
         } else if (b.generador) {
           var gen = g.GEN[b.generador];
@@ -227,12 +239,22 @@
           var gid = g.nuevoId(), tmp = [];
           try { gen.generar(op, x, 0, function (e) { tmp.push(e); return e; }); }
           catch (e) { errores.push(rb + ": el generador «" + b.generador + "» falló (" + (e && e.message || e) + ")"); return; }
+          // columnas: 2 (raíces n-ésimas) solo si entra a lo ancho; si no, en una columna
+          if (+op.columnas === 2 && tmp.length) {
+            var x1t = -Infinity;
+            tmp.forEach(function (e) { x1t = Math.max(x1t, g.caja(e).x1); });
+            if (x1t > maxW + 1) {
+              op.columnas = 1; tmp = [];
+              gen.generar(op, x, 0, function (e) { tmp.push(e); return e; });
+            }
+          }
           // cortes: donde se puede partir el dibujo entre hojas (regla de los signos)
-          var cortes = g.corteDe ? [] : null;
+          var cortes = g.corteDe ? [] : null, unidos = [];
           tmp.forEach(function (e) {
-            var ct = cortes && g.corteDe(e);
-            g.expandirRaices(e).forEach(function (q) { p.els.push(q); if (cortes) cortes.push(ct); });
+            var ct = cortes && g.corteDe(e), un = g.unidoDe && g.unidoDe(e);
+            g.expandirRaices(e).forEach(function (q) { p.els.push(q); if (cortes) cortes.push(ct); if (un) unidos.push(q); });
           });
+          if (unidos.length) p.unidos = unidos;
           if (cortes && cortes.some(Boolean)) p.cortes = cortes;
           // avisos propios del generador (datos inconsistentes o que no alcanzan...)
           if (gen.avisos) gen.avisos(op).forEach(function (a) { avisos.push(rb + ": " + a); });
@@ -242,6 +264,10 @@
           var d = p.els[0].customData.pizarra;
           d.eje = true; d.opciones = g.copiar(op); d.origen = [p.els[0].x - x, p.els[0].y];
           p.gid = gid;
+          // partir: el dibujo se puede repartir entre hojas renglon por renglon
+          // (un calculo largo, como las raices n-esimas, en vez de pasar entero
+          // a la hoja siguiente). La parte de cada hoja ya no se regenera desde el panel
+          if (b.partir) p.partir = true;
           piezas.push(p);
         } else {
           errores.push(rb + ": bloque sin «texto», «pasos», «generador», «seccion», «salto» ni «espacio»");
@@ -275,6 +301,15 @@
       }
       var ca = limites(A), cb = limites(B);
       var dx = ca.x1 + tam * 2 - cb.x0;
+      // un desarrollo que no entra con las notas a la derecha se prueba con las
+      // notas arriba de cada renglon (mas angosto)
+      if (cb.x1 + dx > maxW + 1 && B.rehacer) {
+        var B2 = B.rehacer(), cb2 = limites(B2), dx2 = ca.x1 + tam * 2 - cb2.x0;
+        if (cb2.x1 + dx2 <= maxW + 1) {
+          ["unir", "continua", "espacio"].forEach(function (k) { if (B[k] !== undefined) B2[k] = B[k]; });
+          piezas[piezas.length - 1] = B2; B = B2; cb = cb2; dx = dx2;
+        }
+      }
       if (cb.x1 + dx > maxW + 1) { avisos.push(r + ".alLado: no entra al lado del bloque anterior; va debajo"); return; }
       var dy = modo === "centro" ? (ca.y0 + ca.y1) / 2 - (cb.y0 + cb.y1) / 2 : ca.y0 - cb.y0;
       // cada parte conserva su grupo (el de un grafico, el de su dibujo)
@@ -620,11 +655,25 @@
       var gid = p.gid || g.nuevoId();
       if (!p.gruposListos) p.els.forEach(function (e) { e.groupIds = [gid]; });
       var rs = p.cortes ? renglonesConCortes(p) : renglones(p.els);
+      // en un dibujo que se parte, un titulo no queda solo al pie: va con el renglon siguiente
+      if (p.partir && p.unidos) {
+        var juntos = [];
+        rs.forEach(function (q) {
+          var ant = juntos[juntos.length - 1];
+          if (ant && ant.unir) {
+            juntos[juntos.length - 1] = { els: ant.els.concat(q.els), y0: Math.min(ant.y0, q.y0), y1: Math.max(ant.y1, q.y1),
+              x1: Math.max(ant.x1, q.x1), unir: false };
+            ant = juntos[juntos.length - 1];
+          } else { juntos.push({ els: q.els, y0: q.y0, y1: q.y1, x1: q.x1 }); ant = juntos[juntos.length - 1]; }
+          if (q.els.some(function (e) { return p.unidos.indexOf(e) >= 0; })) ant.unir = true;
+        });
+        rs = juntos;
+      }
       // el dibujo de un generador no se parte si entra en una hoja: un grafico
       // partido queda con su titulo en una hoja y el dibujo en otra, y ya no se
       // puede regenerar desde su panel. La regla de los signos si se parte,
       // entre caso y caso (con la cabecera repetida en la hoja nueva)
-      if (!p.cortes && (p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil) {
+      if (!p.cortes && !p.partir && (p.gid || p.entero) && rs.length > 1 && rs[rs.length - 1].y1 - rs[0].y0 <= altoUtil) {
         rs = [rs.reduce(function (a, q) {
           return { els: a.els.concat(q.els), y0: Math.min(a.y0, q.y0), y1: Math.max(a.y1, q.y1), x1: Math.max(a.x1, q.x1) };
         })];

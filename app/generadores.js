@@ -4332,6 +4332,11 @@
   var CORTES = typeof WeakMap === "function" ? new WeakMap() : null;
   function anotarCorte(e, info) { if (CORTES) CORTES.set(e, info); return e; }
   function corteDe(e) { return CORTES ? CORTES.get(e) : undefined; }
+  // un titulo de un calculo que se puede partir entre hojas: no se separa del
+  // renglon que le sigue (ver «partir» en solucionario.js)
+  var UNIDOS = typeof WeakSet === "function" ? new WeakSet() : null;
+  function unirConSiguiente(e) { if (UNIDOS) UNIDOS.add(e); return e; }
+  function unidoDe(e) { return !!(UNIDOS && UNIDOS.has(e)); }
 
   // Dibuja la cabecera (con llave y la regla: → +·+ ∨ −·−), los dos casos y
   // el conjunto solucion. c como en dibujarNodoAbs. Devuelve la y de abajo.
@@ -4930,9 +4935,13 @@
         ? medirItsF(l.izq, tam, fuente).w + medir(" ", tam, fuente) : medir(l.izq + " ", tam, fuente));
     });
     var wIg = medir("= ", tam, fuente);
+    // notasArriba: la nota de cada paso se escribe en su propio renglon, arriba
+    // del renglon donde se hace (para desarrollos angostos, al lado de un grafico)
+    var arriba = !!(op.notasArriba && op.notas), yNota = [];
     var filas = [], yy = y, der = 0;
     lineas.forEach(function (l, i) {
       if ((l.sub || l.corte) && i) yy += lh * 0.5;
+      if (arriba && l.nota) { yNota[i] = yy; yy += l.nota.length * hN + tam * 0.15; }
       // llaves por encima (`arriba`): lugar para la llave y su texto
       if (l.arriba) yy += tam * 0.55 + hN;
       var xRel = x + grupos[l.grupo].w, xDer = xRel + wIg;
@@ -4943,8 +4952,8 @@
       }
       // la nota del paso siguiente va en este renglon: si es mas alta, se
       // agranda el renglon (mitad arriba y mitad abajo)
-      var sig = lineas[i + 1], hNota = op.notas && sig && sig.nota ? sig.nota.length * hN : 0;
-      if (!i && op.notas && l.nota) hNota = Math.max(hNota, l.nota.length * hN);
+      var sig = lineas[i + 1], hNota = !arriba && op.notas && sig && sig.nota ? sig.nota.length * hN : 0;
+      if (!arriba && !i && op.notas && l.nota) hNota = Math.max(hNota, l.nota.length * hN);
       var extra = Math.max(0, hNota - (m.ar + m.ab)) + (l.caja ? tam * 0.5 : 0);
       filas.push({ mid: yy + extra / 2 + m.ar, xs: xs, xRel: xRel, m: m, fin: xs + m.w });
       if (!l.libre) der = Math.max(der, xs + m.w); // los textos sueltos no corren las notas
@@ -4962,7 +4971,7 @@
     var xNota = der + tam * 1.5, finNota = -Infinity;
     // centrada en el renglon; si pisa la nota anterior, un poco mas abajo
     function notas(n, mid, fin) {
-      if (!op.notas || !n) return;
+      if (!op.notas || !n || arriba) return;
       var y0 = Math.max(mid - n.length * hN / 2, finNota + 2), xn = Math.max(xNota, fin + tam * 1.5);
       n.forEach(function (t, j) {
         agregar(texto(xn, y0 + j * hN, t.t, tamN, fuente, t.color, "left"));
@@ -4972,6 +4981,11 @@
     lineas.forEach(function (l, i) {
       var f = filas[i], col = l.color || TINTA;
       if (!i) notas(l.nota, f.mid, f.fin);
+      if (arriba && l.nota) {
+        // arriba del renglon, desde el «=» (o desde donde empieza lo escrito)
+        var xna = l.rel ? f.xRel : l.izq ? x : f.xs;
+        l.nota.forEach(function (t, j) { agregar(texto(xna, yNota[i] + j * hN, t.t, tamN, fuente, t.color, "left")); });
+      }
       if (Array.isArray(l.izq)) dibujarItsF(l.izq, x, f.mid, col, tam, fuente, agregar);
       else if (l.izq) agregar(texto(x, f.mid - lh / 2, l.izq, tam, fuente, col, "left"));
       if (l.rel) agregar(texto(f.xRel, f.mid - lh / 2, l.rel, tam, fuente, col, "left"));
@@ -7091,12 +7105,13 @@
       var hechos = [], agregar = function (e) { hechos.push(e); return agregarFinal(e); };
       var y0 = y, x = ox + sangria;
       var linea = function (t, col, xx) { agregar(texto(xx === undefined ? x : xx, y, t, tam, fuente, col || TINTA, "left")); y += lh + 4; };
-      var titulo = function (t) { if (op.titulos) { agregar(texto(x, y, t, tamTit, fuente, GUIA, "left")); y += lhTit + 4; } };
+      var titulo = function (t) { if (op.titulos) { agregar(unirConSiguiente(texto(x, y, t, tamTit, fuente, GUIA, "left"))); y += lhTit + 4; } };
       // una cadena de igualdades en un renglon (≈ si el valor es aproximado)
       var cadena = function (c, col) {
         linea(c.izq + c.partes.map(function (p) { return (p.ap ? " ≈ " : " = ") + p.t; }).join(""), col);
       };
       linea("Raíces " + (NOMBRES_RAIZ[n] || "de índice " + n) + " de " + nom + " = " + entradaComplejo(z, H), color, ox);
+      unirConSiguiente(hechos[hechos.length - 1]);
       y += 4;
       // 1) forma polar
       var rho, phi;
@@ -7136,12 +7151,23 @@
       y += lh * 0.4;
       // 5) cada raiz en las formas elegidas
       titulo("Raíces");
-      raices.forEach(function (w) {
+      var textosR = raices.map(function (w) {
         var t = w.nombre + ((H.ex(r) && H.angEx(w.phi)) ? " = " : " ≈ ") + H.polar(r, w.phi);
         if (op.fTrig) t += " = " + H.trig(r, w.phi);
         if (op.fBinomica) t += ((H.ex(w.re) && H.ex(w.im)) ? " = " : " ≈ ") + H.binom(w.re, w.im);
-        linea(t, color);
+        return t;
       });
+      if (+op.columnas === 2 && n > 1) {
+        // en dos columnas: la primera mitad a la izquierda y el resto a la derecha
+        var mitad = Math.ceil(n / 2), wCol = 0;
+        textosR.slice(0, mitad).forEach(function (t) { wCol = Math.max(wCol, medir(t, tam, fuente)); });
+        var x2 = x + wCol + tam * 2;
+        for (var kc = 0; kc < mitad; kc++) {
+          agregar(texto(x, y, textosR[kc], tam, fuente, color || TINTA, "left"));
+          if (textosR[kc + mitad]) agregar(texto(x2, y, textosR[kc + mitad], tam, fuente, color || TINTA, "left"));
+          y += lh + 4;
+        }
+      } else textosR.forEach(function (t) { linea(t, color); });
       // grafico a la derecha de esta fila (o abajo)
       if (op.grafico) {
         var b = cajaDe(hechos), abajo = op.posGrafico === "abajo";
@@ -10260,6 +10286,7 @@
       defecto: {
         filas: [{ nombre: "z", texto: "8i", n: "3", color: COLORES[0] }],
         fBinomica: true, fTrig: false, grafico: true, angulosC: false, cuadriculaC: true, paralelogramo: false,
+        columnas: 1,
         tamGrafico: "medio", posGrafico: "derecha", unidad: "grados", rango: "360", decimales: 2,
         notacionPolar: "corchetes", tamTexto: "M", fuente: "normal", titulos: true,
       },
@@ -10287,6 +10314,7 @@
         ui.arriba(function () {
           ui.chk("Escribir las raíces en forma binómica", "fBinomica");
           ui.chk("Escribir las raíces en forma trigonométrica", "fTrig");
+          ui.seg("Raíces en", "columnas", [[1, "1 columna"], [2, "2 columnas"]]);
           ui.chk("Graficar en el plano complejo", "grafico", true);
           if (op.grafico) {
             ui.chk("Ángulos (arco del argumento)", "angulosC");
@@ -11939,7 +11967,7 @@
     GEN: GEN, tamTitulo: tamTitulo,
     medir: medir, base: base, texto: texto, trazo: trazo, expandirRaices: expandirRaices,
     dibujarBloqueF: dibujarBloqueF, medirItsF: medirItsF, caja: caja, cajaDe: cajaDe,
-    nuevoId: nuevoId, copiar: copiar, corteDe: corteDe,
+    nuevoId: nuevoId, copiar: copiar, corteDe: corteDe, unidoDe: unidoDe,
   };
 
   // ----------------------------------------------------------------- inicio
