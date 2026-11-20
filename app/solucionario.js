@@ -138,6 +138,9 @@
   // texto violeta que no se imprime: un marcador del PDF (ver hojas.js), en el
   // margen izquierdo, centrado en un renglon de alto `altoRenglon` que empieza en y0
   var NIVELES_MARCADOR = 4;
+  // alto máximo de dos secciones lado a lado (alLado): una parte del alto útil,
+  // para que el par, que no se parte entre hojas, entre en una con cabecera y pie
+  var altoPar = Infinity;
   function textoMarcador(titulo, nivel, y0, altoRenglon, fuente) {
     var g = G(), tamM = 10, w = g.medir(titulo, tamM, fuente);
     var e = g.texto(-w - 6, y0 + (altoRenglon - tamM * fuente.lh) / 2, titulo, tamM, fuente, "#6965db", "left");
@@ -211,6 +214,27 @@
       return conPlantilla(pl, rot, enun) || valor;
     }
 
+    // una sección: el título subrayado y sus bloques; devuelve su barra
+    var aMedia = false; // armando una sección a media hoja (alLado)
+    function seccion(b, x, rb, barras) {
+      var p = nuevaPieza(true);
+      var colS = color(b.color, COLOR_EJERCICIO);
+      var yS = escribirParrafo(String(b.seccion), x, 0, maxW - x, tam, fuente, colS, p.agregar);
+      var wS = Math.min(maxW - x, g.medir(String(b.seccion), tam, fuente));
+      p.agregar(g.trazo([[x, yS + 1], [x + wS, yS + 1]], { strokeColor: colS, strokeWidth: 1.5 }));
+      p.barras = barras;
+      p.espacio = lh * 0.3;
+      marcar(p, b.marcador, String(b.seccion), barras.length + 1);
+      piezas.push(p);
+      var hijas = barras.concat([{ x: x + sangSec * 0.35, id: ++nSec, color: colS }]);
+      bloques(b.bloques, x + sangSec, rb, hijas);
+      return hijas[hijas.length - 1];
+    }
+    function anchoDe(p) {
+      var x1 = -Infinity;
+      p.els.forEach(function (e) { if (!(e.customData && e.customData.pizarraMarcador)) x1 = Math.max(x1, g.caja(e).x1); });
+      return x1;
+    }
     function bloques(lista, x, ruta, barras) {
       barras = barras || [];
       var n0 = piezas.length;
@@ -227,24 +251,37 @@
         if (b.espacio) { piezas.push({ hueco: (+b.espacio || 1) * lh }); return; }
         if (b.seccion !== undefined) {
           var desdeS = piezas.length;
-          p = nuevaPieza(true);
-          var colS = color(b.color, COLOR_EJERCICIO);
-          var yS = escribirParrafo(String(b.seccion), x, 0, maxW - x, tam, fuente, colS, p.agregar);
-          var wS = Math.min(maxW - x, g.medir(String(b.seccion), tam, fuente));
-          p.agregar(g.trazo([[x, yS + 1], [x + wS, yS + 1]], { strokeColor: colS, strokeWidth: 1.5 }));
-          p.barras = barras;
-          p.espacio = lh * 0.3;
-          marcar(p, b.marcador, String(b.seccion), barras.length + 1);
-          piezas.push(p);
-          var hijas = barras.concat([{ x: x + sangSec * 0.35, id: ++nSec, color: colS }]);
-          bloques(b.bloques, x + sangSec, rb, hijas);
-          var propia = hijas[hijas.length - 1];
-          // alLado: esta sección va a la derecha de la sección anterior
+          var propia = seccion(b, x, rb, barras);
+          // alLado: esta sección va a la derecha de la sección anterior; si no
+          // entran tal cual, se rearman las dos a media hoja (los textos se cortan
+          // al ancho de la columna y los pasos llevan las notas arriba)
           if (b.alLado) {
             if (!antes) avisos.push(rb + ".alLado: no hay una sección anterior al que ponerse al lado; va debajo");
-            else if (seccionAlLado(antes, desdeS, propia, barras, rb)) desdeS = antes.desde;
+            else {
+              var r1 = seccionAlLado(antes, desdeS, propia, barras, rb, true);
+              if (r1 === true) desdeS = antes.desde;
+              else if (r1 === "ancho") {
+                var nAv = avisos.length, nErr = errores.length, maxW0 = maxW;
+                piezas.splice(antes.desde);
+                maxW = x + (maxW0 - x - tam * 2) / 2; aMedia = true;
+                var dA = piezas.length, barA = seccion(antes.b, x, antes.rb, barras);
+                var dB = piezas.length, barB = seccion(b, x, rb, barras);
+                maxW = maxW0; aMedia = false;
+                avisos.length = nAv; errores.length = nErr; // ya salieron al armarlas la primera vez
+                if (seccionAlLado({ desde: dA, barra: barA }, dB, barB, barras, rb, true) === true) desdeS = dA;
+                else {
+                  // tampoco a media hoja: una debajo de la otra, como estaban
+                  piezas.splice(dA);
+                  seccion(antes.b, x, antes.rb, barras);
+                  desdeS = piezas.length; propia = seccion(b, x, rb, barras);
+                  avisos.length = nAv; errores.length = nErr;
+                  avisos.push(rb + ".alLado: no entra al lado de la sección anterior (ni a media hoja); va debajo");
+                }
+              } else if (r1 === "alto") avisos.push(rb + ".alLado: las dos secciones juntas son muy altas para una hoja; va debajo");
+              else avisos.push(rb + ".alLado: solo se aplica a secciones sin secciones, gráficos que se parten ni saltos adentro; va debajo");
+            }
           }
-          secAnt = { desde: desdeS, barra: propia };
+          secAnt = { desde: desdeS, barra: propia, b: b, rb: rb };
           return;
         }
         if (b.texto !== undefined) {
@@ -274,6 +311,9 @@
               return q;
             };
           })(L, x, p.entero, p.unir);
+          // a media hoja (dos secciones lado a lado): si con las notas a la
+          // derecha no entra en la columna, van arriba de cada renglón
+          if (aMedia && p.rehacer && anchoDe(p) > maxW + 1) p = p.rehacer();
           piezas.push(p);
         } else if (b.generador) {
           var gen = g.GEN[b.generador];
@@ -528,17 +568,28 @@
         els.push(lb);
         x0 = Math.min(x0, sec.barra.x);
       }
-      return ok && els.length ? { els: els, x0: x0, x1: x1, ultimo: ultimo } : null;
+      return ok && els.length ? { els: els, x0: x0, x1: x1, alto: y, ultimo: ultimo } : null;
     }
     // alLado en una sección: la sección (título y contenido) va a la derecha de
     // la sección anterior de la misma lista, alineada arriba, y las dos quedan
     // como una sola pieza entera. Solo secciones sin otras secciones adentro.
-    function seccionAlLado(ant, desdeB, barraB, fuera, r) {
+    // silencioso: no avisa; devuelve true, "tipo" (no se aplica) o "ancho" (no entra)
+    function seccionAlLado(ant, desdeB, barraB, fuera, r, silencioso) {
       var A = apilar(piezas.slice(ant.desde, desdeB), { barra: ant.barra, fuera: fuera });
       var B = apilar(piezas.slice(desdeB), { barra: barraB, fuera: fuera });
-      if (!A || !B) { avisos.push(r + ".alLado: solo se aplica a secciones sin secciones, gráficos que se parten ni saltos adentro; va debajo"); return false; }
+      if (!A || !B) {
+        if (!silencioso) avisos.push(r + ".alLado: solo se aplica a secciones sin secciones, gráficos que se parten ni saltos adentro; va debajo");
+        return "tipo";
+      }
+      if (Math.max(A.alto, B.alto) > altoPar) {
+        if (!silencioso) avisos.push(r + ".alLado: las dos secciones juntas son muy altas para una hoja; va debajo");
+        return "alto";
+      }
       var dx = A.x1 + tam * 2 - B.x0;
-      if (B.x1 + dx > maxW + 1) { avisos.push(r + ".alLado: no entra al lado de la sección anterior; va debajo"); return false; }
+      if (B.x1 + dx > maxW + 1) {
+        if (!silencioso) avisos.push(r + ".alLado: no entra al lado de la sección anterior; va debajo");
+        return "ancho";
+      }
       B.els.forEach(function (e) { if (!esMarcador(e)) e.x += dx; });
       var junta = { els: A.els.concat(B.els), entero: true, gruposListos: true, barras: fuera, unir: B.ultimo && B.ultimo.unir };
       if (B.ultimo && B.ultimo.espacio !== undefined) junta.espacio = B.ultimo.espacio;
@@ -822,6 +873,7 @@
     // ancho util: no depende de la cabecera ni del lado del lomo
     var prueba = h.areaUtil(h.marco(0, 0, n0 + 1), null);
     var maxW = prueba.x1 - prueba.x0;
+    altoPar = (prueba.y1 - prueba.y0) * 0.85;
 
     var hoja = null, vacia = true;
     var listos = [], pendiente = null, gap = 0, avisos = avisosFormato.slice(), r = null, tramos = {};
