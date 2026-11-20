@@ -427,7 +427,8 @@
         p.els.forEach(function (e) { e.groupIds = [gid]; });
       });
       B.els.forEach(function (e) { e.x += dx; e.y += dy; });
-      var junta = { els: A.els.concat(B.els), entero: true, gruposListos: true, unir: A.unir, barras: A.barras };
+      // el par sigue unido a lo de abajo si lo estaba B (el «unir» de A era con B)
+      var junta = { els: A.els.concat(B.els), entero: true, gruposListos: true, unir: B.unir, barras: A.barras };
       ["inicioEj", "inicioIt", "continua"].forEach(function (k) { if (A[k] !== undefined) junta[k] = A[k]; });
       if (B.espacio !== undefined) junta.espacio = B.espacio;
       piezas.splice(piezas.length - 2, 2, junta);
@@ -480,13 +481,16 @@
     function apilar(grupo) {
       var els = [], y = 0, gap = null, x0 = Infinity, x1 = -Infinity, ok = true, ultimo = null;
       grupo.forEach(function (p) {
-        if (p.salto || p.gid || (p.barras && p.barras.length)) { ok = false; return; }
+        // un grafico entero (una tabla, un circuito) puede ir al lado; uno que se
+        // parte entre hojas (partir, cortes de la regla de los signos), no
+        if (p.salto || p.partir || p.cortes || (p.barras && p.barras.length)) { ok = false; return; }
         if (p.hueco !== undefined) { gap = Math.max(gap || 0, p.hueco); return; }
         if (!p.els || !p.els.length) return;
         var cs = p.els.map(function (e) { return g.caja(e); });
         var y0 = Math.min.apply(null, cs.map(function (c) { return c.y0; }));
         var y1 = Math.max.apply(null, cs.map(function (c) { return c.y1; }));
-        var dy = (els.length ? y + (gap || 0) : 0) - y0, gid = p.gruposListos ? null : g.nuevoId();
+        // cada parte en su grupo (la de un grafico, en el de su dibujo)
+        var dy = (els.length ? y + (gap || 0) : 0) - y0, gid = p.gruposListos ? null : p.gid || g.nuevoId();
         p.els.forEach(function (e, k) {
           e.y += dy; els.push(e);
           if (gid) e.groupIds = [gid];
