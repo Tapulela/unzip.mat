@@ -610,8 +610,9 @@
   // hojas, cada una empezando en una hoja nueva. Tipos de parte:
   //   caratula  { titulo, subtitulo, lineas: [...], pie }: centrada, sin cabecera ni pie
   //   texto     { titulo, subtitulo, bloques }: los bloques de siempre
-  //   indice    { titulo, niveles }: los marcadores de las partes que siguen,
-  //             con su numero de pagina; en el PDF, cada renglon es un enlace
+  //   indice    { titulo, niveles, compacto }: los marcadores de las partes que siguen,
+  //             con su numero de pagina; en el PDF, cada renglon es un enlace.
+  //             compacto: true junta mas los renglones (para ahorrar una hoja)
   //   solucion  { solucion: {...solucion@1}, marcadores: { ejercicio, item } }
   // Toda parte puede traer `cabecera` (si no, la del cuadernillo; una solucion
   // usa la suya): vale desde la primera hoja de la parte (hojas.js, «desde»).
@@ -641,11 +642,11 @@
   // Piezas del indice: un renglon por entrada (titulo, linea de puntos y numero
   // de pagina). Los tres elementos son enlaces a su marcador (hojas.js); el
   // numero se completa despues de repartir las hojas.
-  function armarIndice(entradas, maxW, est, r) {
+  function armarIndice(entradas, maxW, est, r, compacto) {
     var g = G(), fuente = r.fuente, tam = r.tam, lh = r.lh, tamS = g.TAMANOS.S;
     entradas.forEach(function (en, i) {
       var n1 = en.nivel <= 1, tamR = n1 ? tam : tamS, colR = n1 ? COLOR_EJERCICIO : g.TINTA;
-      if (n1 && i) r.piezas.push({ hueco: lh * 0.5 });
+      if (n1 && i) r.piezas.push({ hueco: lh * (compacto ? 0.2 : 0.5) });
       var p = nuevaPieza(n1); // un titulo de parte no queda solo al pie
       var fila = g.nuevoId(), xR = Math.max(0, en.nivel - 1) * tam * 1.5;
       var wNum = g.medir("000", tamR, fuente), hueco = tam * 0.6;
@@ -667,7 +668,7 @@
       var num = g.texto(maxW, 0, "0", tamR, fuente, colR, "right");
       num.customData = { pizarraEnlace: { a: en.id, fila: fila, pagina: true } };
       p.els.push(num);
-      p.espacio = n1 ? lh * 0.25 : lh * 0.1;
+      p.espacio = n1 ? lh * (compacto ? 0.05 : 0.25) : compacto ? 0 : lh * 0.1;
       r.piezas.push(p);
     });
   }
@@ -1036,7 +1037,7 @@
         if (j === i || !b.r || b.tipo === "indice" || b.parte.enIndice === false) return;
         marcadoresDePiezas(b.r.piezas).forEach(function (m) { if (m.nivel <= niveles) entradas.push(m); });
       });
-      armarIndice(entradas, maxW, sol.estilo || {}, a.r);
+      armarIndice(entradas, maxW, sol.estilo || {}, a.r, a.parte.compacto === true);
       if (!entradas.length) avisos.push("partes[" + i + "]: el índice no tiene entradas (las partes no tienen marcadores)");
     });
 
