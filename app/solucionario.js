@@ -218,12 +218,15 @@
       for (var k = n0; k < piezas.length; k++) if (piezas[k].els && !piezas[k].barras) piezas[k].barras = barras;
     }
     function bloquesSin(lista, x, ruta, barras) {
+      var secAnt = null; // la sección anterior de esta lista (para alLado)
       (lista || []).forEach(function (b, i) {
         var rb = ruta + ".bloques[" + i + "]", p;
         if (typeof b === "string") b = { texto: b };
+        var antes = secAnt; secAnt = null;
         if (b.salto) { piezas.push({ salto: true }); return; }
         if (b.espacio) { piezas.push({ hueco: (+b.espacio || 1) * lh }); return; }
         if (b.seccion !== undefined) {
+          var desdeS = piezas.length;
           p = nuevaPieza(true);
           var colS = color(b.color, COLOR_EJERCICIO);
           var yS = escribirParrafo(String(b.seccion), x, 0, maxW - x, tam, fuente, colS, p.agregar);
@@ -235,6 +238,13 @@
           piezas.push(p);
           var hijas = barras.concat([{ x: x + sangSec * 0.35, id: ++nSec, color: colS }]);
           bloques(b.bloques, x + sangSec, rb, hijas);
+          var propia = hijas[hijas.length - 1];
+          // alLado: esta sección va a la derecha de la sección anterior
+          if (b.alLado) {
+            if (!antes) avisos.push(rb + ".alLado: no hay una sección anterior al que ponerse al lado; va debajo");
+            else if (seccionAlLado(antes, desdeS, propia, barras, rb)) desdeS = antes.desde;
+          }
+          secAnt = { desde: desdeS, barra: propia };
           return;
         }
         if (b.texto !== undefined) {
@@ -478,12 +488,23 @@
     // alLado: las piezas de un ítem se ponen a la derecha de las del ítem anterior,
     // alineadas arriba, como una sola pieza entera (si entran a lo ancho)
     function esMarcador(e) { return !!(e.customData && e.customData.pizarraMarcador); }
-    function apilar(grupo) {
+    // sec (una sección con alLado): { barra, fuera } — las piezas pueden estar
+    // dentro de las secciones de afuera (fuera) y de la propia (barra), cuya
+    // línea vertical se dibuja acá, porque la pieza junta ya no la lleva
+    function apilar(grupo, sec) {
       var els = [], y = 0, gap = null, x0 = Infinity, x1 = -Infinity, ok = true, ultimo = null;
+      var bY0 = Infinity, bY1 = -Infinity;
+      function barrasPermitidas(p) {
+        if (!p.barras || !p.barras.length) return true;
+        if (!sec) return false;
+        return p.barras.every(function (b) {
+          return b === sec.barra || sec.fuera.indexOf(b) >= 0;
+        });
+      }
       grupo.forEach(function (p) {
         // un grafico entero (una tabla, un circuito) puede ir al lado; uno que se
         // parte entre hojas (partir, cortes de la regla de los signos), no
-        if (p.salto || p.partir || p.cortes || (p.barras && p.barras.length)) { ok = false; return; }
+        if (p.salto || p.partir || p.cortes || !barrasPermitidas(p)) { ok = false; return; }
         if (p.hueco !== undefined) { gap = Math.max(gap || 0, p.hueco); return; }
         if (!p.els || !p.els.length) return;
         var cs = p.els.map(function (e) { return g.caja(e); });
@@ -496,10 +517,34 @@
           if (gid) e.groupIds = [gid];
           if (!esMarcador(e)) { x0 = Math.min(x0, cs[k].x0); x1 = Math.max(x1, cs[k].x1); }
         });
+        if (sec && p.barras && p.barras.indexOf(sec.barra) >= 0) { bY0 = Math.min(bY0, y0 + dy); bY1 = Math.max(bY1, y1 + dy); }
         y = y1 + dy; ultimo = p;
         gap = p.espacio !== undefined ? p.espacio : lh * 0.6;
       });
+      if (ok && sec && bY1 > bY0) {
+        // la línea de la sección, como la dibuja la maqueta (un poco arriba del primer renglón)
+        var lb = g.trazo([[sec.barra.x, bY0 - lh * 0.15], [sec.barra.x, bY1]], { strokeColor: sec.barra.color, strokeWidth: 1.5 });
+        lb.groupIds = [g.nuevoId()];
+        els.push(lb);
+        x0 = Math.min(x0, sec.barra.x);
+      }
       return ok && els.length ? { els: els, x0: x0, x1: x1, ultimo: ultimo } : null;
+    }
+    // alLado en una sección: la sección (título y contenido) va a la derecha de
+    // la sección anterior de la misma lista, alineada arriba, y las dos quedan
+    // como una sola pieza entera. Solo secciones sin otras secciones adentro.
+    function seccionAlLado(ant, desdeB, barraB, fuera, r) {
+      var A = apilar(piezas.slice(ant.desde, desdeB), { barra: ant.barra, fuera: fuera });
+      var B = apilar(piezas.slice(desdeB), { barra: barraB, fuera: fuera });
+      if (!A || !B) { avisos.push(r + ".alLado: solo se aplica a secciones sin secciones, gráficos que se parten ni saltos adentro; va debajo"); return false; }
+      var dx = A.x1 + tam * 2 - B.x0;
+      if (B.x1 + dx > maxW + 1) { avisos.push(r + ".alLado: no entra al lado de la sección anterior; va debajo"); return false; }
+      B.els.forEach(function (e) { if (!esMarcador(e)) e.x += dx; });
+      var junta = { els: A.els.concat(B.els), entero: true, gruposListos: true, barras: fuera, unir: B.ultimo && B.ultimo.unir };
+      if (B.ultimo && B.ultimo.espacio !== undefined) junta.espacio = B.ultimo.espacio;
+      ["inicioEj", "inicioIt", "continua"].forEach(function (k) { if (piezas[ant.desde][k] !== undefined) junta[k] = piezas[ant.desde][k]; });
+      piezas.splice(ant.desde, piezas.length - ant.desde, junta);
+      return true;
     }
     function ponerAlLado(desdeA, hasta, desdeB, r) {
       var A = apilar(piezas.slice(desdeA, hasta)), B = apilar(piezas.slice(desdeB));
