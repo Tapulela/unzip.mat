@@ -98,6 +98,7 @@ RECTA REAL CON INTERVALOS (prototipo)
       Algebra de Boole (Unidad 3):      Funciones booleanas, Simplificacion
                                         paso a paso
       Sistemas numericos (Unidad 5):    Recta real, Combinatoria, MCM y MCD,
+                                        Identidad de Bezout,
                                         Expresiones con valor absoluto,
                                         Factorizacion de polinomios,
                                         Inecuaciones de segundo grado,
@@ -582,6 +583,22 @@ MCM Y MCD (prototipo)
   regla; titulo; resultado en color y recuadrado; tamaño de texto y fuente.
 - Igual que los otros: "Ejemplo" (tres listas), "Restablecer", y si
   seleccionas un calculo ya insertado se edita en vivo.
+
+IDENTIDAD DE BEZOUT (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Identidad de Bezout".
+- Cada fila son dos numeros naturales separados por coma: 252, 198
+- Algoritmo de Euclides (252 = 198 · 1 + 54 ...) hasta resto 0; el mcd es el
+  ultimo resto distinto de 0, recuadrado.
+- Euclides y sustitucion hacia atras: despeja los restos y los reemplaza de
+  abajo hacia arriba, un paso por renglon (reemplazar en azul, distributiva
+  en violeta, agrupar en verde), con la nota de cada paso a la derecha del
+  renglon anterior. Termina en mcd(252, 198) = 252 · 4 + 198 · (−5).
+- Tabla de Euclides extendido: columnas q, r, s, t; cada fila es la de dos
+  mas arriba menos q por la de arriba. La fila del mcd va en color.
+- Opciones: metodos, despejar todos los restos, verificar (con el check
+  dibujado), notas, nombre de cada metodo, tamaño de texto y fuente.
+- Igual que los otros: "Ejemplos", "Restablecer", y si seleccionas un
+  desarrollo ya insertado se edita en vivo.
 
 EXPRESIONES CON VALOR ABSOLUTO (prototipo)
 - En el menu del boton, en "Sistemas numericos", elegi "Expresiones con

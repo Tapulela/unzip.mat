@@ -115,7 +115,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (Tablas de verdad, Simplificación paso a paso, Razonamiento deductivo); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Diagramas de Venn, Relaciones
   binarias, Estructuras algebraicas, Simplificación paso a paso); «Álgebra de
   Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, MCM y
-  MCD, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales, Inducción matemática); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
+  MCD, Identidad de Bézout, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales, Inducción matemática); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
   (Unidad 7)» (Formas y operaciones, Raíces n-ésimas). Al elegir uno se abre el panel
   con ese generador. Uno de ellos genera una recta real con intervalos (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
   (flecha, marcas, rayado, corchetes/paréntesis y textos), así que se sincroniza
@@ -231,6 +231,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   descompone en factores primos con la tabla de divisiones sucesivas, escribe
   cada factorización y calcula el MCD (comunes con el menor exponente) y el
   MCM (comunes y no comunes con el mayor exponente).
+  **Identidad de Bézout** toma dos números naturales por fila (`252, 198`), hace el
+  algoritmo de Euclides y escribe el mcd como `a · s + b · t`: despejando los restos y
+  sustituyendo hacia atrás (un paso por renglón: reemplazar, distributiva, agrupar, con la
+  nota de cada paso en su color) y/o con la tabla del algoritmo extendido (q, r, s, t), con
+  verificación.
   **Inducción matemática** toma por fila el término general de una sucesión
   (`5^(n − 1)`, `2n − 1`, `1/(n(n + 1))`; potencias con `^`, `²` o `ⁿ`, factorial
   con `!`) y, en «Suma», la fórmula de la suma de los n primeros términos

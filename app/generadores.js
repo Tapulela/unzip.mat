@@ -6373,6 +6373,218 @@
     }, { y: oy });
   }
 
+  // ================================================ IDENTIDAD DE BEZOUT
+  // Cada fila son dos numeros naturales: "252, 198". Con el algoritmo de
+  // Euclides se calcula el mcd y se lo escribe como combinacion lineal
+  //   mcd(a, b) = a · s + b · t
+  // por dos metodos: despejando los restos y sustituyendo hacia atras (un
+  // paso por renglon: reemplazar, distributiva, agrupar) y/o con la tabla del
+  // algoritmo de Euclides extendido (columnas q, r, s, t).
+  var MAX_BEZOUT = 1e6;
+  var COLOR_REEMPLAZO = "#1971c2";
+
+  function leerBezout(txt) {
+    var t = String(txt || "").trim();
+    if (!t) return { error: "Escribí dos números separados por coma, por ejemplo: 252, 198" };
+    var partes = t.split(/[,;\s]+/).filter(function (x) { return x; }), nums = [];
+    for (var i = 0; i < partes.length; i++) {
+      var p = partes[i].replace(/\./g, "");
+      if (!/^\d+$/.test(p)) return { error: "«" + partes[i] + "» no es un número natural" };
+      var n = parseInt(p, 10);
+      if (n < 1) return { error: "Los números tienen que ser mayores que 0" };
+      if (n > MAX_BEZOUT) return { error: "Hasta " + miles(MAX_BEZOUT) + " como máximo" };
+      nums.push(n);
+    }
+    if (nums.length !== 2) return { error: "Hacen falta exactamente dos números" };
+    return { a: nums[0], b: nums[1] };
+  }
+
+  function fmtB(n) { return (n < 0 ? "−" : "") + miles(Math.abs(n)); }
+  function parB(n) { return n < 0 ? "(" + fmtB(n) + ")" : fmtB(n); }
+
+  // divisiones sucesivas: [{ D, d, q, r }] (D = d · q + r), con A >= B
+  function euclidesB(A, B) {
+    var divs = [];
+    while (B) { var q = Math.floor(A / B), r = A - q * B; divs.push({ D: A, d: B, q: q, r: r }); A = B; B = r; }
+    return divs;
+  }
+
+  // datos comunes de los dos metodos
+  function prepararBezout(a, b) {
+    var A = Math.max(a, b), B = Math.min(a, b), divs = euclidesB(A, B);
+    return { a: a, b: b, A: A, B: B, divs: divs, d: divs[divs.length - 1].d, nom: "mcd(" + miles(a) + ", " + miles(b) + ")" };
+  }
+
+  // renglones de las divisiones y el mcd
+  function euclidesLineasB(E, color, L) {
+    E.divs.forEach(function (v, i) {
+      // una sola nota (la del primer renglon): con una por division se amontonan
+      var nota = i ? null : E.divs.length > 1 ? ["Dividir el mayor por el menor y después", "cada divisor por su resto, hasta resto 0"]
+        : "Dividir el mayor por el menor";
+      L.push(LnF(miles(v.D), "=", miles(v.d) + " · " + miles(v.q) + " + " + miles(v.r), nota && notaF(nota, TINTA)));
+    });
+    var lm = LnF(E.nom, "=", TF(miles(E.d), color), notaF(E.divs.length > 1
+      ? ["El resto dio 0: el mcd es", "el último resto distinto de 0"] : ["El resto dio 0: el mcd es", "el divisor, " + miles(E.d)], TINTA));
+    lm.corte = true;
+    lm.caja = color;
+    L.push(lm);
+  }
+
+  // mcd = a · s + b · t (recuadrado) y la verificacion
+  function finalB(E, s, t, color, op, L, nota) {
+    var l = LnF(E.nom, "=", [miles(E.a) + " · ", TF(parB(s), color), " + " + miles(E.b) + " · ", TF(parB(t), color)],
+      notaF(nota, TINTA));
+    l.corte = true;
+    l.caja = color;
+    L.push(l);
+    L.push(libreF(LnF(null, null, [TF("s = " + fmtB(s) + "     t = " + fmtB(t), color)])));
+    if (op.verificar) {
+      var ps = E.a * s, pt = E.b * t;
+      var v = LnF(miles(E.a) + " · " + parB(s) + " + " + miles(E.b) + " · " + parB(t), "=",
+        fmtB(ps) + (pt < 0 ? " − " : " + ") + miles(Math.abs(pt)), notaF("Verificar", TINTA));
+      v.corte = true;
+      L.push(v);
+      L.push(LnF(null, "=", [fmtB(ps + pt), MarcaF(ps + pt === E.d)]));
+    }
+  }
+
+  // ts: [{ n, c, col, par: { D, d, q } }] -> items «54 · 1 − (198 − 54 · 3) · 1»
+  function terminosB(ts) {
+    var its = [];
+    ts.forEach(function (tm, k) {
+      var signo = tm.c < 0 ? (k ? " − " : "−") : k ? " + " : "";
+      if (tm.par) {
+        if (signo) its.push(TF(signo));
+        its.push(TF("(" + miles(tm.par.D) + " − " + miles(tm.par.d) + " · " + miles(tm.par.q) + ")", COLOR_REEMPLAZO));
+        its.push(TF(" · " + miles(Math.abs(tm.c))));
+      } else {
+        its.push(TF(signo + miles(tm.n) + " · " + miles(Math.abs(tm.c)), tm.col));
+      }
+    });
+    return its;
+  }
+  // «1 + 3 = 4», «−4 − 1 = −5»
+  function sumaCoefB(cs) {
+    return cs.map(function (c, k) { return k ? (c < 0 ? " − " : " + ") + miles(Math.abs(c)) : fmtB(c); }).join("")
+      + " = " + fmtB(cs.reduce(function (x, y) { return x + y; }, 0));
+  }
+
+  function sustitucionB(E, color, op) {
+    var L = [], divs = E.divs, n = divs.length, d = E.d;
+    euclidesLineasB(E, color, L);
+    if (n === 1) {
+      // el menor divide al mayor: mcd = menor = mayor · 0 + menor · 1
+      var aMenor = E.a === E.B;
+      finalB(E, aMenor ? 1 : 0, aMenor ? 0 : 1, color, op, L, ["El mcd es uno de los dos números:", "coeficientes 1 y 0"]);
+      return L;
+    }
+    // despejes de los restos distintos de 0
+    if (op.despejes) {
+      divs.slice(0, n - 1).forEach(function (v, i) {
+        var l = LnF(miles(v.r), "=", miles(v.D) + " − " + miles(v.d) + " · " + miles(v.q),
+          i ? null : notaF("Despejar los restos distintos de 0", TINTA));
+        if (!i) l.corte = true;
+        L.push(l);
+      });
+    }
+    // el ultimo despeje, con todos los coeficientes
+    var u = divs[n - 2], ts = [{ n: u.D, c: 1 }, { n: u.d, c: -u.q }];
+    var l0 = LnF(miles(d), "=", terminosB(ts), notaF(op.despejes ? ["Partir del último despeje", "(con todos los coeficientes)"]
+      : ["Despejar el último resto distinto de 0", "(con todos los coeficientes)"], TINTA));
+    l0.corte = true;
+    L.push(l0);
+    var previa = l0, previaTs = ts;
+    for (var k = n - 3; k >= 0; k--) {
+      var v = divs[k], j = -1;
+      ts.forEach(function (tm, i) { if (tm.n === v.r) j = i; });
+      // el termino que se reemplaza va en el color del reemplazo en el renglon anterior
+      previa.der = terminosB(previaTs.map(function (tm, i) { return { n: tm.n, c: tm.c, col: i === j ? COLOR_REEMPLAZO : tm.col }; }));
+      var c = ts[j].c;
+      // 1) reemplazar
+      var rem = ts.map(function (tm, i) { return i === j ? { n: tm.n, c: c, par: v } : { n: tm.n, c: tm.c }; });
+      L.push(LnF(miles(d), "=", terminosB(rem),
+        notaF("Reemplazar " + miles(v.r) + " = " + miles(v.D) + " − " + miles(v.d) + " · " + miles(v.q), COLOR_REEMPLAZO)));
+      // 2) distributiva
+      var dist = [];
+      ts.forEach(function (tm, i) {
+        if (i === j) { dist.push({ n: v.D, c: c, col: COLOR_PRODUCTO }); dist.push({ n: v.d, c: -c * v.q, col: COLOR_PRODUCTO }); }
+        else dist.push({ n: tm.n, c: tm.c });
+      });
+      L.push(LnF(miles(d), "=", terminosB(dist), notaF("Aplicar la distributiva", COLOR_PRODUCTO)));
+      // 3) agrupar los terminos del mismo numero (queda donde aparece primero)
+      var agr = [], cs = [];
+      dist.forEach(function (tm) {
+        if (tm.n === v.d) cs.push(tm.c);
+        var ya = agr.filter(function (x) { return x.n === tm.n; })[0];
+        if (ya) ya.c += tm.c; else agr.push({ n: tm.n, c: tm.c, col: tm.n === v.d ? COLOR_SUMA : null });
+      });
+      ts = agr.map(function (tm) { return { n: tm.n, c: tm.c }; });
+      previaTs = agr;
+      previa =LnF(miles(d), "=", terminosB(agr), notaF("Agrupar los " + miles(v.d) + ": " + sumaCoefB(cs), COLOR_SUMA));
+      L.push(previa);
+    }
+    var coef = function (num) { return ts.filter(function (tm) { return tm.n === num; })[0].c; };
+    var aMayor = E.a === E.A;
+    finalB(E, coef(E.a), coef(E.b), color, op, L, aMayor ? "Escribir como a · s + b · t"
+      : ["Ordenar como a · s + b · t", "(a = " + miles(E.a) + ", b = " + miles(E.b) + ")"]);
+    return L;
+  }
+
+  function tablaB(E, color, op) {
+    var L = [], aPrimero = E.a === E.A;
+    var filas = [[TF("q"), TF("r"), TF("s"), TF("t")]];
+    // primeras dos filas: el mayor y el menor, con s y t de a y de b
+    var r0 = { r: E.A, s: aPrimero ? 1 : 0, t: aPrimero ? 0 : 1 }, r1 = { r: E.B, s: aPrimero ? 0 : 1, t: aPrimero ? 1 : 0 };
+    var unaDiv = E.divs.length === 1, col1 = unaDiv ? color : null;
+    filas.push([TF(""), TF(miles(r0.r)), TF(fmtB(r0.s)), TF(fmtB(r0.t))]);
+    filas.push([TF(""), TF(miles(r1.r), col1), TF(fmtB(r1.s), col1), TF(fmtB(r1.t), col1)]);
+    var sF = r1.s, tF = r1.t;
+    E.divs.forEach(function (v) {
+      var r2 = { r: r0.r - v.q * r1.r, s: r0.s - v.q * r1.s, t: r0.t - v.q * r1.t };
+      var col = r2.r === E.d ? color : null;
+      if (col) { sF = r2.s; tF = r2.t; }
+      filas.push([TF(miles(v.q)), TF(miles(r2.r), col), TF(fmtB(r2.s), col), TF(fmtB(r2.t), col)]);
+      r0 = r1; r1 = r2;
+    });
+    var tb = TablaF(filas);
+    tb.lineas = true;
+    tb.columnasFijas = 2;
+    L.push(LnF(null, null, [tb], notaF(["Primeras filas: " + miles(E.A) + " y " + miles(E.B) + " con 1 y 0",
+      "Cada fila nueva: la de dos más arriba", "menos q por la de arriba", "(q: cociente entre los dos r de arriba)",
+      "Se termina cuando r da 0"], TINTA)));
+    var lm = LnF(E.nom, "=", TF(miles(E.d), color), notaF(["El último r distinto de 0", "es el mcd"], TINTA));
+    lm.corte = true;
+    lm.caja = color;
+    L.push(lm);
+    finalB(E, sF, tF, color, op, L, ["En su fila están s y t:", "s acompaña a " + miles(E.a) + " y t a " + miles(E.b)]);
+    return L;
+  }
+
+  var METODOS_B = [
+    { clave: "mSustitucion", titulo: "Euclides y sustitución hacia atrás", hacer: sustitucionB },
+    { clave: "mTabla", titulo: "Algoritmo de Euclides extendido", hacer: tablaB },
+  ];
+
+  function generarBezout(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh;
+    var y = oy;
+    op.filas.forEach(function (fila) {
+      var l = leerBezout(fila.texto);
+      if (l.error) return;
+      var E = prepararBezout(l.a, l.b);
+      METODOS_B.forEach(function (m) {
+        if (!op[m.clave]) return;
+        if (op.titulos) {
+          var ts = tamTitulo(tam);
+          agregar(texto(ox, y, m.titulo + ": " + miles(l.a) + " y " + miles(l.b), ts, fuente, fila.color, "left"));
+          y += ts * fuente.lh + lh * 0.4;
+        }
+        y = dibujarBloqueF(m.hacer(E, fila.color, op), ox + (op.titulos ? tam : 0), y, op, agregar) + lh * 1.3;
+      });
+      y += lh;
+    });
+  }
+
   // ================================================= NUMEROS COMPLEJOS
   // Cada fila es un numero complejo con nombre (z₁, z₂...) escrito en
   // cualquier forma, o una operacion entre filas de arriba (z₁ · z₂):
@@ -10062,6 +10274,47 @@
       },
     },
 
+    bezout: {
+      titulo: "Identidad de Bézout",
+      dibujo: "desarrollo", femenino: false,
+      clave: "pizarra-generador-bezout",
+      defecto: {
+        filas: [{ texto: "252, 198", color: COLORES[0] }],
+        mSustitucion: true, mTabla: false, despejes: true, verificar: true, notas: true, titulos: true,
+        tamTexto: "L", fuente: "codigo",
+      },
+      contenido: ["filas"],
+      agregarFila: "+ Números",
+      placeholder: "Ej: 252, 198",
+      simbolos: [],
+      ayuda: "Cada fila son dos números naturales separados por coma: 252, 198. Con el algoritmo de Euclides " +
+        "se calcula el mcd y se lo escribe como mcd(a, b) = a · s + b · t. Por sustitución: se despejan los restos " +
+        "y se reemplazan de abajo hacia arriba, un paso por renglón (reemplazar, distributiva, agrupar), con lo que " +
+        "se hace anotado en el renglón anterior. Con la tabla: el algoritmo de Euclides extendido (columnas q, r, s, t). " +
+        "Seleccioná un desarrollo ya insertado para editarlo.",
+      erroresFila: function (t, op) {
+        var l = leerBezout(t);
+        if (l.error) return [l.error];
+        return op && !op.mSustitucion && !op.mTabla ? ["Marcá al menos un método"] : [];
+      },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarBezout,
+      opciones: function (ui, op) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.grupo("Métodos", ["mSustitucion", "mTabla"]);
+          ui.chk("Euclides y sustitución hacia atrás", "mSustitucion");
+          ui.chk("Tabla de Euclides extendido", "mTabla", true);
+          if (op.mSustitucion) ui.chk("Despejar todos los restos antes de sustituir", "despejes");
+          ui.chk("Verificar el resultado", "verificar");
+          ui.chk("Escribir qué se hace en cada paso", "notas");
+        });
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+        ui.chk("Nombre de cada método", "titulos");
+      },
+    },
+
     valorAbsoluto: {
       titulo: "Expresiones con valor absoluto",
       dibujo: "plantilla", femenino: true,
@@ -10667,6 +10920,12 @@
       ej("Coprimos", "8, 15 y 14, 25: el MCD es 1", { filas: filasEj(["8, 15", "14, 25"]) }),
       ej("Muchos números", "12, 18, 24, 36, 48", { filas: filasEj(["12, 18, 24, 36, 48"]) }),
     ],
+    bezout: [
+      ej("Clásico", "252 y 198: mcd 18", { filas: filasEj(["252, 198"]) }),
+      ej("Coprimos", "35 y 12: mcd 1", { filas: filasEj(["35, 12"]) }),
+      ej("Más pasos", "1001 y 777", { filas: filasEj(["1001, 777"]) }),
+      ej("Los dos métodos", "240 y 46, por sustitución y con la tabla", { filas: filasEj(["240, 46"]), mTabla: true }),
+    ],
     valorAbsoluto: [
       ej("Ecuación", "|x + 7/4| = 9/4", { filas: filasEj(["|x + 7/4| = 9/4"], ROSA) }),
       ej("Inecuaciones", "|1 − x| + 7 ≥ 2 y |2x − 3| < 5", { filas: filasEj(["|1 − x| + 7 ≥ 2", "|2x − 3| < 5"], ROSA) }),
@@ -10793,7 +11052,7 @@
   Object.keys(EJEMPLOS).forEach(function (k) { GEN[k].ejemplos = EJEMPLOS[k]; });
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "venn", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
+  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "venn", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "bezout", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
   // nombre e icono (un simbolo) de cada generador en el menu desplegable
   // panel: titulo del panel cuando no es el nombre del item (los items solos
   // en su seccion no repiten el nombre de la seccion)
@@ -10808,6 +11067,7 @@
     estructuras: { nombre: "Estructuras algebraicas", icono: "∘" },
     combinatoria: { nombre: "Combinatoria", icono: "n!" },
     mcm: { nombre: "MCM y MCD", icono: "÷" },
+    bezout: { nombre: "Identidad de Bézout", icono: "as+bt" },
     valorAbsoluto: { nombre: "Expresiones con valor absoluto", icono: "|x|" },
     factorizacion: { nombre: "Factorización de polinomios", icono: "x²" },
     inecuaciones2: { nombre: "Inecuaciones de segundo grado", icono: "+·−" },
@@ -10831,7 +11091,7 @@
     { grupo: "Lógica proposicional", unidad: 1, items: ["tabla", "simpLogica", "razonamientos"] },
     { grupo: "Teoría de conjuntos", unidad: 2, items: ["conjuntos", "venn", "relaciones", "estructuras", "simpConjuntos"] },
     { grupo: "Álgebra de Boole", unidad: 3, items: ["boole", "simpBoole"] },
-    { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion"] },
+    { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "bezout", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
     { grupo: "Números complejos", unidad: 7, items: ["complejos", "raicesC"] },
     { grupo: "Otros", icono: "⋯", items: ["plantillas", "hojas", "solucion"] },
@@ -11922,7 +12182,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, diagramas de Venn, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
+      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, diagramas de Venn, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, identidad de Bézout, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.setAttribute("aria-haspopup", "menu");
