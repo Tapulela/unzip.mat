@@ -414,12 +414,13 @@ CONJUNTOS (prototipo)
   elemento escrito por extension no esta en U, se avisa y se ignora.
 - Con "Aplicar una funcion a los elementos" (apagado por defecto) aparece
   debajo de cada fila "Elementos": la funcion que se aplica a cada
-  elemento (vacio = el elemento tal cual, la identidad). Se escribe la
-  expresion (2*x) o la funcion entera (n => 2*n + 1):
-      Elementos 2*x,  fila vacia          A = {2x / x ∈ ℕ} = {2, 4, 6, …}
-      Elementos x**2, fila x => x <= 6    B = {x² / x ∈ ℕ ∧ x ≤ 6}
-      Elementos 10*x, fila {1, 2, 3}      C = {10x / x ∈ {1, 2, 3}}
-  La variable es la de la condicion (x si no hay). El resultado puede tener
+  elemento (vacio = el elemento tal cual, la identidad). Es una funcion
+  anonima de JavaScript, como la de la condicion:
+      Elementos x => 2*x,  fila vacia          A = {2x / x ∈ ℕ} = {2, 4, 6, …}
+      Elementos x => x**2, fila x => x <= 6    B = {x² / x ∈ ℕ ∧ x ≤ 6}
+      Elementos x => 10*x, fila {1, 2, 3}      C = {10x / x ∈ {1, 2, 3}}
+  En la pizarra se escribe con la variable de la condicion (si no hay
+  condicion, con la de la funcion). El resultado puede tener
   elementos fuera de U (x/2 en ℕ); en ese caso no tiene complemento. En ℝ
   solo se puede aplicar a conjuntos finitos (los infinitos no se recorren).
 - Cada conjunto se escribe por extension, entre llaves y separado por comas:

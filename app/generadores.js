@@ -2776,10 +2776,18 @@
         r.avisos = ctx.avisos;
       }
       if (img) {
-        // la variable es la de la condicion (o x): 2*x  ->  x => 2*x
-        var v = r.tipo === "comprension" ? textoCondicion(src).v : "x";
-        if (v.charAt(0) === "(") v = "x";
-        r.imagen = varImg || /^function\b/.test(img) ? img : v + " => " + img;
+        // una funcion anonima de una variable, como la condicion: x => 2*x
+        if (!varImg) {
+          var msj = /=>/.test(img) ? "La función de los elementos recibe una sola variable: x => 2*x"
+            : "Escribí una función anónima, por ejemplo x => 2*x";
+          r.erroresImagen = [msj];
+          r.errores.push(msj);
+          return;
+        }
+        // en la pizarra va con la variable de la condicion (o la propia)
+        var v = r.tipo === "comprension" ? textoCondicion(src).v : varImg[1];
+        if (v.charAt(0) === "(") v = varImg[1];
+        r.imagen = img;
         r.varImagen = v;
         r.previos = r.previos || Object.keys(conj);
         var im = aplicarImagen(S, U, r.imagen, conj);
@@ -2968,7 +2976,7 @@
         if (f.tipo === "comprension") {
           var tcI = textoCondicion(f.codigo, f.previos);
           donde = f.varImagen + " ∈ " + U.simbolo + (tcI.cond === "true" ? "" : " ∧ " + tcI.cond);
-        } else donde = "x ∈ " + imprimirConjunto(f.arbol, false);
+        } else donde = f.varImagen + " ∈ " + imprimirConjunto(f.arbol, false);
         def = "{" + ti + " / " + donde + "}";
         comp = function () { return def; };
       } else if (f.tipo === "comprension") {
@@ -10101,8 +10109,8 @@
       extrasFila: [
         // funcion que se aplica a cada elemento: {2x / x ∈ ℕ}
         { clave: "imagen", etiqueta: "Elementos",
-          placeholder: "Ej: 2*x   (vacío = x)",
-          titulo: "Función que se aplica a cada elemento: con 2*x la fila da {2x / x ∈ U ∧ condición}. " +
+          placeholder: "Ej: x => 2*x   (vacío = x)",
+          titulo: "Función anónima que se aplica a cada elemento: con x => 2*x la fila da {2x / x ∈ U ∧ condición}. " +
             "Vacío = los elementos tal cual. Si la fila también está vacía, se toma todo U",
           // solo con «Aplicar una función a los elementos»
           visible: function (op) { return !!op.conFuncion; },
@@ -10118,8 +10126,8 @@
         "se usan como funciones: x => A(x) && !B(x) (x ∈ A y x ∉ B), " +
         "o una operación con los de las filas de arriba: A ∪ B, A ∩ B, A − B, A Δ B, A' (complemento), " +
         "A × B, P(A), (A ∪ B)'. ∩ y × se resuelven antes que ∪, − y Δ; ante la duda, paréntesis. " +
-        "Con «Aplicar una función a los elementos», en «Elementos» va la función que se aplica a cada uno (vacío = el mismo elemento): con 2*x y la fila " +
-        "vacía queda {2x / x ∈ U}; con 2*x y x => x < 5, {2x / x ∈ U ∧ x < 5}. " +
+        "Con «Aplicar una función a los elementos», en «Elementos» va una función anónima que se aplica a cada uno (vacío = el mismo elemento): con x => 2*x y la fila " +
+        "vacía queda {2x / x ∈ U}; con x => 2*x y x => x < 5, {2x / x ∈ U ∧ x < 5}. " +
         "En ℝ los conjuntos infinitos se escriben por comprensión. Seleccioná un cálculo ya insertado para editarlo.",
       erroresFila: erroresConjunto,
       posicion: function (op, cx, cy) { return { x: cx - (ANCHOS_CONJ[op.ancho] || 900) / 2, y: cy - 100 }; },
@@ -10993,11 +11001,11 @@
           { nombre: "G", texto: "x => B(x) || A(x) && x < 20", color: "#e8590c" }] }),
       ej("Aplicando una función a los elementos", "Pares, cuadrados e imágenes: {2x / x ∈ ℕ}", {
         universo: "N", conCero: false, conFuncion: true, filas: [
-          { nombre: "A", texto: "", imagen: "2*x", color: COLORES[0] },
-          { nombre: "B", texto: "x => x <= 6", imagen: "x**2", color: COLORES[1] },
-          { nombre: "C", texto: "{1, 2, 3}", imagen: "10 * x + 1", color: COLORES[2] },
+          { nombre: "A", texto: "", imagen: "x => 2*x", color: COLORES[0] },
+          { nombre: "B", texto: "x => x <= 6", imagen: "x => x**2", color: COLORES[1] },
+          { nombre: "C", texto: "{1, 2, 3}", imagen: "x => 10 * x + 1", color: COLORES[2] },
           { nombre: "D", texto: "A ∩ B", color: COLORES[3] },
-          { nombre: "E", texto: "x => x % 2 == 1", imagen: "(x + 1) / 2", color: COLORES[4] }] }),
+          { nombre: "E", texto: "x => x % 2 == 1", imagen: "x => (x + 1) / 2", color: COLORES[4] }] }),
       ej("Leyes de De Morgan", "(A ∪ B)' = A' ∩ B' en U = {1, …, 8}", {
         universo: "finito", universoTexto: "1, 2, ..., 8", conCero: false, filas: [
           { nombre: "A", texto: "{1, 2, 3, 4}", color: COLORES[0] },

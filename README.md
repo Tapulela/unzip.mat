@@ -176,8 +176,8 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   o una operación con las filas anteriores (∪ ∩ − Δ, complemento `A'`, ×,
   `P(A)`, paréntesis). Con la opción «Aplicar una función a los elementos»
   (apagada por defecto) cada fila tiene un campo «Elementos»: la función que se
-  aplica a cada elemento (vacío = la identidad): con `2*x` queda
-  `{2x / x ∈ ℕ}`, con `x**2` y `x => x <= 6`, `{x² / x ∈ ℕ ∧ x ≤ 6}`; las
+  aplica a cada elemento, como función anónima (vacío = la identidad): con
+  `x => 2*x` queda `{2x / x ∈ ℕ}`, con `x => x**2` y `x => x <= 6`, `{x² / x ∈ ℕ ∧ x ≤ 6}`; las
   imágenes de un conjunto infinito se calculan a medida que se recorre U.
   Cada conjunto se escribe por extensión con un límite de
   elementos y puntos suspensivos; los universos infinitos se recorren en orden
