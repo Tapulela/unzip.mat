@@ -174,7 +174,8 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   que recibe cada elemento de U y devuelve verdadero o falso, `x => x % 2 == 0`;
   los conjuntos de filas anteriores se usan como funciones: `x => A(x) && !B(x)`)
   o una operación con las filas anteriores (∪ ∩ − Δ, complemento `A'`, ×,
-  `P(A)`, paréntesis). El campo «Elementos» de cada fila es la función que se
+  `P(A)`, paréntesis). Con la opción «Aplicar una función a los elementos»
+  (apagada por defecto) cada fila tiene un campo «Elementos»: la función que se
   aplica a cada elemento (vacío = la identidad): con `2*x` queda
   `{2x / x ∈ ℕ}`, con `x**2` y `x => x <= 6`, `{x² / x ∈ ℕ ∧ x ≤ 6}`; las
   imágenes de un conjunto infinito se calculan a medida que se recorre U.

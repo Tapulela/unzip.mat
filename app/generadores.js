@@ -2730,7 +2730,8 @@
       else if (conj[nombre]) r.errores.push("Ya hay un conjunto «" + nombre + "» más arriba");
       var src = String(f.texto || "").trim();
       // funcion que se aplica a cada elemento (vacio = la identidad): 2*x o x => 2*x
-      var img = String(f.imagen || "").trim();
+      // (con la opcion apagada se ignora lo que haya quedado escrito)
+      var img = op.conFuncion ? String(f.imagen || "").trim() : "";
       var varImg = /^\s*\(?\s*([a-zA-Z_$][\w$]*)\s*\)?\s*=>/.exec(img);
       // sin condicion: todos los de U ({2x / x ∈ ℕ})
       if (!src && img) src = (varImg ? varImg[1] : "x") + " => true";
@@ -10080,7 +10081,7 @@
       dibujo: "cálculo", femenino: false,
       clave: "pizarra-generador-conjuntos",
       defecto: {
-        universo: "finito", universoTexto: "1, 2, ..., 10", conCero: false,
+        universo: "finito", universoTexto: "1, 2, ..., 10", conCero: false, conFuncion: false,
         filas: [
           { nombre: "A", texto: "x => x % 2 == 0", color: COLORES[0] },
           { nombre: "B", texto: "{1, 2, 3, 4, 5}", color: COLORES[1] },
@@ -10093,7 +10094,7 @@
         mostrar: "todos", limite: 10, tamTexto: "M", fuente: "normal", ancho: "medio",
         escribirU: true, mostrarDef: true, cardinal: false,
       },
-      contenido: ["filas", "universo", "universoTexto", "conCero"],
+      contenido: ["filas", "universo", "universoTexto", "conCero", "conFuncion"],
       agregarFila: "+ Conjunto",
       placeholder: "{1, 2, 3}  o  x => x > 2  o  A ∪ B",
       nombreFila: { porDefecto: nombreConj, titulo: "Nombre del conjunto: A, B, C..." },
@@ -10103,6 +10104,8 @@
           placeholder: "Ej: 2*x   (vacío = x)",
           titulo: "Función que se aplica a cada elemento: con 2*x la fila da {2x / x ∈ U ∧ condición}. " +
             "Vacío = los elementos tal cual. Si la fila también está vacía, se toma todo U",
+          // solo con «Aplicar una función a los elementos»
+          visible: function (op) { return !!op.conFuncion; },
           errores: erroresImagenConjunto },
       ],
       simbolos: [["∪", " ∪ ", "Unión"], ["∩", " ∩ ", "Intersección"], ["−", " − ", "Diferencia"],
@@ -10115,7 +10118,7 @@
         "se usan como funciones: x => A(x) && !B(x) (x ∈ A y x ∉ B), " +
         "o una operación con los de las filas de arriba: A ∪ B, A ∩ B, A − B, A Δ B, A' (complemento), " +
         "A × B, P(A), (A ∪ B)'. ∩ y × se resuelven antes que ∪, − y Δ; ante la duda, paréntesis. " +
-        "En «Elementos» va la función que se aplica a cada uno (vacío = el mismo elemento): con 2*x y la fila " +
+        "Con «Aplicar una función a los elementos», en «Elementos» va la función que se aplica a cada uno (vacío = el mismo elemento): con 2*x y la fila " +
         "vacía queda {2x / x ∈ U}; con 2*x y x => x < 5, {2x / x ∈ U ∧ x < 5}. " +
         "En ℝ los conjuntos infinitos se escriben por comprensión. Seleccioná un cálculo ya insertado para editarlo.",
       erroresFila: erroresConjunto,
@@ -10132,6 +10135,7 @@
             function () { return leerUniverso(op).error; });
           }
           if (op.universo === "N") ui.chk("ℕ incluye el 0", "conCero");
+          ui.chk("Aplicar una función a los elementos ({2x / x ∈ U})", "conFuncion", "filas");
           if (finito) ui.seg("Elementos", "mostrar", [["todos", "Todos"], ["limite", "Hasta un límite"]], true);
           if (!finito || op.mostrar === "limite") {
             ui.campos("Mostrar", [{ clave: "limite", prefijo: "hasta", sufijo: "elementos", numero: [1, 500],
@@ -10988,7 +10992,7 @@
           { nombre: "F", texto: "B'", color: COLORES[5] },
           { nombre: "G", texto: "x => B(x) || A(x) && x < 20", color: "#e8590c" }] }),
       ej("Aplicando una función a los elementos", "Pares, cuadrados e imágenes: {2x / x ∈ ℕ}", {
-        universo: "N", conCero: false, filas: [
+        universo: "N", conCero: false, conFuncion: true, filas: [
           { nombre: "A", texto: "", imagen: "2*x", color: COLORES[0] },
           { nombre: "B", texto: "x => x <= 6", imagen: "x**2", color: COLORES[1] },
           { nombre: "C", texto: "{1, 2, 3}", imagen: "10 * x + 1", color: COLORES[2] },
@@ -11813,7 +11817,9 @@
           nom.oninput = function () { f.nombre = nom.value; self.cambio(); };
         }
         // campos extra debajo de la fila (dominio propio, puntos a marcar...)
-        var extras = (gen.extrasFila || []).map(function (def) {
+        var extras = (gen.extrasFila || []).filter(function (def) {
+          return !def.visible || def.visible(self.op);
+        }).map(function (def) {
           var sub = document.createElement("div");
           sub.className = "subfila";
           sub.innerHTML = '<span></span><input type="text" class="extra" spellcheck="false" autocomplete="off">';
@@ -11945,7 +11951,13 @@
           l.appendChild(document.createTextNode(txt));
           var c = l.querySelector("input");
           c.checked = !!op[clave];
-          c.onchange = function () { op[clave] = c.checked; self.cambio(); if (repintar) self.pintarOpciones(); };
+          // repintar "filas": tambien cambian los campos de las filas
+          c.onchange = function () {
+            op[clave] = c.checked;
+            if (repintar === "filas") self.pintarFilas();
+            self.cambio();
+            if (repintar) self.pintarOpciones();
+          };
           destino.appendChild(l);
         },
         // campos cortos en una fila. numero: [min, max] (se limita); texto: libre.
