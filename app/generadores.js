@@ -11497,7 +11497,14 @@
     ["#e6fcf5", "#96f2d7", "#38d9a9", "#12b886", "#099268"],
     ["#ebfbee", "#b2f2bb", "#69db7c", "#40c057", "#2f9e44"],
     ["#fff9db", "#ffec99", "#ffd43b", "#fab005", "#f08c00"],
-    ["#fff4e6", "#ffd8a8", "#ffa94d", "#fd7e14", "#e8590c"]
+    ["#fff4e6", "#ffd8a8", "#ffa94d", "#fd7e14", "#e8590c"],
+    // familias agregadas (tambien en el bundle): indigo y lima de Open Color
+    // (indices 0, 2, 4, 6, 8, como las demas), azul marino, marron y bordo
+    ["#edf2ff", "#bac8ff", "#748ffc", "#4c6ef5", "#3b5bdb"],
+    ["#e7ecf6", "#b6c3df", "#6b80b0", "#304a85", "#1c2d55"],
+    ["#f4fce3", "#d8f5a2", "#a9e34b", "#82c91e", "#66a80f"],
+    ["#f5ede6", "#dfc5ae", "#b88660", "#8b5a2b", "#5e3b1c"],
+    ["#fbe9ec", "#ecb4be", "#c95b72", "#9c2a43", "#6b1a2c"]
   ];
   var selectorColor = {
     el: null, boton: null, alElegir: null, valor: "",

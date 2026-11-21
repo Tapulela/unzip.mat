@@ -22,6 +22,15 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   fuente Assistant en `assets/index-*.css` y el helper de precarga en
   `assets/mermaid-to-excalidraw-*.js`. Si se recompila, hay que compilar con
   `base: "./"` y conservar estos cambios.
+- Paleta de colores ampliada: además de las 15 de Excalidraw, el selector de color
+  tiene una cuarta fila con índigo y lima (de Open Color, tonos 0, 2, 4, 6 y 8 como las
+  demás), azul marino, marrón y bordó, cada una con sus 5 tonos. Cambios en el build
+  (`assets/index-*.js`): las familias nuevas al final de `COLOR_PALETTE` (`Xe`) y en la
+  lista que se agrega a las paletas de trazo y fondo (`IF`); sus nombres en inglés en el
+  bundle y en español en `locales/es-ES.json-*.js`; y como solo hay 15 atajos
+  (`qwert asdfg zxcvb`), el botón usa `ew[p]||""` y el título omite « — atajo» si no
+  tiene. El selector de los generadores (`PALETA_EXC` en `app/generadores.js`) tiene
+  las mismas familias.
 - Menú principal → Preferencias → «Ocultar cursores de colaboradores» (activada por
   defecto) oculta el puntero de los demás (útil para grabar con OBS).
 - Compresión de PNG (`app/compresion.js`): al exportar como PNG o copiar como PNG, la
