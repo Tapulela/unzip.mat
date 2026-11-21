@@ -2680,7 +2680,7 @@
         return desdeLista(subs, U, false);
       case "comp":
         var c = evaluarConjunto(n.a, ctx);
-        if (!c.deU) throw "El complemento es respecto de U: no se aplica a pares ni a conjuntos de partes";
+        if (!c.deU) throw "El complemento es respecto de U: no se aplica a pares, a conjuntos de partes ni a conjuntos con elementos fuera de U";
         return {
           lista: U.lista ? U.lista.filter(function (e) { return !c.tiene(e); }) : null,
           tiene: function (e) { return U.contiene(e) && !c.tiene(e); }, deU: true,
@@ -2729,6 +2729,11 @@
       else if (nombre === "U" || nombre === "P") r.errores.push("«" + nombre + "» está reservado (U es el universo, P( ) el conjunto de partes)");
       else if (conj[nombre]) r.errores.push("Ya hay un conjunto «" + nombre + "» más arriba");
       var src = String(f.texto || "").trim();
+      // funcion que se aplica a cada elemento (vacio = la identidad): 2*x o x => 2*x
+      var img = String(f.imagen || "").trim();
+      var varImg = /^\s*\(?\s*([a-zA-Z_$][\w$]*)\s*\)?\s*=>/.exec(img);
+      // sin condicion: todos los de U ({2x / x ∈ ℕ})
+      if (!src && img) src = (varImg ? varImg[1] : "x") + " => true";
       if (!src) r.errores.push("Escribí un conjunto: {1, 2, 3}, x => x % 2 == 0 o A ∪ B");
       if (r.errores.length) return;
       var S;
@@ -2769,10 +2774,101 @@
         }
         r.avisos = ctx.avisos;
       }
+      if (img) {
+        // la variable es la de la condicion (o x): 2*x  ->  x => 2*x
+        var v = r.tipo === "comprension" ? textoCondicion(src).v : "x";
+        if (v.charAt(0) === "(") v = "x";
+        r.imagen = varImg || /^function\b/.test(img) ? img : v + " => " + img;
+        r.varImagen = v;
+        r.previos = r.previos || Object.keys(conj);
+        var im = aplicarImagen(S, U, r.imagen, conj);
+        if (im.error) { r.erroresImagen = [im.error]; r.errores.push(im.error); return; }
+        S = im.conj;
+      }
       r.conj = S;
       conj[nombre] = S;
     });
     return { U: U, filas: filas };
+  }
+
+  // { f(x) / x ∈ S }: aplica la funcion `fsrc` a cada elemento de S. Si S es
+  // infinito, las imagenes se van calculando a medida que se recorre U (hasta
+  // BUSQUEDA elementos), y el conjunto trae su propio enumerar para listarlas.
+  // Devuelve { conj } o { error }.
+  function aplicarImagen(S, U, fsrc, conj) {
+    var c = compilarCondicion(fsrc, conj);
+    if (c.error) return { error: c.error };
+    var v = textoCondicion(fsrc).v;
+    // elemento imagen de e (null si no da un numero finito); lanza si la funcion falla
+    function imagen(e) {
+      var y = c.f(e.v);
+      if (typeof y === "number") return isFinite(y) ? elemNum(y) : null;
+      if (typeof y === "string") return elemTxt(y);
+      throw { tipo: "Los elementos tienen que ser números o textos (con " + v + " = " + e.t + " da " + String(y) + ")" };
+    }
+    function probar(base) {
+      for (var j = 0; j < base.length; j++) {
+        try { imagen(base[j]); } catch (e) {
+          if (e && e.tipo) return e.tipo;
+          var falta = e instanceof ReferenceError && /^(\S+) is not defined/.exec(e.message);
+          return falta ? "«" + falta[1] + "» no es un conjunto definido en una fila anterior"
+            : "Error al calcular los elementos con " + v + " = " + base[j].t + ": " + e.message;
+        }
+      }
+      return "";
+    }
+    if (S.lista) {
+      var err = probar(S.lista);
+      if (err) return { error: err };
+      var imgs = S.lista.map(imagen).filter(Boolean);
+      return { conj: desdeLista(imgs, U, imgs.every(U.contiene)) };
+    }
+    if (!U.enumerar) return { error: "En " + U.simbolo + " no se puede aplicar una función a los elementos de un conjunto infinito (no se pueden recorrer)" };
+    // primeros elementos de S, para avisar errores de escritura
+    var sigU = U.enumerar(), muestra = [];
+    for (var n = 0; n < 2000 && muestra.length < 30; n++) { var e0 = sigU(); if (S.tiene(e0)) muestra.push(e0); }
+    var err2 = probar(muestra);
+    if (err2) return { error: err2 };
+    var vistos = {}, hechas = [], sig = U.enumerar(), revisados = 0;
+    // siguiente imagen nueva, o null si ya se recorrio todo lo que se revisa
+    function avanzar() {
+      while (revisados < BUSQUEDA) {
+        var e = sig(), y = null;
+        revisados++;
+        if (!S.tiene(e)) continue;
+        try { y = imagen(e); } catch (err) { continue; }
+        if (!y || vistos[y.k]) continue;
+        vistos[y.k] = true;
+        hechas.push(y);
+        return y;
+      }
+      return null;
+    }
+    var deU = true;
+    for (var j = 0; j < 30 && deU; j++) { var y = hechas[j] || avanzar(); if (!y) break; deU = U.contiene(y); }
+    return {
+      conj: {
+        lista: null, deU: deU, imagen: true,
+        tiene: function (e) {
+          if (vistos[e.k]) return true;
+          while (avanzar()) if (vistos[e.k]) return true;
+          return false;
+        },
+        enumerar: function () {
+          var i = 0;
+          return function () { return i < hechas.length ? hechas[i++] : avanzar() && hechas[i++]; };
+        },
+      },
+    };
+  }
+
+  // la funcion de los elementos "a mano": x => 2*x -> 2x (con la variable v)
+  function textoImagen(codigo, v, nombres) {
+    var t = textoCondicion(codigo, nombres);
+    var s = t.cond;
+    if (t.v !== v) s = s.replace(new RegExp("(^|[^\\w$])" + t.v.replace(/[$]/g, "\\$") + "(?![\\w$])", "g"), "$1" + v);
+    // la division sin espacios, para no confundirla con la barra de "tal que"
+    return s.replace(/(\d)·(?=[a-zA-Z_(])/g, "$1").replace(/\s*\/\s*/g, "/");
   }
 
   // Los elementos a escribir de un conjunto, hasta `L`. Devuelve { items, card }
@@ -2788,18 +2884,24 @@
       if (l.length <= L) return { items: ts, card: l.length };
       return { items: ts.slice(0, Math.max(1, L - 1)).concat(["…", ts[ts.length - 1]]), card: l.length };
     }
-    if (!U.enumerar) return { texto: comprension() };
-    var sig = U.enumerar(), hall = [], arriba = false, abajo = false, min = Infinity, max = -Infinity;
+    // un conjunto de imagenes ({2x / x ∈ ℕ}) se recorre a si mismo; sus
+    // elementos pueden crecer o decrecer, asi que se buscan en los dos sentidos
+    var propio = !!S.enumerar;
+    if (!propio && !U.enumerar) return { texto: comprension() };
+    var sig = (propio ? S : U).enumerar(), hall = [], arriba = false, abajo = false, min = Infinity, max = -Infinity;
     for (var n = 0; n < BUSQUEDA; n++) {
       var e = sig();
-      if (!S.tiene(e)) continue;
+      if (!e) break;
+      if (!propio && !S.tiene(e)) continue;
       if (hall.length < L) { hall.push(e); min = Math.min(min, e.v); max = Math.max(max, e.v); continue; }
-      if (U.tipo !== "Z") { arriba = true; break; }
+      if (U.tipo !== "Z" && !propio) { arriba = true; break; }
+      if (typeof e.v !== "number") { arriba = true; break; }
       if (e.v > max) arriba = true; else if (e.v < min) abajo = true;
       if (arriba && abajo) break;
     }
     if (!hall.length) return { texto: "∅" };
-    if (U.tipo !== "Q") hall.sort(function (a, b) { return a.v - b.v; });
+    var numeros = hall.every(function (x) { return typeof x.v === "number"; });
+    if (U.tipo !== "Q" && numeros) hall.sort(function (a, b) { return a.v - b.v; });
     var items = hall.map(function (e) { return e.t; });
     if (abajo) items.unshift("…");
     if (arriba) items.push("…");
@@ -2858,7 +2960,17 @@
     an.filas.forEach(function (f) {
       if (f.errores.length) return;
       var def = "", comp;
-      if (f.tipo === "comprension") {
+      if (f.imagen) {
+        // {2x / x ∈ ℕ ∧ x < 5} o {2x / x ∈ A ∪ B}
+        var ti = textoImagen(f.imagen, f.varImagen, f.previos);
+        var donde;
+        if (f.tipo === "comprension") {
+          var tcI = textoCondicion(f.codigo, f.previos);
+          donde = f.varImagen + " ∈ " + U.simbolo + (tcI.cond === "true" ? "" : " ∧ " + tcI.cond);
+        } else donde = "x ∈ " + imprimirConjunto(f.arbol, false);
+        def = "{" + ti + " / " + donde + "}";
+        comp = function () { return def; };
+      } else if (f.tipo === "comprension") {
         var tc = textoCondicion(f.codigo, f.previos);
         def = "{" + tc.v + " ∈ " + U.simbolo + " / " + tc.cond + "}";
         comp = function () { return def; };
@@ -2875,7 +2987,15 @@
 
   function erroresConjunto(t, op, i) {
     var f = analizarConjuntos(op).filas[i];
-    return f ? f.errores.concat(f.avisos || []) : [];
+    if (!f) return [];
+    // los errores de la funcion de los elementos se muestran en su campo
+    var deImagen = f.erroresImagen || [];
+    return f.errores.filter(function (e) { return deImagen.indexOf(e) < 0; }).concat(f.avisos || []);
+  }
+
+  function erroresImagenConjunto(fila, op, i) {
+    var f = analizarConjuntos(op).filas[i];
+    return f && f.erroresImagen || [];
   }
 
   // ======================================= GENERADOR: RELACIONES BINARIAS
@@ -9977,6 +10097,14 @@
       agregarFila: "+ Conjunto",
       placeholder: "{1, 2, 3}  o  x => x > 2  o  A ∪ B",
       nombreFila: { porDefecto: nombreConj, titulo: "Nombre del conjunto: A, B, C..." },
+      extrasFila: [
+        // funcion que se aplica a cada elemento: {2x / x ∈ ℕ}
+        { clave: "imagen", etiqueta: "Elementos",
+          placeholder: "Ej: 2*x   (vacío = x)",
+          titulo: "Función que se aplica a cada elemento: con 2*x la fila da {2x / x ∈ U ∧ condición}. " +
+            "Vacío = los elementos tal cual. Si la fila también está vacía, se toma todo U",
+          errores: erroresImagenConjunto },
+      ],
       simbolos: [["∪", " ∪ ", "Unión"], ["∩", " ∩ ", "Intersección"], ["−", " − ", "Diferencia"],
         ["Δ", " Δ ", "Diferencia simétrica"], ["A'", "'", "Complemento respecto de U (se escribe después: A')"],
         ["×", " × ", "Producto cartesiano"], ["P( )", "P(", "Conjunto de partes"], ["∅", "∅", "Conjunto vacío"],
@@ -9987,6 +10115,8 @@
         "se usan como funciones: x => A(x) && !B(x) (x ∈ A y x ∉ B), " +
         "o una operación con los de las filas de arriba: A ∪ B, A ∩ B, A − B, A Δ B, A' (complemento), " +
         "A × B, P(A), (A ∪ B)'. ∩ y × se resuelven antes que ∪, − y Δ; ante la duda, paréntesis. " +
+        "En «Elementos» va la función que se aplica a cada uno (vacío = el mismo elemento): con 2*x y la fila " +
+        "vacía queda {2x / x ∈ U}; con 2*x y x => x < 5, {2x / x ∈ U ∧ x < 5}. " +
         "En ℝ los conjuntos infinitos se escriben por comprensión. Seleccioná un cálculo ya insertado para editarlo.",
       erroresFila: erroresConjunto,
       posicion: function (op, cx, cy) { return { x: cx - (ANCHOS_CONJ[op.ancho] || 900) / 2, y: cy - 100 }; },
@@ -10857,6 +10987,13 @@
           { nombre: "E", texto: "A Δ B", color: COLORES[4] },
           { nombre: "F", texto: "B'", color: COLORES[5] },
           { nombre: "G", texto: "x => B(x) || A(x) && x < 20", color: "#e8590c" }] }),
+      ej("Aplicando una función a los elementos", "Pares, cuadrados e imágenes: {2x / x ∈ ℕ}", {
+        universo: "N", conCero: false, filas: [
+          { nombre: "A", texto: "", imagen: "2*x", color: COLORES[0] },
+          { nombre: "B", texto: "x => x <= 6", imagen: "x**2", color: COLORES[1] },
+          { nombre: "C", texto: "{1, 2, 3}", imagen: "10 * x + 1", color: COLORES[2] },
+          { nombre: "D", texto: "A ∩ B", color: COLORES[3] },
+          { nombre: "E", texto: "x => x % 2 == 1", imagen: "(x + 1) / 2", color: COLORES[4] }] }),
       ej("Leyes de De Morgan", "(A ∪ B)' = A' ∩ B' en U = {1, …, 8}", {
         universo: "finito", universoTexto: "1, 2, ..., 8", conCero: false, filas: [
           { nombre: "A", texto: "{1, 2, 3, 4}", color: COLORES[0] },

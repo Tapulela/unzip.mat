@@ -174,7 +174,11 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   que recibe cada elemento de U y devuelve verdadero o falso, `x => x % 2 == 0`;
   los conjuntos de filas anteriores se usan como funciones: `x => A(x) && !B(x)`)
   o una operación con las filas anteriores (∪ ∩ − Δ, complemento `A'`, ×,
-  `P(A)`, paréntesis). Cada conjunto se escribe por extensión con un límite de
+  `P(A)`, paréntesis). El campo «Elementos» de cada fila es la función que se
+  aplica a cada elemento (vacío = la identidad): con `2*x` queda
+  `{2x / x ∈ ℕ}`, con `x**2` y `x => x <= 6`, `{x² / x ∈ ℕ ∧ x ≤ 6}`; las
+  imágenes de un conjunto infinito se calculan a medida que se recorre U.
+  Cada conjunto se escribe por extensión con un límite de
   elementos y puntos suspensivos; los universos infinitos se recorren en orden
   (ℚ por altura |p| + q, hasta 20000 elementos), y en ℝ los conjuntos que no
   se pueden listar se escriben por comprensión.
