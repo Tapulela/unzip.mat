@@ -103,7 +103,9 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
 - Cámara remota (`app/camara.js`): la ventana marcada como proyección (botón agregado al
   final de la barra de herramientas, o `?proyeccion`) informa su vista por el servidor
   local, y las demás ventanas de la sala muestran un marco que la representa y permite
-  moverla, hacer zoom y volver al 100%. Solo una proyección por sala. `?sincamara`
+  moverla, hacer zoom y volver al 100%. Un candado junto al zoom fija la cámara: la
+  proyección ignora los movimientos y vuelve sola a su vista si se la toca (el pedido
+  viaja como `camara-mover` con `fijar`). Solo una proyección por sala. `?sincamara`
   desactiva todo.
   Requiere que el bundle exponga la API como `window.__pizarraAPI` (una línea agregada
   antes de `editorLifecycleEvents.emit("editor:mount", …)` en `App.tsx`).

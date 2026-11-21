@@ -52,6 +52,10 @@
     } catch (e) {}
     edicion.rect = null;
     edicion.vistoEn = 0;
+    if (!activo && proyeccion.fija) {
+      proyeccion.fija = null;
+      try { sessionStorage.removeItem(CLAVE_FIJA); } catch (e) {}
+    }
     if (avisar) emitir("camara-rol", { proyeccion: activo });
     if (activo) proyeccion.informar(true);
     else emitir("camara-pedir", {});
@@ -104,19 +108,45 @@
   };
 
   // ---------------------------------------------------------------- proyeccion
+  var CLAVE_FIJA = "pizarra-proyeccion-fija";
   var proyeccion = {
     ultima: null, ultimoEnvio: 0, seq: 0, anim: null,
+    fija: null,        // {scrollX, scrollY, zoom} mientras la camara esta fija
 
     vista: function () {
       var st = api().getAppState(), z = st.zoom.value;
-      return { x: -st.scrollX, y: -st.scrollY, w: st.width / z, h: st.height / z, pw: st.width };
+      return { x: -st.scrollX, y: -st.scrollY, w: st.width / z, h: st.height / z, pw: st.width, fija: !!this.fija };
+    },
+
+    // Fijar: la vista queda clavada donde esta. No obedece a la ventana de
+    // edicion y si alguien la mueve en esta ventana, vuelve sola.
+    fijar: function (activo) {
+      if (activo) {
+        var st = api().getAppState();
+        if (this.anim) clearTimeout(this.anim), (this.anim = null);
+        this.fija = { scrollX: st.scrollX, scrollY: st.scrollY, zoom: st.zoom.value };
+      } else this.fija = null;
+      try {
+        if (this.fija) sessionStorage.setItem(CLAVE_FIJA, JSON.stringify(this.fija));
+        else sessionStorage.removeItem(CLAVE_FIJA);
+      } catch (e) {}
+      this.informar(true);
+    },
+
+    sostener: function () {
+      var f = this.fija;
+      if (!f || !api()) return;
+      var st = api().getAppState();
+      if (Math.abs(st.scrollX - f.scrollX) > 1e-6 || Math.abs(st.scrollY - f.scrollY) > 1e-6 ||
+          Math.abs(st.zoom.value - f.zoom) > 1e-9)
+        api().updateScene({ appState: { scrollX: f.scrollX, scrollY: f.scrollY, zoom: { value: f.zoom } } });
     },
 
     informar: function (forzar) {
       if (!api()) return;
       var v = this.vista(), u = this.ultima, ahora = performance.now();
       var cambio = !u || Math.abs(u.x - v.x) > 1e-6 || Math.abs(u.y - v.y) > 1e-6 ||
-        Math.abs(u.w - v.w) > 1e-6 || Math.abs(u.h - v.h) > 1e-6;
+        Math.abs(u.w - v.w) > 1e-6 || Math.abs(u.h - v.h) > 1e-6 || u.fija !== v.fija;
       // latido cada 2 s para que la ventana de edicion sepa que seguimos aca
       if (!forzar && !(cambio && ahora - this.ultimoEnvio > 30) && ahora - this.ultimoEnvio < 2000) return;
       this.ultima = v;
@@ -134,6 +164,9 @@
     mover: function (d) {
       var self = this;
       if (typeof d.seq === "number") this.seq = d.seq;
+      // el candado viaja por el mismo evento (asi el servidor no cambia)
+      if (typeof d.fijar === "boolean") return this.fijar(d.fijar);
+      if (this.fija) return this.informar(true); // fija: ignorar y corregir el marco
       if (this.anim) clearTimeout(this.anim), (this.anim = null);
       if (!d.animar || document.hidden) return this.aplicar(d.x, d.y, d.w);
       // setTimeout y no requestAnimationFrame: la ventana proyectada suele estar
@@ -153,12 +186,30 @@
       socket.on("camara-pedir", function () { if (esProyeccion) self.informar(true); });
       // setInterval (y no requestAnimationFrame) para seguir funcionando aunque
       // la ventana proyectada quede tapada por otra
-      setInterval(function () { if (esProyeccion) self.informar(false); }, 30);
+      setInterval(function () {
+        if (!esProyeccion) return;
+        self.sostener();
+        self.informar(false);
+      }, 30);
+      try {
+        var f = JSON.parse(sessionStorage.getItem(CLAVE_FIJA) || "null");
+        if (f && typeof f.zoom === "number") this.fija = f;
+      } catch (e) {}
+      // con la camara fija, la rueda del mouse no mueve esta ventana
+      window.addEventListener("wheel", function (e) {
+        if (esProyeccion && self.fija) e.preventDefault(), e.stopPropagation();
+      }, { capture: true, passive: false });
     },
   };
 
   // ------------------------------------------------------------------- edicion
+  var CANDADO =
+    '<svg aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/>';
+  var CANDADO_CERRADO = CANDADO + '<path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+  var CANDADO_ABIERTO = CANDADO + '<path d="M8 11V7a4 4 0 0 1 7.5-2"/></svg>';
   var edicion = {
+    fija: false,       // la camara esta fija (lo informa la proyeccion)
     rect: null,        // vista de la proyeccion en coordenadas de la escena
     vistoEn: 0,        // ultima vez que supimos de la proyeccion
     seq: 0,            // numero del ultimo movimiento enviado
@@ -189,12 +240,24 @@
         "padding:0 8px;border-radius:0 0 4px 4px;user-select:none;white-space:nowrap}" +
         // zoom de la camara: arriba a la izquierda, por fuera del marco; si no
         // entra en la pantalla pasa adentro, al lado de la etiqueta
-        "#pz-camara .pz-zoom{position:absolute;left:-2px;bottom:calc(100% + 6px);pointer-events:auto;" +
-        "cursor:pointer;background:var(--island-bg-color,#fff);color:var(--text-primary-color,#1b1b1f);" +
-        "border:1px solid #e03131;font:12px/22px Assistant,sans-serif;padding:0 8px;border-radius:6px;" +
-        "user-select:none;white-space:nowrap;min-width:44px;text-align:center;box-sizing:border-box}" +
-        "#pz-camara .pz-zoom:hover{background:#e03131;color:#fff}" +
-        "#pz-camara.pz-adentro .pz-zoom{bottom:auto;top:0;border-radius:0 0 6px 6px}";
+        "#pz-camara .pz-ctrl{position:absolute;left:-2px;bottom:calc(100% + 6px);display:flex;gap:4px;" +
+        "pointer-events:auto}" +
+        "#pz-camara .pz-zoom,#pz-camara .pz-candado{cursor:pointer;background:var(--island-bg-color,#fff);" +
+        "color:var(--text-primary-color,#1b1b1f);border:1px solid #e03131;font:12px/22px Assistant,sans-serif;" +
+        "padding:0 8px;border-radius:6px;user-select:none;white-space:nowrap;text-align:center;box-sizing:border-box}" +
+        "#pz-camara .pz-zoom{min-width:44px}" +
+        "#pz-camara .pz-candado{display:flex;align-items:center;padding:0 5px}" +
+        "#pz-camara .pz-candado svg{width:14px;height:14px}" +
+        "#pz-camara .pz-zoom:hover,#pz-camara .pz-candado:hover{background:#e03131;color:#fff}" +
+        "#pz-camara.pz-adentro .pz-ctrl{bottom:auto;top:0}" +
+        "#pz-camara.pz-adentro .pz-zoom,#pz-camara.pz-adentro .pz-candado{border-radius:0 0 6px 6px}" +
+        // camara fija: sin bordes ni esquinas para arrastrar
+        "#pz-camara.pz-fija{border-style:solid}" +
+        "#pz-camara.pz-fija .pz-borde,#pz-camara.pz-fija .pz-esq{display:none}" +
+        "#pz-camara.pz-fija .pz-etiqueta{cursor:default}" +
+        "#pz-camara.pz-fija .pz-zoom{cursor:default;opacity:.6}" +
+        "#pz-camara.pz-fija .pz-zoom:hover{background:var(--island-bg-color,#fff);color:var(--text-primary-color,#1b1b1f)}" +
+        "#pz-camara.pz-fija .pz-candado{background:#e03131;color:#fff}";
       document.head.appendChild(css);
 
       var el = document.createElement("div");
@@ -210,11 +273,19 @@
         '<div class="pz-esq pz-se" data-m="esq" data-ax="0" data-ay="0"></div>' +
         '<div class="pz-etiqueta" data-m="mover" title="Arrastrá para mover la cámara. ' +
         'Doble clic: ir a la cámara.">Cámara</div>' +
-        '<div class="pz-zoom" role="button" title="Zoom de la cámara. Clic: volver al 100%">100%</div>';
+        '<div class="pz-ctrl">' +
+        '<div class="pz-zoom" role="button" title="Zoom de la cámara. Clic: volver al 100%">100%</div>' +
+        '<div class="pz-candado" role="button"></div>' +
+        '</div>';
       document.body.appendChild(el);
       this.el = el;
       this.elZoom = el.querySelector(".pz-zoom");
+      this.elCtrl = el.querySelector(".pz-ctrl");
+      this.elCandado = el.querySelector(".pz-candado");
       this.elEtiqueta = el.querySelector(".pz-etiqueta");
+      this.elCtrl.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+      this.elCandado.addEventListener("click", function () { self.alternarFija(); });
+      this.mostrarFija();
 
       var self = this;
       el.addEventListener("pointerdown", function (e) { self.empezar(e); });
@@ -222,14 +293,37 @@
       el.addEventListener("pointerup", function (e) { self.terminar(e); });
       el.addEventListener("pointercancel", function (e) { self.terminar(e); });
       el.querySelector(".pz-etiqueta").addEventListener("dblclick", function () { self.irACamara(); });
-      this.elZoom.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
       this.elZoom.addEventListener("click", function () { self.zoomCien(); });
+    },
+
+    // candado: fija la camara (la proyeccion guarda el estado y lo informa)
+    alternarFija: function () {
+      this.fija = !this.fija;
+      this.arrastre = null;
+      this.seq++;
+      emitir("camara-mover", { fijar: this.fija, seq: this.seq });
+      this.mostrarFija();
+    },
+
+    mostrarFija: function () {
+      if (!this.el) return;
+      var f = !!this.fija;
+      this.el.classList.toggle("pz-fija", f);
+      this.elEtiqueta.textContent = f ? "Cámara fija" : "Cámara";
+      this.elEtiqueta.title = f
+        ? "La cámara está fija. Doble clic: ir a la cámara."
+        : "Arrastrá para mover la cámara. Doble clic: ir a la cámara.";
+      this.elCandado.innerHTML = f ? CANDADO_CERRADO : CANDADO_ABIERTO;
+      var t = f ? "Cámara fija: no se puede mover (clic para soltarla)" : "Fijar la cámara para que no se mueva";
+      this.elCandado.title = t;
+      this.elCandado.setAttribute("aria-label", t);
+      this.elCandado.setAttribute("aria-pressed", f ? "true" : "false");
     },
 
     // zoom de la camara al 100%, manteniendo el centro
     zoomCien: function () {
       var r = this.rect, pw = this.anchoProyeccion;
-      if (!r || !pw) return;
+      if (!r || !pw || this.fija) return;
       var w = pw, h = pw * r.h / r.w, cx = r.x + r.w / 2, cy = r.y + r.h / 2;
       this.rect = { x: cx - w / 2, y: cy - h / 2, w: w, h: h };
       this.enviar(true);
@@ -242,7 +336,7 @@
 
     empezar: function (e) {
       var m = e.target.getAttribute("data-m");
-      if (!m || !this.rect || !api()) return;
+      if (!m || !this.rect || !api() || this.fija) return;
       e.preventDefault();
       e.stopPropagation();
       try { e.target.setPointerCapture(e.pointerId); } catch (err) {}
@@ -317,8 +411,8 @@
       el.style.height = r.h * z + "px";
       var adentro = arr < 40;
       if (el.classList.contains("pz-adentro") !== adentro) el.classList.toggle("pz-adentro", adentro);
-      if (adentro) this.elZoom.style.left = 12 + this.elEtiqueta.offsetWidth + 6 + "px";
-      else this.elZoom.style.left = "";
+      if (adentro) this.elCtrl.style.left = 12 + this.elEtiqueta.offsetWidth + 6 + "px";
+      else this.elCtrl.style.left = "";
       var texto = this.anchoProyeccion ? Math.round((this.anchoProyeccion / r.w) * 100) + "%" : "100%";
       if (this.elZoom.textContent !== texto) this.elZoom.textContent = texto;
     },
@@ -338,6 +432,7 @@
         self.rect = { x: d.x, y: d.y, w: d.w, h: d.h };
         if (d.pw) self.anchoProyeccion = d.pw;
         if (typeof d.seq === "number" && d.seq > self.seq) self.seq = d.seq;
+        if (!!d.fija !== !!self.fija) { self.fija = !!d.fija; self.mostrarFija(); }
       });
       (function bucle() { self.dibujar(); requestAnimationFrame(bucle); })();
     },

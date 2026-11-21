@@ -66,6 +66,10 @@ CADA VEZ QUE GRABES
    - Arrastra una esquina para acercar o alejar (mantiene la proporción).
    - Arriba a la izquierda del marco se ve el zoom de la camara (por ejemplo
      "50%"). Un clic ahi la vuelve al 100% sin moverla del lugar.
+   - Al lado del zoom esta el candado: un clic fija la camara donde esta.
+     El marco pasa a decir "Cámara fija" y ya no se puede arrastrar; la
+     ventana grabada tampoco se mueve aunque la toques (vuelve sola a su
+     lugar). Otro clic en el candado la suelta.
    - Doble clic en la etiqueta: tu vista va hasta donde esta la camara.
    - Por dentro del marco podes dibujar normalmente.
    - Si no queres el marco en alguna ventana, agrega ?sincamara a su URL.
