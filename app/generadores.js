@@ -5956,10 +5956,12 @@
   }
 
   // ============================================ ESTRUCTURAS ALGEBRAICAS
-  // Cada fila define una operacion binaria con su formula: "x * y = x + y - 3"
+  // La estructura es un par ordenado (A, *) o una terna ordenada (A, *, ∘):
+  // cada fila define una de sus operaciones con su formula: "x * y = x + y - 3"
   // (el simbolo de la operacion es lo que esta entre las dos variables). Para
-  // cada propiedad se escribe su titulo, su definicion general y despues los
-  // reemplazos con la definicion, sin resolver nada: en cada paso se
+  // cada propiedad se escribe «Estudio de ...», la definicion general (sobre A,
+  // con * o +), la aplicada (con el conjunto y el simbolo de la estructura) y
+  // despues los reemplazos con la definicion, sin resolver nada: en cada paso se
   // reemplazan todas las operaciones cuyos dos operandos ya no tienen la
   // operacion (las de mas adentro), hasta que no queda ninguna.
   var LETRAS_EST = "A-Za-zα-ωΑ-Ω";
@@ -6022,71 +6024,150 @@
     return { k: n.k, a: pasoEstructura(n.a, defs), b: pasoEstructura(n.b, defs) };
   }
 
+  // El neutro y el inverso tienen su definicion general (de los dos lados) y
+  // despues una subseccion por derecha y otra por izquierda
+  var PRE_NEUTRO = function (S) { return "∃e ∈ " + S + " / ∀x ∈ " + S + ": "; };
+  var PRE_INVERSO = function (S) { return "∀x ∈ " + S + ", ∃x' ∈ " + S + " / "; };
   var PROPIEDADES_EST = [
-    { clave: "lci", titulo: "Ley de composición interna", lados: function (o) { return [o(0, "x", "y")]; },
+    { clave: "lci", titulo: function () { return "Estudio de la ley de composición interna"; },
+      lados: function (o) { return [o(0, "x", "y")]; },
       pre: function (S) { return "∀x, y: x ∈ " + S + " ∧ y ∈ " + S + " → "; }, suf: function (S) { return " ∈ " + S; } },
-    { clave: "asociativa", titulo: "Asociatividad",
+    { clave: "asociativa", titulo: function () { return "Estudio de la asociatividad"; },
       lados: function (o) { return [o(0, "x", o(0, "y", "z")), o(0, o(0, "x", "y"), "z")]; },
       pre: function (S) { return "∀x, y, z ∈ " + S + ": "; } },
-    { clave: "conmutativa", titulo: "Conmutatividad", lados: function (o) { return [o(0, "x", "y"), o(0, "y", "x")]; },
+    { clave: "conmutativa", titulo: function () { return "Estudio de la conmutatividad"; },
+      lados: function (o) { return [o(0, "x", "y"), o(0, "y", "x")]; },
       pre: function (S) { return "∀x, y ∈ " + S + ": "; } },
-    { clave: "neutro", titulo: "Existencia de elemento neutro",
-      lados: function (o) { return [o(0, "x", "e"), o(0, "e", "x"), { v: "x" }]; },
-      pre: function (S) { return "∃e ∈ " + S + " / ∀x ∈ " + S + ": "; } },
-    { clave: "inverso", titulo: "Existencia de elemento inverso",
-      lados: function (o) { return [o(0, "x", "x'"), o(0, "x'", "x"), { v: "e" }]; },
-      pre: function (S) { return "∀x ∈ " + S + ", ∃x' ∈ " + S + " / "; } },
+    { clave: "neutro", titulo: function () { return "Estudio del elemento neutro"; },
+      lados: function (o) { return [o(0, "x", "e"), o(0, "e", "x"), { v: "x" }]; }, pre: PRE_NEUTRO,
+      sub: [
+        { titulo: function () { return "Elemento neutro por derecha"; },
+          lados: function (o) { return [o(0, "x", "e"), { v: "x" }]; }, pre: PRE_NEUTRO },
+        { titulo: function () { return "Elemento neutro por izquierda"; },
+          lados: function (o) { return [o(0, "e", "x"), { v: "x" }]; }, pre: PRE_NEUTRO },
+      ] },
+    { clave: "inverso", titulo: function () { return "Estudio del elemento inverso"; },
+      lados: function (o) { return [o(0, "x", "x'"), o(0, "x'", "x"), { v: "e" }]; }, pre: PRE_INVERSO,
+      sub: [
+        { titulo: function () { return "Elemento inverso por derecha"; },
+          lados: function (o) { return [o(0, "x", "x'"), { v: "e" }]; }, pre: PRE_INVERSO },
+        { titulo: function () { return "Elemento inverso por izquierda"; },
+          lados: function (o) { return [o(0, "x'", "x"), { v: "e" }]; }, pre: PRE_INVERSO },
+      ] },
   ];
   var DISTRIBUTIVA = {
-    clave: "distributiva", titulo: "Distributividad",
+    clave: "distributiva",
+    titulo: function (defs) { return "Estudio de la distributividad de " + defs[0].op + " respecto de " + defs[1].op; },
     lados: function (o) { return [o(0, "x", o(1, "y", "z")), o(1, o(0, "x", "y"), o(0, "x", "z"))]; },
     pre: function (S) { return "∀x, y, z ∈ " + S + ": "; },
   };
+  // simbolos de la definicion general (sin contexto): * para la primera
+  // operacion y + para la segunda, sobre un conjunto A
+  var GENERICOS_EST = [{ op: "*" }, { op: "+" }];
 
-  // titulo, definicion general y pasos de una propiedad (lineas de texto)
-  function desarrollarPropiedad(p, defs, S, op) {
+  // definicion general (conjunto A y operaciones genericas), definicion
+  // aplicada (conjunto y simbolos de la estructura) y la aplicada con los
+  // reemplazos de la operacion por su definicion, paso a paso
+  function desarrollarPropiedad(p, defs, S, genericos) {
     var o = function (k, a, b) {
       var h = function (x) { return typeof x === "string" ? { v: x } : x; };
       return { k: k, a: h(a), b: h(b) };
     };
-    var lados = p.lados(o), pre = p.pre(S), suf = p.suf ? p.suf(S) : "";
-    var ecuacion = function () { return lados.map(function (n) { return imprimirEstructura(n, defs, true); }).join(" = "); };
-    // el primer paso es la expresion original, sin cuantificadores
-    var res = { general: pre + ecuacion() + suf, pasos: [ecuacion() + suf] };
+    var lados = p.lados(o), suf = p.suf ? p.suf(S) : "";
+    var ecuacion = function (ds) { return lados.map(function (n) { return imprimirEstructura(n, ds, true); }).join(" = "); };
+    var res = {
+      general: p.pre("A") + ecuacion(genericos) + (p.suf ? p.suf("A") : ""),
+      aplicada: [p.pre(S) + ecuacion(defs) + suf],
+    };
     for (var vuelta = 0; vuelta < 20 && lados.some(esOp); vuelta++) {
       lados = lados.map(function (n) { return pasoEstructura(n, defs); });
-      res.pasos.push(ecuacion() + suf);
+      res.aplicada.push(p.pre(S) + ecuacion(defs) + suf);
     }
     return res;
   }
 
+  // par ordenado (A, *): una operacion; terna ordenada (A, *, ∘): dos
+  function cantidadOpsEst(op) { return op.tipo === "terna" ? 2 : 1; }
+
+  // Todo se arma en secciones anidadas: la estructura, (en la terna) cada par
+  // (A, *), cada propiedad y sus subsecciones. Cada seccion tiene su titulo y
+  // su contenido una sangria mas adentro, con una linea vertical que baja del
+  // titulo hasta el ultimo renglon y termina con un pie hacia la derecha.
   function generarEstructuras(op, ox, oy, agregar) {
     var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20;
-    var lh = tam * fuente.lh, sangria = Math.round(tam * 1.5), y = oy;
-    var filas = op.filas.map(function (f) {
-      return { f: f, d: leerOperacion(f.texto), S: String(f.conjunto || "").trim() || "A" };
+    var lh = tam * fuente.lh, sangria = Math.round(tam * 1.5), y = oy, finTexto = oy;
+    var filas = op.filas.slice(0, cantidadOpsEst(op)).map(function (f) {
+      return { f: f, d: leerOperacion(f.texto) };
     }).filter(function (x) { return !x.d.error; });
-    function bloque(p, defs, S, color) {
-      var r = desarrollarPropiedad(p, defs, S, op);
-      var titulo = p === DISTRIBUTIVA ? "Distributividad de " + defs[0].op + " sobre " + defs[1].op : p.titulo;
-      if (op.titulos) { agregar(texto(ox, y, titulo, tam, fuente, color, "left")); y += lh + 6; }
-      var x = ox + (op.titulos ? sangria : 0);
-      if (op.general) { agregar(texto(x, y, r.general, tam, fuente, TINTA, "left")); y += lh + 6; }
-      r.pasos.forEach(function (s) {
-        agregar(texto(x + (op.general ? sangria : 0), y, s, tam, fuente, TINTA, "left"));
-        y += lh + 6;
-      });
-      y += lh * 0.8;
+    if (!filas.length) return;
+    // el conjunto es el de la estructura: se escribe en la primera fila
+    var S = String(op.filas[0].conjunto || "").trim() || "A";
+    var terna = op.tipo === "terna" && filas.length === 2;
+    var dx = Math.round(sangria * 0.35), pie = Math.round(sangria * 0.45);
+    function linea(x, s, color) {
+      agregar(texto(x, y, s, tam, fuente, color, "left"));
+      finTexto = y + lh;
+      y += lh + 6;
     }
-    filas.forEach(function (x) {
-      if (op.escribirOperacion) {
-        agregar(texto(ox, y, x.d.a + " " + x.d.op + " " + x.d.b + " = " + x.d.der + ",  con " +
-          x.d.a + ", " + x.d.b + " ∈ " + x.S, tam, fuente, x.f.color, "left"));
-        y += lh + lh * 0.8;
+    function guia(puntos, color, ancho) {
+      if (op.guias) agregar(trazo(puntos, { strokeColor: color, strokeWidth: ancho }));
+    }
+    // seccion: titulo en x y contenido en x + sangria; sin titulos, la linea es
+    // un corchete (marca tambien el inicio)
+    function seccion(x, titulo, color, cuerpo) {
+      var conTitulo = op.titulos && titulo, y0 = y;
+      if (conTitulo) { linea(x, titulo, color); y0 = finTexto + 2; }
+      cuerpo(x + sangria);
+      var y1 = finTexto + 2, xg = x + dx;
+      guia((conTitulo ? [] : [[xg + pie, y0]]).concat([[xg, y0], [xg, y1], [xg + pie, y1]]), color, 2);
+      y += lh * 0.6;
+    }
+    // «Definición ...:» y sus renglones una sangria mas adentro, con su linea
+    function definicion(x, etiqueta, renglones, color) {
+      linea(x, etiqueta, color);
+      var y0 = finTexto + 2;
+      renglones.forEach(function (s) { linea(x + sangria, s, TINTA); });
+      guia([[x + dx, y0], [x + dx, finTexto + 2]], color, 1);
+    }
+    function definiciones(x, p, defs, genericos, color) {
+      var r = desarrollarPropiedad(p, defs, S, genericos);
+      if (op.general) definicion(x, "Definición general:", [r.general], color);
+      definicion(x, "Definición aplicada:", r.aplicada, color);
+    }
+    function propiedades(x, fila, i) {
+      var defs = [fila.d], gen = [GENERICOS_EST[i]], color = fila.f.color;
+      PROPIEDADES_EST.forEach(function (p) {
+        if (!op[p.clave]) return;
+        seccion(x, p.titulo(), color, function (x2) {
+          if (!p.sub) return definiciones(x2, p, defs, gen, color);
+          if (op.general) definicion(x2, "Definición general:", [desarrollarPropiedad(p, defs, S, gen).general], color);
+          p.sub.forEach(function (s) {
+            seccion(x2, s.titulo(), color, function (x3) { definiciones(x3, s, defs, gen, color); });
+          });
+        });
+      });
+    }
+    // un par (A, *): la operacion escrita y todas sus propiedades
+    function estudioPar(x, fila, i) {
+      seccion(x, "Estudio de (" + S + ", " + fila.d.op + ")", fila.f.color, function (x2) {
+        if (op.escribirOperacion) {
+          linea(x2, fila.d.a + " " + fila.d.op + " " + fila.d.b + " = " + fila.d.der +
+            ",  con " + fila.d.a + ", " + fila.d.b + " ∈ " + S, fila.f.color);
+          y += lh * 0.6;
+        }
+        propiedades(x2, fila, i);
+      });
+    }
+    if (!terna) return estudioPar(ox, filas[0], 0);
+    seccion(ox, "Estudio de (" + S + ", " + filas[0].d.op + ", " + filas[1].d.op + ")", TINTA, function (x) {
+      filas.forEach(function (fila, i) { estudioPar(x, fila, i); });
+      if (op.distributiva) {
+        var defs = [filas[0].d, filas[1].d];
+        seccion(x, DISTRIBUTIVA.titulo(defs), filas[0].f.color, function (x2) {
+          definiciones(x2, DISTRIBUTIVA, defs, GENERICOS_EST, filas[0].f.color);
+        });
       }
-      PROPIEDADES_EST.forEach(function (p) { if (op[p.clave]) bloque(p, [x.d], x.S, x.f.color); });
     });
-    if (op.distributiva && filas.length >= 2) bloque(DISTRIBUTIVA, [filas[0].d, filas[1].d], filas[0].S, filas[0].f.color);
   }
 
   // ====================================================== COMBINATORIA
@@ -10296,42 +10377,54 @@
       dibujo: "desarrollo", femenino: false,
       clave: "pizarra-generador-estructuras",
       defecto: {
+        tipo: "par",
         filas: [{ texto: "x * y = x + y - 3", conjunto: "ℤ", color: COLORES[0] }],
         lci: true, asociativa: true, conmutativa: false, neutro: true, inverso: true, distributiva: true,
-        tamTexto: "M", fuente: "normal", titulos: true, general: true, escribirOperacion: true,
+        tamTexto: "M", fuente: "normal", titulos: true, general: true, escribirOperacion: true, guias: true,
       },
-      contenido: ["filas"],
+      contenido: ["filas", "tipo"],
       agregarFila: "+ Operación",
+      maxFilas: cantidadOpsEst,
+      minFilas: cantidadOpsEst,
       placeholder: "Ej: x * y = x + y - 3",
       extrasFila: [
         { clave: "conjunto", etiqueta: "en", placeholder: "ℤ, ℝ, A... (vacío = A)",
-          titulo: "Conjunto donde está definida la operación",
+          titulo: "Conjunto de la estructura algebraica",
+          visible: function (op, i) { return i === 0; },
           errores: function () { return []; } },
       ],
       simbolos: [["∘", " ∘ ", "Escribe ∘"], ["△", " △ ", "Escribe △"], ["⊕", " ⊕ ", "Escribe ⊕"],
         ["·", "·", "Producto"], ["ℕ", "ℕ", "Naturales"], ["ℤ", "ℤ", "Enteros"], ["ℚ", "ℚ", "Racionales"], ["ℝ", "ℝ", "Reales"]],
-      ayuda: "Cada fila es una operación: x * y = x + y - 3, x ∘ y = 2xy, a △ b = (a + b)/2. " +
-        "El símbolo es lo que está entre las dos variables. Para cada propiedad se escribe su definición " +
-        "y los reemplazos con la definición de la operación, paso a paso, sin resolver. " +
-        "La distributiva es de la primera operación sobre la segunda. Seleccioná un desarrollo ya insertado para editarlo.",
+      ayuda: "Elegí par ordenado (A, *) con una operación o terna ordenada (A, *, ∘) con dos. " +
+        "Cada fila es una operación: x * y = x + y - 3, x ∘ y = 2xy, a △ b = (a + b)/2; " +
+        "el símbolo es lo que está entre las dos variables y el conjunto va en la primera fila. " +
+        "Para cada propiedad se escribe «Estudio de ...», la definición general (sobre A, con * para la 1.ª " +
+        "operación y + para la 2.ª), la aplicada a la estructura y la aplicada con la operación reemplazada " +
+        "por su definición, paso a paso, sin resolver. El neutro y el inverso tienen su definición general y " +
+        "una subsección por derecha y otra por izquierda. Cada par (A, *) es su propia sección. " +
+        "La distributiva (solo en la terna) es de la primera operación respecto de la segunda. " +
+        "Seleccioná un desarrollo ya insertado para editarlo.",
       erroresFila: function (t) { var d = leerOperacion(t); return d.error ? [d.error] : []; },
       posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 200 }; },
       generar: generarEstructuras,
       opciones: function (ui, op) {
         var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
         ui.arriba(function () {
+          ui.seg("Estructura", "tipo", [["par", "Par ordenado (A, *)", "Una operación"],
+            ["terna", "Terna ordenada (A, *, ∘)", "Dos operaciones"]], "filas");
           ui.chk("Ley de composición interna", "lci");
           ui.chk("Asociatividad", "asociativa");
           ui.chk("Conmutatividad", "conmutativa");
-          ui.chk("Existencia de elemento neutro", "neutro");
-          ui.chk("Existencia de elemento inverso", "inverso");
-          ui.chk("Distributividad de la 1.ª operación sobre la 2.ª (con dos filas)", "distributiva");
+          ui.chk("Elemento neutro (por derecha y por izquierda)", "neutro");
+          ui.chk("Elemento inverso (por derecha y por izquierda)", "inverso");
+          if (op.tipo === "terna") ui.chk("Distributividad de la 1.ª operación respecto de la 2.ª", "distributiva");
         });
         ui.seg("Texto", "tamTexto", tam);
         ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
         ui.chk("Escribir la operación", "escribirOperacion");
         ui.chk("Títulos de las propiedades", "titulos");
         ui.chk("Escribir la definición general", "general");
+        ui.chk("Líneas de tabulación (inicio y fin de cada sección)", "guias");
       },
     },
 
@@ -11049,12 +11142,12 @@
         { nombre: "Q", texto: "(x, y) => S(y, x)", base: "B × A", color: COLORES[4] }] }),
     ],
     estructuras: [
-      ej("Grupo en ℤ", "x * y = x + y − 3", { filas: [{ texto: "x * y = x + y - 3", conjunto: "ℤ", color: COLORES[0] }] }),
-      ej("Dos operaciones (distributiva)", "x * y = 2xy sobre x ∘ y = x + y, en ℝ", { filas: [
+      ej("Grupo en ℤ", "x * y = x + y − 3", { tipo: "par", filas: [{ texto: "x * y = x + y - 3", conjunto: "ℤ", color: COLORES[0] }] }),
+      ej("Terna (distributiva)", "(ℝ, *, ∘) con x * y = 2xy y x ∘ y = x + y", { tipo: "terna", filas: [
         { texto: "x * y = 2xy", conjunto: "ℝ", color: COLORES[0] }, { texto: "x ∘ y = x + y", conjunto: "ℝ", color: COLORES[1] }] }),
-      ej("Promedio", "a △ b = (a + b)/2 en ℝ (no es asociativa)", { filas: [
+      ej("Promedio", "a △ b = (a + b)/2 en ℝ (no es asociativa)", { tipo: "par", filas: [
         { texto: "a △ b = (a + b)/2", conjunto: "ℝ", color: COLORES[0] }] }),
-      ej("x ∘ y = x + y + xy", "En ℝ: neutro 0; el −1 no tiene inverso", { filas: [
+      ej("x ∘ y = x + y + xy", "En ℝ: neutro 0; el −1 no tiene inverso", { tipo: "par", filas: [
         { texto: "x ∘ y = x + y + xy", conjunto: "ℝ", color: COLORES[0] }] }),
     ],
     combinatoria: [
@@ -11762,6 +11855,7 @@
         self.cambio();
       };
       sim.appendChild(agregar);
+      this.botonAgregar = agregar;
       // los botones de simbolos no roban el foco del campo de texto
       gen.simbolos.forEach(function (s) {
         var b = document.createElement("button");
@@ -11813,7 +11907,19 @@
       var self = this, gen = this.gen(), cont = this.el.querySelector(".filas");
       cont.innerHTML = "";
       this.validadores = [];
+      // cantidad de filas segun las opciones (p. ej. par o terna ordenada): se
+      // agregan vacias hasta el minimo y las que pasan del maximo no se muestran
+      // (se conservan por si se vuelve a ampliar)
+      var max = gen.maxFilas ? gen.maxFilas(this.op) : Infinity;
+      var min = gen.minFilas ? gen.minFilas(this.op) : 0;
+      while (this.op.filas.length < min) {
+        var nueva = { texto: "", color: colorFila(this.op.filas.length) };
+        if (gen.nombreFila) nueva.nombre = gen.nombreFila.porDefecto(this.op.filas.length);
+        this.op.filas.push(nueva);
+      }
+      if (this.botonAgregar) this.botonAgregar.style.display = this.op.filas.length >= max ? "none" : "";
       this.op.filas.forEach(function (f, i) {
+        if (i >= max) return;
         var caja = document.createElement("div");
         caja.innerHTML = '<div class="fila">' +
           (gen.nombreFila ? '<input type="text" class="nombre" spellcheck="false" autocomplete="off">' : "") +
@@ -11833,7 +11939,7 @@
         }
         // campos extra debajo de la fila (dominio propio, puntos a marcar...)
         var extras = (gen.extrasFila || []).filter(function (def) {
-          return !def.visible || def.visible(self.op);
+          return !def.visible || def.visible(self.op, i);
         }).map(function (def) {
           var sub = document.createElement("div");
           sub.className = "subfila";
@@ -11932,6 +12038,7 @@
               op[clave] = o[0];
               [].forEach.call(s.children, function (x) { x.className = ""; });
               b.className = "activo";
+              if (repintar === "filas") self.pintarFilas();
               self.cambio();
               if (repintar) self.pintarOpciones();
             };
