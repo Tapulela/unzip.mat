@@ -5960,10 +5960,13 @@
   // cada fila define una de sus operaciones con su formula: "x * y = x + y - 3"
   // (el simbolo de la operacion es lo que esta entre las dos variables). Para
   // cada propiedad se escribe «Estudio de ...», la definicion general (sobre A,
-  // con * o +), la aplicada (con el conjunto y el simbolo de la estructura) y
-  // despues los reemplazos con la definicion, sin resolver nada: en cada paso se
-  // reemplazan todas las operaciones cuyos dos operandos ya no tienen la
-  // operacion (las de mas adentro), hasta que no queda ninguna.
+  // con * o +) y la aplicada (con el conjunto y el simbolo de la estructura).
+  // Solo en la ley de composicion interna siguen los reemplazos con la
+  // definicion, sin resolver nada: en cada paso se reemplazan todas las
+  // operaciones cuyos dos operandos ya no tienen la operacion (las de mas
+  // adentro), hasta que no queda ninguna. Los renglones de un desarrollo con
+  // «=» se alinean en el «=». Despues de la aplicada va el desarrollo: la
+  // expresion sin cuantificadores con esos mismos reemplazos.
   var LETRAS_EST = "A-Za-zα-ωΑ-Ω";
   var IDENT_EST = "[" + LETRAS_EST + "](?:'+|[₀-₉]+)?";
   var FUNCIONES_TXT = { sin: 1, sen: 1, cos: 1, tan: 1, tg: 1, ln: 1, log: 1, sqrt: 1, exp: 1,
@@ -6029,7 +6032,7 @@
   var PRE_NEUTRO = function (S) { return "∃e ∈ " + S + " / ∀x ∈ " + S + ": "; };
   var PRE_INVERSO = function (S) { return "∀x ∈ " + S + ", ∃x' ∈ " + S + " / "; };
   var PROPIEDADES_EST = [
-    { clave: "lci", titulo: function () { return "Estudio de la ley de composición interna"; },
+    { clave: "lci", titulo: function () { return "Estudio de la ley de composición interna"; }, reemplazar: true,
       lados: function (o) { return [o(0, "x", "y")]; },
       pre: function (S) { return "∀x, y: x ∈ " + S + " ∧ y ∈ " + S + " → "; }, suf: function (S) { return " ∈ " + S; } },
     { clave: "asociativa", titulo: function () { return "Estudio de la asociatividad"; },
@@ -6066,8 +6069,12 @@
   var GENERICOS_EST = [{ op: "*" }, { op: "+" }];
 
   // definicion general (conjunto A y operaciones genericas), definicion
-  // aplicada (conjunto y simbolos de la estructura) y la aplicada con los
-  // reemplazos de la operacion por su definicion, paso a paso
+  // aplicada (conjunto y simbolos de la estructura) y, si la propiedad lo pide
+  // (p.reemplazar), la aplicada con los reemplazos de la operacion por su
+  // definicion. Ademas, el desarrollo algebraico de la expresion original (sin
+  // cuantificadores) con los reemplazos sucesivos: con dos lados, una igualdad
+  // por renglon (x * (y * z) = (x * y) * z, ...); con un solo lado (L.C.I.),
+  // una cadena: x * y = x + y − 3 (= ... en los renglones siguientes).
   function desarrollarPropiedad(p, defs, S, genericos) {
     var o = function (k, a, b) {
       var h = function (x) { return typeof x === "string" ? { v: x } : x; };
@@ -6078,10 +6085,14 @@
     var res = {
       general: p.pre("A") + ecuacion(genericos) + (p.suf ? p.suf("A") : ""),
       aplicada: [p.pre(S) + ecuacion(defs) + suf],
+      desarrollo: [ecuacion(defs)],
     };
     for (var vuelta = 0; vuelta < 20 && lados.some(esOp); vuelta++) {
       lados = lados.map(function (n) { return pasoEstructura(n, defs); });
-      res.aplicada.push(p.pre(S) + ecuacion(defs) + suf);
+      if (p.reemplazar) res.aplicada.push(p.pre(S) + ecuacion(defs) + suf);
+      if (lados.length > 1) res.desarrollo.push(ecuacion(defs));
+      else if (vuelta === 0) res.desarrollo[0] += " = " + ecuacion(defs);
+      else res.desarrollo.push("= " + ecuacion(defs));
     }
     return res;
   }
@@ -6122,17 +6133,26 @@
       guia((conTitulo ? [] : [[xg + pie, y0]]).concat([[xg, y0], [xg, y1], [xg + pie, y1]]), color, 2);
       y += lh * 0.6;
     }
-    // «Definición ...:» y sus renglones una sangria mas adentro, con su linea
+    // «Definición ...:» y sus renglones una sangria mas adentro, con su linea.
+    // Si los renglones (un desarrollo) tienen todos un «=», quedan alineados
+    // en el primero («= ...» al principio de un renglon tambien cuenta).
     function definicion(x, etiqueta, renglones, color) {
       linea(x, etiqueta, color);
       var y0 = finTexto + 2;
-      renglones.forEach(function (s) { linea(x + sangria, s, TINTA); });
+      var antes = renglones.map(function (s) {
+        var m = /(^|\s)=\s/.exec(s);
+        return m ? medir(s.slice(0, m.index + m[1].length), tam, fuente) : -1;
+      });
+      var alinear = antes.every(function (w) { return w >= 0; });
+      var maxAntes = Math.max.apply(null, antes);
+      renglones.forEach(function (s, i) { linea(x + sangria + (alinear ? maxAntes - antes[i] : 0), s, TINTA); });
       guia([[x + dx, y0], [x + dx, finTexto + 2]], color, 1);
     }
     function definiciones(x, p, defs, genericos, color) {
       var r = desarrollarPropiedad(p, defs, S, genericos);
       if (op.general) definicion(x, "Definición general:", [r.general], color);
       definicion(x, "Definición aplicada:", r.aplicada, color);
+      if (r.desarrollo.length > 1 || r.desarrollo[0].indexOf(" = ") >= 0) definicion(x, "Desarrollo:", r.desarrollo, color);
     }
     function propiedades(x, fila, i) {
       var defs = [fila.d], gen = [GENERICOS_EST[i]], color = fila.f.color;
@@ -10399,8 +10419,9 @@
         "Cada fila es una operación: x * y = x + y - 3, x ∘ y = 2xy, a △ b = (a + b)/2; " +
         "el símbolo es lo que está entre las dos variables y el conjunto va en la primera fila. " +
         "Para cada propiedad se escribe «Estudio de ...», la definición general (sobre A, con * para la 1.ª " +
-        "operación y + para la 2.ª), la aplicada a la estructura y la aplicada con la operación reemplazada " +
-        "por su definición, paso a paso, sin resolver. El neutro y el inverso tienen su definición general y " +
+        "operación y + para la 2.ª) y la aplicada a la estructura; en la ley de composición interna sigue " +
+        "la aplicada con la operación reemplazada por su definición. Después, el desarrollo de la expresión " +
+        "reemplazando la operación por su definición paso a paso, sin resolver, alineado en el «=». El neutro y el inverso tienen su definición general y " +
         "una subsección por derecha y otra por izquierda. Cada par (A, *) es su propia sección. " +
         "La distributiva (solo en la terna) es de la primera operación respecto de la segunda. " +
         "Seleccioná un desarrollo ya insertado para editarlo.",
