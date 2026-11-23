@@ -1747,7 +1747,14 @@
   // reescribe antes: p → q = ¬p ∨ q; p ↔ q = (p ∧ q) ∨ (¬p ∧ ¬q);
   // p ⊻ q = (p ∧ ¬q) ∨ (¬p ∧ q); y la negacion de algo compuesto se lleva
   // hasta las variables con De Morgan. V es un cable y F un corte.
+  // Un bloque que el autor escribio entre parentesis o corchetes queda como
+  // bloque propio (grupo): (p ∨ q) ∨ (r ∨ s) son dos paralelos dentro de otro.
   function aSerieParalelo(n, neg) {
+    var nd = nodoSP(n, neg);
+    if (n.par && (nd.tipo === "serie" || nd.tipo === "paralelo")) nd.grupo = true;
+    return nd;
+  }
+  function nodoSP(n, neg) {
     var S = function (h) { return { tipo: "serie", hijos: h }; };
     var P = function (h) { return { tipo: "paralelo", hijos: h }; };
     var r = aSerieParalelo;
@@ -1766,14 +1773,15 @@
       : P([S([r(a, false), r(b, false)]), S([r(a, true), r(b, true)])]);
   }
 
-  // junta las series dentro de series y los paralelos dentro de paralelos
+  // junta las series dentro de series y los paralelos dentro de paralelos,
+  // salvo los paralelos que el autor agrupo entre parentesis
   function aplanarSP(nd) {
     if (nd.tipo !== "serie" && nd.tipo !== "paralelo") return nd;
     var hijos = [];
     nd.hijos.map(aplanarSP).forEach(function (h) {
-      if (h.tipo === nd.tipo) hijos = hijos.concat(h.hijos); else hijos.push(h);
+      if (h.tipo === nd.tipo && !(h.grupo && h.tipo === "paralelo")) hijos = hijos.concat(h.hijos); else hijos.push(h);
     });
-    return { tipo: nd.tipo, hijos: hijos };
+    return { tipo: nd.tipo, hijos: hijos, grupo: nd.grupo };
   }
 
   // Medidas: w (ancho), asc / desc (alto por encima / debajo del cable).
