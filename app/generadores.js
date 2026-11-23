@@ -4909,8 +4909,73 @@
     return r.n < 0 ? [TF("−"), f] : f;
   }
 
+  // REGLA GENERAL: un paréntesis (o corchete) abarca toda la expresión que
+  // encierra. Si adentro hay algo más alto que un renglón (una fracción, una
+  // raíz, un sistema), el par se dibuja con trazos del alto del contenido en
+  // vez de ser dos caracteres chicos. Los pares pueden estar en items
+  // distintos («(», fracción, «)») y se buscan en la misma lista; abrir y
+  // cerrar pueden ser distintos, como en el intervalo «(0, 1/4]».
+  var cacheParenF = typeof WeakMap === "function" ? new WeakMap() : null;
+  function esAltoF(its, tam, fuente) {
+    var lh = tam * fuente.lh, m = medirItsF(its, tam, fuente);
+    return m.ar + m.ab > lh * 1.3;
+  }
+  function parentesisF(its, tam, fuente) {
+    if (!its.some(function (it) { return typeof it.t === "string" && /[()\[\]]/.test(it.t); })) return its;
+    if (!its.some(function (it) { return typeof it.t !== "string"; })) return its;
+    var clave = cacheParenF && cacheParenF.get(its);
+    if (clave && clave.tam === tam && clave.fuente === fuente) return clave.its;
+    // tokens: texto partido en los paréntesis, y los demás items enteros
+    var tk = [];
+    its.forEach(function (it) {
+      if (typeof it.t !== "string") { tk.push({ it: it }); return; }
+      it.t.split(/([()\[\]])/).forEach(function (p) {
+        if (p) tk.push({ t: p, color: it.color, abre: p === "(" || p === "[", cierra: p === ")" || p === "]" });
+      });
+    });
+    function texto(t, color) { return color ? { t: t, color: color } : { t: t }; }
+    function armar(lista) {
+      var out = [];
+      lista.forEach(function (x) {
+        if (x.it) { out.push(x.it); return; }
+        var u = out[out.length - 1];
+        if (u && typeof u.t === "string" && u.color === x.color && !u.paren) u.t += x.t;
+        else out.push(texto(x.t, x.color));
+      });
+      return out;
+    }
+    // pila de aperturas: al cerrar, si lo de adentro es alto, el par se
+    // reemplaza por un item { paren } (de adentro hacia afuera)
+    var pila = [];
+    for (var i = 0; i < tk.length; i++) {
+      if (tk[i].abre) pila.push(i);
+      else if (tk[i].cierra && pila.length) {
+        var a = pila.pop(), dentro = armar(tk.slice(a + 1, i));
+        if (esAltoF(dentro, tam, fuente)) {
+          var it = { paren: dentro, abre: tk[a].t, cierra: tk[i].t, colorAbre: tk[a].color, colorCierra: tk[i].color };
+          tk.splice(a, i - a + 1, { it: it });
+          i = a;
+        }
+      }
+    }
+    var res = armar(tk);
+    // exponente pegado al cierre («(7/3)²»): va arriba, a la altura del borde
+    // del paréntesis grande, y no en el medio del renglón
+    for (var k = 0; k + 1 < res.length; k++) {
+      var sig = res[k + 1], me = res[k].paren && typeof sig.t === "string" && /^[⁰¹²³⁴⁵⁶⁷⁸⁹⁻]+/.exec(sig.t);
+      if (!me) continue;
+      res[k].exp = me[0];
+      res[k + 1] = sig.color ? { t: sig.t.slice(me[0].length), color: sig.color } : { t: sig.t.slice(me[0].length) };
+      if (!res[k + 1].t) res.splice(k + 1, 1);
+    }
+    if (cacheParenF) cacheParenF.set(its, { tam: tam, fuente: fuente, its: res });
+    return res;
+  }
+  function anchoParenF(tam) { return tam * 0.4; }
+
   function medirItsF(its, tam, fuente) {
     var lh = tam * fuente.lh, w = 0, ar = lh / 2, ab = lh / 2;
+    its = parentesisF(its, tam, fuente);
     its.forEach(function (it) {
       var m = medirItF(it, tam, fuente);
       w += m.w; ar = Math.max(ar, m.ar); ab = Math.max(ab, m.ab);
@@ -4977,6 +5042,10 @@
       var r = medirItsF(it.raiz, tam, fuente), ix = indiceRaizF(it, tam, fuente);
       return { w: r.w + tam * 0.8 + ix.corre, ar: Math.max(r.ar + 4, ix.alto), ab: r.ab };
     }
+    if (it.paren) {
+      var mp = medirItsF(it.paren, tam, fuente);
+      return { w: mp.w + 2 * anchoParenF(tam) + (it.exp ? medir(it.exp, tam, fuente) : 0), ar: mp.ar + 2, ab: mp.ab + 2 };
+    }
     if (it.sup) {
       // exponente: mas chico y subido (sirve para cualquier exponente, no solo
       // los que tienen caracter de superindice)
@@ -4985,8 +5054,18 @@
     }
     return { w: medir(it.t, tam, fuente), ar: lh / 2, ab: lh / 2 };
   }
+  // «(», «)», «[» o «]» dibujado entre top y bot, en una franja de ancho pw
+  function trazoParenF(ch, x, top, bot, pw, c, agregar) {
+    var der = ch === ")" || ch === "]", h = bot - top;
+    var ext = der ? x + pw * 0.25 : x + pw * 0.75, inn = der ? x + pw * 0.65 : x + pw * 0.35;
+    var pts = ch === "(" || ch === ")"
+      ? [[ext, top], [inn, top + h * 0.25], [inn, bot - h * 0.25], [ext, bot]]
+      : [[ext, top], [inn, top], [inn, bot], [ext, bot]];
+    agregar(trazo(pts, { strokeColor: c, strokeWidth: 1.5, roundness: ch === "(" || ch === ")" ? { type: 2 } : null }));
+  }
   function dibujarItsF(its, x, mid, color, tam, fuente, agregar) {
     var lh = tam * fuente.lh;
+    its = parentesisF(its, tam, fuente);
     its.forEach(function (it) {
       var m = medirItF(it, tam, fuente), c = it.color || color;
       if (it.tabla) {
@@ -5040,6 +5119,12 @@
         agregar(trazo([[xr + tam * 0.05, mid + 2], [xr + g * 0.3, mid - 2], [xr + g * 0.6, bot], [xr + g, top],
           [xr + g + r.w + tam * 0.1, top]], { strokeColor: c, strokeWidth: 1.5 }));
         dibujarItsF(it.raiz, xr + g + tam * 0.05, mid, c, tam, fuente, agregar);
+      } else if (it.paren) {
+        var pw = anchoParenF(tam), mp = medirItsF(it.paren, tam, fuente);
+        trazoParenF(it.abre, x, mid - m.ar, mid + m.ab, pw, it.colorAbre || color, agregar);
+        dibujarItsF(it.paren, x + pw, mid, color, tam, fuente, agregar);
+        trazoParenF(it.cierra, x + pw + mp.w, mid - m.ar, mid + m.ab, pw, it.colorCierra || color, agregar);
+        if (it.exp) agregar(texto(x + 2 * pw + mp.w, mid - m.ar - lh * 0.15, it.exp, tam, fuente, it.colorCierra || color, "left"));
       } else if (it.sup) {
         dibujarItsF(it.sup, x + tam * 0.04, mid - supSubeF(tam), c, tamSupF(tam), fuente, agregar);
       } else {
