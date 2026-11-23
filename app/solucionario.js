@@ -83,7 +83,8 @@
     if (typeof r === "string" || Array.isArray(r)) r = { der: r };
     var der = items(r.der, ruta + ".der", errores);
     var l = {
-      izq: r.izq ? String(r.izq) : null,
+      // el miembro izquierdo: un texto o, como der, una lista de items (fracciones, colores)
+      izq: r.izq ? (Array.isArray(r.izq) || typeof r.izq === "object" ? items(r.izq, ruta + ".izq", errores) : String(r.izq)) : null,
       rel: r.rel !== undefined ? r.rel : (r.izq ? "=" : null),
       der: der,
       nota: notas(r.nota, color(r.notaColor, g.TINTA)),

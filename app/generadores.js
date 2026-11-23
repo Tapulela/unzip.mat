@@ -5117,8 +5117,9 @@
         var xna = l.rel ? f.xRel : l.izq ? x : f.xs;
         l.nota.forEach(function (t, j) { agregar(texto(xna, yNota[i] + j * hN, t.t, tamN, fuente, t.color, "left")); });
       }
-      if (Array.isArray(l.izq)) dibujarItsF(l.izq, x, f.mid, col, tam, fuente, agregar);
-      else if (l.izq) agregar(texto(x, f.mid - lh / 2, l.izq, tam, fuente, col, "left"));
+      // el miembro izquierdo, contra el «=» (alineado a la derecha de su columna)
+      if (Array.isArray(l.izq)) dibujarItsF(l.izq, f.xRel - medirItsF(l.izq, tam, fuente).w - medir(" ", tam, fuente), f.mid, col, tam, fuente, agregar);
+      else if (l.izq) agregar(texto(f.xRel - medir(l.izq + " ", tam, fuente), f.mid - lh / 2, l.izq, tam, fuente, col, "left"));
       if (l.rel) agregar(texto(f.xRel, f.mid - lh / 2, l.rel, tam, fuente, col, "left"));
       if (l.caja) {
         // recuadro con esquinas redondeadas alrededor de lo escrito (sin las marcas)
