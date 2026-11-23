@@ -942,7 +942,9 @@
       var y = Y(v), cero = Math.abs(v) < 1e-9;
       if (cero && Math.abs(y - yEje) < 0.5) return;
       agregar(linea(xEje - 5, y, [[0, 0], [10, 0]], {}));
-      if (!op.ocultarNumeros) agregar(texto(xEje - 8, y - tamN * fuente.lh / 2, formatear(v), tamN, fuente, TINTA, "right"));
+      // un número negativo pegado al eje x se pisaría con los números de ese eje
+      var lhY = tamN * fuente.lh, pisaEjeX = y > yEje && y - lhY / 2 < yEje + 8 + lhY && marcasX.length;
+      if (!op.ocultarNumeros && !pisaEjeX) agregar(texto(xEje - 8, y - lhY / 2, formatear(v), tamN, fuente, TINTA, "right"));
     });
     if (origenVisible) agregar(texto(xEje - 6, yEje + 6, "0", tamN, fuente, TINTA, "right"));
 
@@ -7416,10 +7418,15 @@
     agregar(texto(X0 - 6, Y0 + 4, "0", tamN, fuente, TINTA, "right"));
     if (extra && extra.dibujar) extra.dibujar(X, Y, s);
 
-    // etiqueta junto a la punta de un vector, hacia afuera
+    // etiqueta junto a la punta de un vector, hacia afuera; si otro vector ya
+    // termina en el mismo punto (w = z₁), su etiqueta va un renglón más afuera
+    var puntas = {};
     function etiqueta(re, im, txt, color) {
       var a = Math.atan2(im, re), px = X(re) + Math.cos(a) * 8, py = Y(im) - Math.sin(a) * 8;
-      agregar(texto(px, Math.sin(a) >= 0 ? py - lhN : py, txt, tamN, fuente, color, Math.cos(a) >= -0.2 ? "left" : "right"));
+      var clave = Math.round(re * 1000) + "," + Math.round(im * 1000), n = puntas[clave] || 0;
+      puntas[clave] = n + 1;
+      var arriba = Math.sin(a) >= 0;
+      agregar(texto(px, (arriba ? py - lhN : py) + (arriba ? -1 : 1) * n * lhN, txt, tamN, fuente, color, Math.cos(a) >= -0.2 ? "left" : "right"));
     }
     function vector(re, im, color, dashed) {
       agregar(linea(X0, Y0, [[0, 0], [X(re) - X0, Y(im) - Y0]],
