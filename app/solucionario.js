@@ -365,14 +365,106 @@
           p = bloqueQr(b, x, rb);
           if (!p) return;
           piezas.push(p);
+        } else if (Array.isArray(b.triangulos)) {
+          p = bloqueTriangulos(b, x, rb);
+          if (!p) return;
+          piezas.push(p);
         } else {
-          errores.push(rb + ": bloque sin «texto», «pasos», «generador», «seccion», «qr», «salto» ni «espacio»");
+          errores.push(rb + ": bloque sin «texto», «pasos», «generador», «seccion», «qr», «triangulos», «salto» ni «espacio»");
         }
         // aviso propio si la hoja se corta justo antes de este bloque (estilo.continuacion)
         if (p && typeof b.continua === "string") p.continua = b.continua;
         // alLado: este bloque va a la derecha del bloque anterior
         if (p && b.alLado) bloqueAlLado(b.alLado, rb);
       });
+    }
+
+    // triangulos: { triangulos: [ { nombre: "T₁", angulos: [90, 30, 60] }, "R", ... ],
+    // alto, color }. Una fila de triangulos dibujados a partir de sus angulos
+    // (en grados, suman 180): el primero abajo a la izquierda, el segundo abajo a
+    // la derecha y el tercero arriba. Cada angulo lleva su arco y su medida
+    // (el recto, el cuadradito); el nombre va arriba. Un texto suelto de la
+    // lista ("R", "∧", "=") se escribe entre los triangulos, a media altura.
+    // Todos quedan apoyados en la misma linea; `alto` es la altura maxima.
+    function bloqueTriangulos(b, x, rb) {
+      var alto = typeof b.alto === "number" && b.alto > 0 ? b.alto : 80;
+      var anchoMax = alto * 2.2, gap = tam * 0.9, tamA = g.TAMANOS.S;
+      var col = color(b.color, g.TINTA), colA = color(b.colorAngulos, g.TINTA);
+      var rad = Math.PI / 180, figs = [], malo = false;
+      b.triangulos.forEach(function (it, j) {
+        if (typeof it === "string") { figs.push({ texto: it, w: g.medir(it, tam, fuente) }); return; }
+        var a = it && it.angulos;
+        if (!Array.isArray(a) || a.length !== 3 || a.some(function (v) { return !(typeof v === "number" && v > 0); }) ||
+            Math.abs(a[0] + a[1] + a[2] - 180) > 0.01) {
+          errores.push(rb + ".triangulos[" + j + "].angulos: tienen que ser tres números positivos que sumen 180");
+          malo = true; return;
+        }
+        // A = (0, 0), B = (1, 0), C arriba (y hacia arriba); despues se escala
+        var ac = Math.sin(a[1] * rad) / Math.sin(a[2] * rad);
+        var P = [[0, 0], [1, 0], [ac * Math.cos(a[0] * rad), ac * Math.sin(a[0] * rad)]];
+        var x0 = Math.min(0, P[2][0]), x1 = Math.max(1, P[2][0]), h = P[2][1];
+        var s = Math.min(alto / h, anchoMax / (x1 - x0));
+        figs.push({ P: P.map(function (q) { return [(q[0] - x0) * s, q[1] * s]; }), w: (x1 - x0) * s, h: h * s,
+          angulos: a, nombre: it.nombre ? String(it.nombre) : "" });
+      });
+      if (malo || !figs.length) return null;
+      var conNombre = figs.some(function (f) { return f.nombre; });
+      var base = (conNombre ? tam * fuente.lh + 6 : 0) + alto;
+      var p = nuevaPieza(), cx = x;
+      // cada figura se arma desde x = 0 y despues se corre: asi las medidas que
+      // quedan afuera del triangulo tambien entran en la separacion
+      figs.forEach(function (f) {
+        var els = [], agregar = function (e) { els.push(e); };
+        if (f.texto !== undefined) agregar(g.texto(f.w / 2, base - alto / 2 - tam * fuente.lh / 2, f.texto, tam, fuente, g.TINTA, "center"));
+        else dibujarTriangulo(f, agregar);
+        var x0 = Infinity, x1 = -Infinity;
+        els.forEach(function (e) { var c = g.caja(e); x0 = Math.min(x0, c.x0); x1 = Math.max(x1, c.x1); });
+        els.forEach(function (e) { e.x += cx - x0; p.agregar(e); });
+        cx += x1 - x0 + gap;
+      });
+      if (cx - gap > maxW + 1) avisos.push(rb + ": los triángulos no entran a lo ancho de la hoja; conviene bajar «alto» o partirlos en dos bloques");
+      p.entero = true;
+      return p;
+
+      function dibujarTriangulo(f, agregar) {
+        var p = { agregar: agregar }, cx = 0;
+        var V = f.P.map(function (q) { return [q[0], base - q[1]]; });
+        p.agregar(g.trazo([V[0], V[1], V[2], V[0]], { strokeColor: col, strokeWidth: 1.5 }));
+        if (f.nombre) p.agregar(g.texto(cx + f.w / 2, base - f.h - tam * fuente.lh - 6, f.nombre, tam, fuente, col, "center"));
+        [0, 1, 2].forEach(function (k) {
+          var v = V[k], q1 = V[(k + 1) % 3], q2 = V[(k + 2) % 3], th = f.angulos[k];
+          var u1 = [q1[0] - v[0], q1[1] - v[1]], u2 = [q2[0] - v[0], q2[1] - v[1]];
+          var n1 = Math.hypot(u1[0], u1[1]), n2 = Math.hypot(u2[0], u2[1]);
+          u1 = [u1[0] / n1, u1[1] / n1]; u2 = [u2[0] / n2, u2[1] / n2];
+          var bi = [u1[0] + u2[0], u1[1] + u2[1]], nb = Math.hypot(bi[0], bi[1]);
+          bi = [bi[0] / nb, bi[1] / nb];
+          var r = Math.min(13, Math.min(n1, n2) * 0.3);
+          if (Math.abs(th - 90) < 0.5) {
+            var m = r * 0.8;
+            p.agregar(g.trazo([[v[0] + u1[0] * m, v[1] + u1[1] * m],
+              [v[0] + (u1[0] + u2[0]) * m, v[1] + (u1[1] + u2[1]) * m],
+              [v[0] + u2[0] * m, v[1] + u2[1] * m]], { strokeColor: colA, strokeWidth: 1 }));
+            return;
+          }
+          // arco de u1 a u2 por el lado del angulo interior
+          var a1 = Math.atan2(u1[1], u1[0]), a2 = Math.atan2(u2[1], u2[0]), da = a2 - a1;
+          while (da > Math.PI) da -= 2 * Math.PI;
+          while (da < -Math.PI) da += 2 * Math.PI;
+          var arco = [];
+          for (var i = 0; i <= 12; i++) { var t = a1 + da * i / 12; arco.push([v[0] + r * Math.cos(t), v[1] + r * Math.sin(t)]); }
+          p.agregar(g.trazo(arco, { strokeColor: colA, strokeWidth: 1 }));
+          // la medida va adentro, sobre la bisectriz; si el angulo es muy
+          // cerrado no entra y va afuera, del otro lado del vertice
+          var txt = String(Math.round(th * 100) / 100).replace(".", ",") + "°";
+          var wt = g.medir(txt, tamA, fuente), ht = tamA * fuente.lh;
+          var d = (wt / 2 + 3) / Math.tan(th * rad / 2) + ht / 2;
+          var dentro = th >= 35 && d < Math.min(n1, n2) * 0.5;
+          var dist = dentro ? Math.max(r + ht / 2 + 2, d) : r * 0.4 + wt / 2 + 4;
+          var sg = dentro ? 1 : -1;
+          var cxT = v[0] + sg * bi[0] * dist, cyT = v[1] + sg * bi[1] * dist;
+          p.agregar(g.texto(cxT, cyT - ht / 2, txt, tamA, fuente, colA, "center"));
+        });
+      }
     }
 
     // qr: { qr: "https://…", titulo, lado, ancho }. Un codigo QR dibujado con
