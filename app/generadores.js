@@ -5163,23 +5163,32 @@
     // del renglon donde se hace (para desarrollos angostos, al lado de un grafico)
     var arriba = !!(op.notasArriba && op.notas), yNota = [];
     var filas = [], yy = y, der = 0;
+    // la llave de una bifurcacion empieza donde empieza lo escrito en su
+    // renglon (no en el borde del bloque) y sus ramas cuelgan desde ahi: asi
+    // queda igual con el desarrollo entero que partido entre hojas
+    var xLlave = x;
     lineas.forEach(function (l, i) {
       if ((l.sub || l.corte) && i) yy += lh * 0.5;
       if (arriba && l.nota) { yNota[i] = yy; yy += l.nota.length * hN + tam * 0.15; }
       // llaves por encima (`arriba`): lugar para la llave y su texto
       if (l.arriba) yy += tam * 0.55 + hN;
       var xRel = x + grupos[l.grupo].w, xDer = xRel + wIg;
-      var m = medirItsF(l.der, tam, fuente), xs = l.rama ? x + tam * 4 : l.rel === null ? x : xDer;
+      var m = medirItsF(l.der, tam, fuente), xs = l.rama ? xLlave + tam * 4 : l.rel === null ? x : xDer;
+      var xIni = xs;
       if (Array.isArray(l.izq)) {
         var mi = medirItsF(l.izq, tam, fuente);
         m = { w: m.w, ar: Math.max(m.ar, mi.ar), ab: Math.max(m.ab, mi.ab) };
-      }
+        xIni = xRel - mi.w - medir(" ", tam, fuente);
+      } else if (l.izq) xIni = xRel - medir(l.izq + " ", tam, fuente);
+      var xL = l.rama ? xLlave : xIni;
+      if (l.llave) xLlave = xIni;
+      else if (!l.rama) xLlave = x;
       // la nota del paso siguiente va en este renglon: si es mas alta, se
       // agranda el renglon (mitad arriba y mitad abajo)
       var sig = lineas[i + 1], hNota = !arriba && op.notas && sig && sig.nota ? sig.nota.length * hN : 0;
       if (!arriba && !i && op.notas && l.nota) hNota = Math.max(hNota, l.nota.length * hN);
       var extra = Math.max(0, hNota - (m.ar + m.ab)) + (l.caja ? tam * 0.5 : 0);
-      filas.push({ mid: yy + extra / 2 + m.ar, xs: xs, xRel: xRel, m: m, fin: xs + m.w });
+      filas.push({ mid: yy + extra / 2 + m.ar, xs: xs, xRel: xRel, m: m, fin: xs + m.w, xL: xL });
       if (!l.libre) der = Math.max(der, xs + m.w); // los textos sueltos no corren las notas
       yy += m.ar + m.ab + extra + (m.ar + m.ab > lh + 2 ? lh * 0.45 : lh * 0.2) + (l.llave ? tam * 0.6 : 0)
         + (l.marcar ? Math.max(tam * 2.8, l.marcar.texto.length * hN + tam * 1.6) : 0);
@@ -5221,7 +5230,7 @@
           height: f.m.ar + f.m.ab + pc * 1.2, strokeColor: l.caja, strokeWidth: 1.5, roundness: { type: 3 } }));
       }
       if (l.rama) {
-        var xt = x + tam * 0.9;
+        var xt = f.xL + tam * 0.9;
         agregar(trazo([[xt, f.mid], [f.xs - tam * 0.4, f.mid]], { type: "arrow", endArrowhead: "arrow", strokeColor: TINTA, strokeWidth: 1.5 }));
       }
       dibujarItsF(l.der, f.xs, f.mid, col, tam, fuente, agregar);
@@ -5253,8 +5262,8 @@
         });
       }
       if (f.bif) {
-        var pa = tam * 0.4, xt2 = x + tam * 0.9;
-        agregar(trazo([[x - 4, f.bif.y - pa], [x - 4, f.bif.y], [f.fin + 4, f.bif.y], [f.fin + 4, f.bif.y - pa]],
+        var pa = tam * 0.4, xt2 = f.xL + tam * 0.9;
+        agregar(trazo([[f.xL - 4, f.bif.y - pa], [f.xL - 4, f.bif.y], [f.fin + 4, f.bif.y], [f.fin + 4, f.bif.y - pa]],
           { strokeColor: TINTA, strokeWidth: 1.5 }));
         agregar(trazo([[xt2, f.bif.y], [xt2, f.bif.hasta]], { strokeColor: TINTA, strokeWidth: 1.5 }));
       }
