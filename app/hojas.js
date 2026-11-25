@@ -871,7 +871,7 @@
 
   // ------------------------------------------------------------ marcadores
   // Un marcador es un texto de una hoja con customData.pizarraMarcador
-  // { nivel: 1..4, imprime }. Su texto es el titulo que se ve en el panel de
+  // { nivel: 1..5, imprime, clase, indice }. Su texto es el titulo que se ve en el panel de
   // marcadores del lector de PDF, y lleva al lugar del texto en su pagina.
   //  - Un texto de la hoja que se marca sigue imprimiendose (imprime: true).
   //  - Uno creado aparte (violeta, imprime: false) no se imprime ni cuenta
@@ -879,7 +879,7 @@
   // El PDF lo arma el dialogo de impresion, que no pone marcadores: se los
   // agrega despues «Agregar marcadores a un PDF», con pdf-lib (app/vendor/),
   // sobre el PDF ya guardado.
-  var NIVELES = 4, VIOLETA = "#6965db";
+  var NIVELES = 5, VIOLETA = "#6965db";
   function datosMarcador(e) { return e && e.customData && e.customData.pizarraMarcador; }
   function esMarcador(e) { return e && !e.isDeleted && e.type === "text" && !!datosMarcador(e); }
   function marcadorOculto(e) { return esMarcador(e) && datosMarcador(e).imprime === false; }
@@ -983,7 +983,7 @@
     avisar("Marcador agregado en " + f.name + ". Doble clic en «Marcador» para escribir su título; no se imprime.");
   }
 
-  // cambia el nivel de un marcador (1 a 4) o lo quita (el creado aparte se borra)
+  // cambia el nivel de un marcador (1 a 5) o lo quita (el creado aparte se borra)
   function cambiarMarcador(id, cambio) {
     var A = api();
     if (!A) return;

@@ -138,14 +138,18 @@
 
   // texto violeta que no se imprime: un marcador del PDF (ver hojas.js), en el
   // margen izquierdo, centrado en un renglon de alto `altoRenglon` que empieza en y0
-  var NIVELES_MARCADOR = 4;
+  var NIVELES_MARCADOR = 5;
   // alto máximo de dos secciones lado a lado (alLado): una parte del alto útil,
   // para que el par, que no se parte entre hojas, entre en una con cabecera y pie
   var altoPar = Infinity;
-  function textoMarcador(titulo, nivel, y0, altoRenglon, fuente) {
+  // extra: { clase, indice } (clase: parte, ejercicio, item o seccion; indice:
+  // el titulo corto para un indice que solo muestra partes y ejercicios)
+  function textoMarcador(titulo, nivel, y0, altoRenglon, fuente, extra) {
     var g = G(), tamM = 10, w = g.medir(titulo, tamM, fuente);
     var e = g.texto(-w - 6, y0 + (altoRenglon - tamM * fuente.lh) / 2, titulo, tamM, fuente, "#6965db", "left");
-    e.customData = { pizarraMarcador: { nivel: Math.max(1, Math.min(NIVELES_MARCADOR, nivel)), imprime: false } };
+    var d = { nivel: Math.max(1, Math.min(NIVELES_MARCADOR, nivel)), imprime: false };
+    if (extra) for (var k in extra) if (extra[k] !== undefined) d[k] = extra[k];
+    e.customData = { pizarraMarcador: d };
     return e;
   }
 
@@ -183,7 +187,7 @@
       p.unir = false;
       p.espacio = lh;
       if (opc.marcadorTitulo && opc.marcadorTitulo.titulo) {
-        p.els.push(textoMarcador(opc.marcadorTitulo.titulo, opc.marcadorTitulo.nivel || 1, 0, tT * fuente.lh, fuente));
+        p.els.push(textoMarcador(opc.marcadorTitulo.titulo, opc.marcadorTitulo.nivel || 1, 0, tT * fuente.lh, fuente, { clase: "parte" }));
       }
       piezas.push(p);
     }
@@ -200,14 +204,14 @@
     // { titulo, nivel } (nivel 1 a 3). Se agrega a la pieza del título un texto
     // violeta que no se imprime, en el margen izquierdo, a la altura del primer
     // renglón: el lector de PDF lo muestra en su panel y lleva a ese lugar.
-    function marcar(p, valor, tituloPorDefecto, nivelPorDefecto, altoRenglon) {
+    function marcar(p, valor, tituloPorDefecto, nivelPorDefecto, altoRenglon, extra) {
       if (!valor || !p) return;
       var lhR = altoRenglon || lh;
       var o = typeof valor === "object" ? valor : {};
       var titulo = String(typeof valor === "string" ? valor : o.titulo || tituloPorDefecto).replace(/\s+/g, " ").trim();
       if (!titulo) return;
-      var nivel = Math.max(1, Math.min(3, (o.nivel | 0) || nivelPorDefecto || 1)) + base;
-      p.els.push(textoMarcador(titulo, nivel, 0, lhR, fuente));
+      var nivel = Math.max(1, Math.min(4, (o.nivel | 0) || nivelPorDefecto || 1)) + base;
+      p.els.push(textoMarcador(titulo, nivel, 0, lhR, fuente, extra));
     }
     // marcador de un ejercicio o un item con la plantilla del cuadernillo
     function conPlantillaDe(valor, pl, rot, enun) {
@@ -217,6 +221,7 @@
 
     // una sección: el título subrayado y sus bloques; devuelve su barra
     var aMedia = false; // armando una sección a media hoja (alLado)
+    var nivelCtx = 0; // 1 en los bloques de un ejercicio, 2 en los de un ítem (nivel de sus secciones)
     function seccion(b, x, rb, barras) {
       var p = nuevaPieza(true);
       var colS = color(b.color, COLOR_EJERCICIO);
@@ -225,7 +230,7 @@
       p.agregar(g.trazo([[x, yS + 1], [x + wS, yS + 1]], { strokeColor: colS, strokeWidth: 1.5 }));
       p.barras = barras;
       p.espacio = lh * 0.3;
-      marcar(p, b.marcador, String(b.seccion), barras.length + 1);
+      marcar(p, b.marcador, String(b.seccion), nivelCtx + barras.length + 1, undefined, { clase: "seccion" });
       piezas.push(p);
       var hijas = barras.concat([{ x: x + sangSec * 0.35, id: ++nSec, color: colS }]);
       bloques(b.bloques, x + sangSec, rb, hijas);
@@ -710,7 +715,9 @@
       var rEj = nEj === "" ? "" : rotulo(plEj, nEj), desdeEj = piezas.length;
       var pEj = enunciado(rEj, ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
       marcar(pEj, conPlantillaDe(ej.marcador, plantillas.ejercicio, rEj, ej.enunciado),
-        (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1);
+        (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1,
+        { clase: "ejercicio", indice: conPlantilla("{rotulo}", rEj, "") || undefined });
+      nivelCtx = 1;
       bloques(ej.bloques, sangria * 0.5, r);
       marcarInicio(desdeEj, "inicioEj");
       var desdeAnt = -1;
@@ -721,7 +728,8 @@
         var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt), desdeIt = piezas.length;
         var pIt = enunciado(rIt, it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
         marcar(pIt, conPlantillaDe(it.marcador, plantillas.item, rIt, it.enunciado),
-          (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1);
+          (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1, { clase: "item" });
+        nivelCtx = 2;
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
         marcarInicio(desdeIt, "inicioIt");
         if (it.alLado && desdeAnt >= 0 && ponerAlLado(desdeAnt, antesHueco, desdeIt, r + ".items[" + j + "]")) desdeIt = desdeAnt;
@@ -801,13 +809,18 @@
   //   texto     { titulo, subtitulo, bloques }: los bloques de siempre
   //   indice    { titulo, niveles, compacto }: los marcadores de las partes que siguen,
   //             con su numero de pagina; en el PDF, cada renglon es un enlace.
-  //             compacto: true junta mas los renglones (para ahorrar una hoja)
+  //             compacto: true junta mas los renglones (para ahorrar una hoja);
+  //             soloEjercicios: true muestra solo las partes y los ejercicios,
+  //             estos con su rotulo («Ejercicio 4»), sin items ni secciones
   //   solucion  { solucion: {...solucion@1}, marcadores: { ejercicio, item } }
   // Toda parte puede traer `cabecera` (si no, la del cuadernillo; una solucion
   // usa la suya): vale desde la primera hoja de la parte (hojas.js, «desde»).
   // `marcador`: el titulo del marcador de la parte (true: su titulo; false: sin
   // marcador). `enIndice: false` la saca del indice. `sinCabecera: true`: sus
   // hojas sin cabecera ni pie. `impar: false`: no salta a una hoja impar.
+  // `nivel: 2`: su marcador queda adentro del de la parte anterior de nivel 1.
+  // El cuadernillo puede traer `marcadores` { ejercicio, item }: las plantillas
+  // de las soluciones que no traen las suyas.
   var FORMATO_CUADERNILLO = "unzip.mat/cuadernillo@1";
   var TIPOS_PARTE = { caratula: 1, texto: 1, indice: 1, solucion: 1 };
 
@@ -822,7 +835,7 @@
     piezas.forEach(function (p) {
       (p.els || []).forEach(function (e) {
         var d = e.customData && e.customData.pizarraMarcador;
-        if (d) out.push({ id: e.id, titulo: e.text, nivel: d.nivel });
+        if (d) out.push({ id: e.id, titulo: e.text, nivel: d.nivel, clase: d.clase, indice: d.indice });
       });
     });
     return out;
@@ -834,13 +847,13 @@
   function armarIndice(entradas, maxW, est, r, compacto) {
     var g = G(), fuente = r.fuente, tam = r.tam, lh = r.lh, tamS = g.TAMANOS.S;
     entradas.forEach(function (en, i) {
-      var n1 = en.nivel <= 1, tamR = n1 ? tam : tamS, colR = n1 ? COLOR_EJERCICIO : g.TINTA;
+      var n1 = en.clase ? en.clase === "parte" : en.nivel <= 1, tamR = n1 ? tam : tamS, colR = n1 ? COLOR_EJERCICIO : g.TINTA;
       if (n1 && i) r.piezas.push({ hueco: lh * (compacto ? 0.2 : 0.5) });
       var p = nuevaPieza(n1); // un titulo de parte no queda solo al pie
       var fila = g.nuevoId(), xR = Math.max(0, en.nivel - 1) * tam * 1.5;
       var wNum = g.medir("000", tamR, fuente), hueco = tam * 0.6;
       var maxTit = maxW - xR - wNum - hueco * 2;
-      var tit = en.titulo;
+      var tit = en.indice || en.titulo;
       if (g.medir(tit, tamR, fuente) > maxTit) {
         while (tit.length > 1 && g.medir(tit + "…", tamR, fuente) > maxTit) tit = tit.slice(0, -1);
         tit = tit.trim() + "…";
@@ -1188,6 +1201,7 @@
       var t = tipoDeParte(parte), rp = esCuad ? "partes[" + i + "]" : "";
       var marcadorParte = parte.marcador === false ? null : typeof parte.marcador === "string" ? parte.marcador
         : typeof parte.marcador === "object" && parte.marcador ? parte.marcador.titulo : null;
+      var nivelParte = parte.nivel === 2 ? 2 : 1;
       if (t === "caratula") { armadas.push({ parte: parte, tipo: t }); return; }
       if (t === "solucion") {
         var s = parte.solucion, est = parte.sola ? s.estilo : mezclarEstilo(sol.estilo, s.estilo);
@@ -1196,9 +1210,9 @@
         s2.estilo = est;
         if (parte.titulo !== undefined) s2.titulo = parte.titulo;
         var opc = parte.sola ? {} : {
-          nivelBase: 1,
-          marcadorTitulo: parte.marcador === false ? null : { titulo: marcadorParte || String(s2.titulo || "").replace(/\s+/g, " ").trim(), nivel: 1 },
-          marcadores: parte.marcadores || { ejercicio: "{rotulo}" },
+          nivelBase: nivelParte,
+          marcadorTitulo: parte.marcador === false ? null : { titulo: marcadorParte || String(s2.titulo || "").replace(/\s+/g, " ").trim(), nivel: nivelParte },
+          marcadores: parte.marcadores || sol.marcadores || { ejercicio: "{rotulo}" },
         };
         var ra = armar(s2, maxW, opc);
         ra.errores.forEach(function (e) { erroresArmar.push((rp ? rp + ".solucion." : "") + e); });
@@ -1210,7 +1224,7 @@
       // texto o indice
       var estT = sol.estilo || {};
       var rt = armar(solucionDeParte(parte, estT), maxW, {
-        marcadorTitulo: parte.marcador === false || !parte.titulo ? null : { titulo: marcadorParte || parte.titulo, nivel: 1 },
+        marcadorTitulo: parte.marcador === false || !parte.titulo ? null : { titulo: marcadorParte || parte.titulo, nivel: nivelParte },
       });
       rt.errores.forEach(function (e) { erroresArmar.push(rp + "." + e); });
       rt.avisos = rt.avisos.map(function (a) { return rp + "." + a; });
@@ -1222,10 +1236,12 @@
     // indice mismo), hasta el nivel pedido (por defecto 2: partes y ejercicios)
     armadas.forEach(function (a, i) {
       if (a.tipo !== "indice") return;
-      var niveles = a.parte.niveles | 0 || 2, entradas = [];
+      var niveles = a.parte.niveles | 0 || 2, entradas = [], soloEj = a.parte.soloEjercicios === true;
       armadas.forEach(function (b, j) {
         if (j === i || !b.r || b.tipo === "indice" || b.parte.enIndice === false) return;
-        marcadoresDePiezas(b.r.piezas).forEach(function (m) { if (m.nivel <= niveles) entradas.push(m); });
+        marcadoresDePiezas(b.r.piezas).forEach(function (m) {
+          if (soloEj ? m.clase === "parte" || m.clase === "ejercicio" : m.nivel <= niveles) entradas.push(soloEj ? m : { id: m.id, titulo: m.titulo, nivel: m.nivel, clase: m.clase });
+        });
       });
       armarIndice(entradas, maxW, sol.estilo || {}, a.r, a.parte.compacto === true);
       if (!entradas.length) avisos.push("partes[" + i + "]: el índice no tiene entradas (las partes no tienen marcadores)");
