@@ -485,6 +485,16 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   copia que se escribe, así que la escena en memoria y Ctrl+Z no cambian. Cambio
   en el build (`assets/index-*.js`), en `serializeAsJSON`: `elements:e` pasa a ser
   `elements:i==="local"?e.filter(x=>!x.isDeleted):e`.
+- La escena se guarda en IndexedDB (`unzip-escena`) en vez de localStorage, que
+  admite ~5 millones de caracteres por sitio: un cuadernillo entero (461 hojas,
+  43 000 elementos) ocupa unos 34 millones y Excalidraw avisaba «Browser storage
+  quota exceeded. Changes will not be saved». `app/almacen.js` intercepta
+  `localStorage.getItem/setItem/removeItem` de la clave `excalidraw`, así que el
+  bundle no cambia; mientras la escena entra, también deja una copia en
+  localStorage (al arrancar se usa la más nueva). Para leer la escena antes de que
+  arranque la app, en `index.html` el `<script type="module">` del bundle se
+  reemplazó por `<script src="./almacen.js" data-app="./assets/index-*.js">`, que
+  lo carga después (si se recompila, hay que repetir ese reemplazo).
 - Sin servicios externos: se quitó la analítica (Simple Analytics), el CDN de fuentes de Excalidraw, Google Fonts y la redirección a Excalidraw+. Estos cambios se hicieron directamente sobre `app/index.html` y `app/assets/*.css` (no están en el diff). La fuente de la interfaz (Assistant) usa solo el peso Regular local.
 
 El detalle exacto del código fuente está en [`cambios-al-codigo.diff`](cambios-al-codigo.diff).
@@ -538,7 +548,8 @@ Dibujar, guardar, exportar y todos los generadores funcionan igual.
 - `app/entorno.js` — detecta si hay servidor y oculta la marca y los enlaces de Excalidraw/Excalidraw+.
 - `app/hojas.js` — hojas A4 con márgenes para preparar material imprimible.
 - `app/solucionario.js` — importa resoluciones en JSON (`unzip.mat/solucion@1`) a hojas A4.
-- `app/vendor/pdf-lib.min.js` — pdf-lib 1.17.1 (MIT), para agregar los marcadores a un PDF.
+- `app/almacen.js` — guarda la escena en IndexedDB (sin el límite de localStorage) y arranca la app.
+- `app/vendor/pdf-lib.min.js` — pdf-lib 1.17.1 (MIT), para agregar los marcadores a un PDF (se carga a los pocos segundos de abrir la pizarra).
 - `app/vendor/qrcode.js` — qrcode-generator 2.0.4 (MIT), para los códigos QR de las soluciones.
 - `servidor.js` — servidor HTTP + Socket.IO.
 - `build/armar-exe.mjs` — arma `dist/unzip.mat.exe` (`npm run exe`).

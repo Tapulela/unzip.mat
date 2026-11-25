@@ -1020,7 +1020,11 @@
         var s = document.createElement("script");
         s.src = "./vendor/pdf-lib.min.js";
         s.onload = function () { window.PDFLib ? listo(window.PDFLib) : fallo(new Error("pdf-lib no cargó")); };
-        s.onerror = function () { cargaPdfLib = null; fallo(new Error("no se pudo cargar pdf-lib")); };
+        s.onerror = function () {
+          cargaPdfLib = null; s.remove();
+          fallo(new Error("no se pudo cargar pdf-lib (" + s.src + "). ¿Está abierto el servidor de la pizarra? " +
+            "Volvé a abrirlo, recargá la página y probá de nuevo."));
+        };
         document.head.appendChild(s);
       });
     }
@@ -2034,6 +2038,9 @@
       });
       revisarSiCambio();
       (function bucle() { capa.dibujar(); requestAnimationFrame(bucle); })();
+      // pdf-lib queda cargado de antemano: si después se cierra el servidor de la
+      // pizarra (o se corta internet en la versión online), los marcadores igual andan
+      setTimeout(function () { pdfLib().catch(function () {}); }, 4000);
     }, 300);
   }
 
