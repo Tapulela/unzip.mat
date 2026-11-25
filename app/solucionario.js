@@ -71,6 +71,26 @@
     return { t: "" };
   }
 
+  // El enunciado es un texto o una lista de renglones: cada uno, un texto (un
+  // párrafo, que se corta solo) o una expresión (un item o una lista de items,
+  // con fracciones y raíces dibujadas, en un solo renglón). textoPlano lo
+  // escribe en una línea (para los marcadores y el índice): 4/(x − 3) < 1/2
+  function textoPlano(x) {
+    if (x === null || x === undefined) return "";
+    if (typeof x === "string" || typeof x === "number") return String(x);
+    if (Array.isArray(x)) return x.map(textoPlano).join("");
+    if (typeof x.t === "string") return x.t;
+    function envolver(s) { s = s.trim(); return /^[\w.,²³¹⁰⁴-⁹₀-₉′]+$/.test(s) ? s : "(" + s + ")"; }
+    if (Array.isArray(x.frac)) return envolver(textoPlano(x.frac[0])) + "/" + envolver(textoPlano(x.frac[1]));
+    if (x.raiz !== undefined) return "√" + envolver(textoPlano(x.raiz));
+    if (Array.isArray(x.sistema)) return x.sistema.map(textoPlano).join("; ");
+    return "";
+  }
+  function enunciadoPlano(e) {
+    if (!Array.isArray(e)) return String(e || "");
+    return e.map(function (r) { return typeof r === "string" ? r : textoPlano(r); }).join("\n");
+  }
+
   function notas(n, c) {
     if (!n) return null;
     return (Array.isArray(n) ? n : [n]).map(function (t) { return { t: String(t), color: c }; });
@@ -104,6 +124,17 @@
       if (!de || !a || !de.t || !a.t) errores.push(ruta + ".marcar: «de» y «a» tienen que ser índices de textos de «der»");
       else l.marcar = { de: de, a: a, texto: (Array.isArray(m.texto) ? m.texto : [m.texto || ""]).map(String), color: color(m.color, g.COLOR.producto) };
     }
+    // arriba: [{ de, a, texto, color }]: llaves por encima de los items de..a de
+    // der, con el texto arriba (en inducción, «k términos» y «término k + 1»)
+    if (Array.isArray(r.arriba)) {
+      l.arriba = [];
+      r.arriba.forEach(function (s, k) {
+        var o = r.rama ? 1 : 0, de = l.der[o + (s.de | 0)], a = l.der[o + (s.a === undefined ? s.de | 0 : s.a | 0)];
+        if (!de || !a || !de.t || !a.t) errores.push(ruta + ".arriba[" + k + "]: «de» y «a» tienen que ser índices de textos de «der»");
+        else l.arriba.push({ de: de, a: a, texto: String(s.texto || ""), color: color(s.color, g.COLOR.suma) });
+      });
+      if (!l.arriba.length) delete l.arriba;
+    }
     return l;
   }
 
@@ -129,6 +160,43 @@
       else { y += lh; primero = false; }
     });
     return y;
+  }
+
+  // Corta una lista de items (textos, fracciones, raíces) en renglones de a lo
+  // sumo ancho0 (el primero) y anchoResto (los demás), solo en los espacios de
+  // los textos: una fracción queda pegada a lo que la toca («(», «)²», «,»).
+  function renglonesFluidos(its, ancho0, anchoResto, tam, fuente) {
+    var g = G(), pals = [], act = [];
+    function cerrar() { if (act.length) pals.push(act); act = []; }
+    its.forEach(function (it) {
+      if (it.t === undefined) { act.push(it); return; }
+      (it.t.match(/\s+|\S+/g) || []).forEach(function (pt) {
+        if (/^\s+$/.test(pt)) { if (act.length) { act.push({ t: pt, color: it.color }); cerrar(); } }
+        else act.push({ t: pt, color: it.color });
+      });
+    });
+    cerrar();
+    var lineas = [], lin = [], w = 0, max = ancho0;
+    pals.forEach(function (pw) {
+      var sinEsp = pw.slice(), ul = sinEsp[sinEsp.length - 1];
+      if (ul.t !== undefined && /^\s+$/.test(ul.t)) sinEsp.pop();
+      var wp = g.medirItsF(pw, tam, fuente).w, ws = g.medirItsF(sinEsp, tam, fuente).w;
+      if (lin.length && w + ws > max) { lineas.push(lin); lin = []; w = 0; max = anchoResto; }
+      lin = lin.concat(pw); w += wp;
+    });
+    if (lin.length) lineas.push(lin);
+    // los textos seguidos del mismo color, en un solo item
+    return lineas.map(function (l) {
+      var out = [];
+      l.forEach(function (it) {
+        var a = out[out.length - 1];
+        if (it.t !== undefined && a && a.t !== undefined && a.color === it.color) a.t += it.t;
+        else out.push(it.t !== undefined ? { t: it.t, color: it.color } : it);
+      });
+      var u = out[out.length - 1];
+      if (u && u.t !== undefined) u.t = u.t.replace(/\s+$/, "");
+      return out;
+    });
   }
 
   function nuevaPieza(unir) {
@@ -601,18 +669,38 @@
     // empiezan donde termina «Ejercicio 1:», lo de siempre) o un numero: la
     // sangria de esos renglones, medida desde donde empieza el rotulo
     var sangE = typeof est.sangriaEnunciado === "number" && est.sangriaEnunciado >= 0 ? est.sangriaEnunciado : null;
-    function enunciado(etiqueta, texto, x, tamN, colN, inicioEj) {
+    // texto: un texto o una lista de renglones (textos y expresiones con
+    // fracciones dibujadas, ver textoPlano)
+    function enunciado(etiqueta, texto, x, tamN, colN, inicioEj, ruta) {
       var p = nuevaPieza(true);
       p.esEnunciado = true; p.inicioEj = !!inicioEj;
       etiqueta = etiqueta ? etiqueta.trim() + " " : "";
       var wE = etiqueta ? g.medir(etiqueta, tamN, fuenteE) : 0;
-      if (etiqueta) p.agregar(g.texto(x, 0, etiqueta.trim(), tamN, fuenteE, colN, "left"));
       var xResto = sangE === null ? x + wE : x + Math.min(sangE, wE);
-      if (texto) escribirParrafo(texto, x + wE, 0, maxW - x - wE, tamN, fuenteE, COLOR_ENUNCIADO, p.agregar, xResto);
+      var lhE = tamN * fuenteE.lh, yRot = 0, y = 0;
+      p.alto1 = lhE; // alto del primer renglón (para el marcador)
+      (Array.isArray(texto) ? texto : texto ? [texto] : []).forEach(function (rE, k) {
+        var x0 = k ? xResto : x + wE;
+        if (typeof rE === "string") {
+          y = escribirParrafo(rE, x0, y, maxW - x0, tamN, fuenteE, COLOR_ENUNCIADO, p.agregar, xResto);
+          return;
+        }
+        // una expresión (o un texto con fracciones): se corta en renglones en
+        // los espacios, y cada renglón se centra en su altura (el rótulo, a la
+        // altura de la raya de fracción del primero)
+        var its = items(rE, ruta + ".enunciado[" + k + "]", errores);
+        renglonesFluidos(its, maxW - x0, maxW - xResto, tamN, fuenteE).forEach(function (lin, n) {
+          var xl = n ? xResto : x0;
+          var m = g.medirItsF(lin, tamN, fuenteE), mid = y + Math.max(m.ar, lhE / 2);
+          g.dibujarItsF(lin, xl, mid, COLOR_ENUNCIADO, tamN, fuenteE, p.agregar);
+          if (!k && !n) { yRot = mid - lhE / 2; p.alto1 = 2 * mid; }
+          y = mid + Math.max(m.ab, lhE / 2) + (m.ar + m.ab > lhE + 2 ? lhE * 0.3 : 0);
+        });
+      });
+      if (etiqueta) p.agregar(g.texto(x, yRot, etiqueta.trim(), tamN, fuenteE, colN, "left"));
       p.espacio = lh * 0.4;
       if (!p.els.length) return null;
       piezas.push(p);
-      p.alto1 = tamN * fuenteE.lh; // alto del primer renglón (para el marcador)
       return p;
     }
 
@@ -713,9 +801,10 @@
       var r = "ejercicios[" + i + "]", nEj = ej.numero !== undefined ? ej.numero : i + 1;
       if (i || sol.bloques) piezas.push({ hueco: lh * 1.2 });
       var rEj = nEj === "" ? "" : rotulo(plEj, nEj), desdeEj = piezas.length;
-      var pEj = enunciado(rEj, ej.enunciado, 0, tamE, COLOR_EJERCICIO, true);
-      marcar(pEj, conPlantillaDe(ej.marcador, plantillas.ejercicio, rEj, ej.enunciado),
-        (rEj + " " + (ej.enunciado || "")).trim(), 1, pEj && pEj.alto1,
+      var pEj = enunciado(rEj, ej.enunciado, 0, tamE, COLOR_EJERCICIO, true, r);
+      var enEj = enunciadoPlano(ej.enunciado);
+      marcar(pEj, conPlantillaDe(ej.marcador, plantillas.ejercicio, rEj, enEj),
+        (rEj + " " + enEj).trim(), 1, pEj && pEj.alto1,
         { clase: "ejercicio", indice: conPlantilla("{rotulo}", rEj, "") || undefined });
       nivelCtx = 1;
       bloques(ej.bloques, sangria * 0.5, r);
@@ -726,9 +815,10 @@
         piezas.push({ hueco: lh * 0.6 });
         var nIt = it.numero !== undefined ? it.numero : String.fromCharCode(97 + j);
         var rIt = nIt === "" ? "" : rotulo(plIt, nEj, nIt), desdeIt = piezas.length;
-        var pIt = enunciado(rIt, it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO);
-        marcar(pIt, conPlantillaDe(it.marcador, plantillas.item, rIt, it.enunciado),
-          (rIt + " " + (it.enunciado || "")).trim(), 2, pIt && pIt.alto1, { clase: "item" });
+        var pIt = enunciado(rIt, it.enunciado, sangria * 0.5, tam, COLOR_EJERCICIO, false, r + ".items[" + j + "]");
+        var enIt = enunciadoPlano(it.enunciado);
+        marcar(pIt, conPlantillaDe(it.marcador, plantillas.item, rIt, enIt),
+          (rIt + " " + enIt).trim(), 2, pIt && pIt.alto1, { clase: "item" });
         nivelCtx = 2;
         bloques(it.bloques, sangria, r + ".items[" + j + "]");
         marcarInicio(desdeIt, "inicioIt");
@@ -748,7 +838,11 @@
     var cs = els.map(function (e) { return { e: e, c: g.caja(e) }; }).sort(function (a, b) { return a.c.y0 - b.c.y0; });
     var out = [], act = null;
     cs.forEach(function (q) {
-      if (act && q.c.y0 < act.y1 - 0.5) { act.els.push(q.e); act.y1 = Math.max(act.y1, q.c.y1); act.x1 = Math.max(act.x1, q.c.x1); }
+      // la flecha de un «marcar» (en inducción, «Aplicar hipótesis de
+      // inducción») no se separa del renglón al que llega
+      var une = q.e.customData && q.e.customData.pizarraUne || 0;
+      if (act && q.c.y0 - une < act.y1 - 0.5) { act.els.push(q.e); act.y1 = Math.max(act.y1, q.c.y1 + une); act.x1 = Math.max(act.x1, q.c.x1); }
+      else if (une) { act = { els: [q.e], y0: q.c.y0, y1: q.c.y1 + une, x1: q.c.x1 }; out.push(act); }
       else { act = { els: [q.e], y0: q.c.y0, y1: q.c.y1, x1: q.c.x1 }; out.push(act); }
     });
     return out;

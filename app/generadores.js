@@ -5248,14 +5248,20 @@
         var xx = tramoX(s.de, s.a), ya = f.mid - f.m.ar - tam * 0.12, pa = tam * 0.3;
         agregar(trazo([[xx[0], ya + pa], [xx[0], ya], [xx[1], ya], [xx[1], ya + pa]],
           { strokeColor: s.color, strokeWidth: 1.5 }));
-        agregar(texto((xx[0] + xx[1]) / 2, ya - tam * 0.1 - hN, s.texto, tamN, fuente, s.color, "center"));
+        // el texto no se separa de su llave al repartir en hojas
+        var ta = texto((xx[0] + xx[1]) / 2, ya - tam * 0.1 - hN, s.texto, tamN, fuente, s.color, "center");
+        ta.customData = { pizarraUne: tam * 1.1 }; // también con el título de arriba
+        agregar(ta);
       });
       if (l.marcar) {
         var xx0 = tramoX(l.marcar.de, l.marcar.a), xa = xx0[0], xb = xx0[1];
         var yl = f.mid + f.m.ab + tam * 0.15, pm = tam * 0.3, cm = l.marcar.color, xm = (xa + xb) / 2;
         var sigF = filas[i + 1], yFin = sigF ? sigF.mid - sigF.m.ar - tam * 0.2 : yl + tam * 2.5;
         agregar(trazo([[xa, yl - pm], [xa, yl], [xb, yl], [xb, yl - pm]], { strokeColor: cm, strokeWidth: 1.5 }));
-        agregar(trazo([[xm, yl], [xm, yFin]], { type: "arrow", endArrowhead: "arrow", strokeColor: cm, strokeWidth: 1.5 }));
+        // pizarraUne: al repartir en hojas, la flecha va con el renglón al que llega
+        var flm = trazo([[xm, yl], [xm, yFin]], { type: "arrow", endArrowhead: "arrow", strokeColor: cm, strokeWidth: 1.5 });
+        if (sigF) flm.customData = { pizarraUne: tam * 0.6 };
+        agregar(flm);
         var yt = (yl + yFin) / 2 - l.marcar.texto.length * hN / 2;
         l.marcar.texto.forEach(function (t, j) {
           agregar(texto(xm + tam * 0.6, yt + j * hN, t, tamN, fuente, cm, "left"));
@@ -12628,7 +12634,7 @@
     },
     GEN: GEN, tamTitulo: tamTitulo,
     medir: medir, base: base, texto: texto, trazo: trazo, expandirRaices: expandirRaices,
-    dibujarBloqueF: dibujarBloqueF, medirItsF: medirItsF, caja: caja, cajaDe: cajaDe,
+    dibujarBloqueF: dibujarBloqueF, medirItsF: medirItsF, dibujarItsF: dibujarItsF, caja: caja, cajaDe: cajaDe,
     nuevoId: nuevoId, copiar: copiar, corteDe: corteDe, unidoDe: unidoDe,
   };
 
