@@ -11,6 +11,9 @@
 //    y el panel los lista.
 //  - «Imprimir / PDF» exporta cada hoja como SVG y abre el dialogo de impresion
 //    con una pagina A4 por hoja (de ahi se imprime o se guarda como PDF).
+//  - «Imagen continua»: copia el contenido de las hojas una debajo de la otra
+//    en un solo marco alto (sin cabecera, pie ni avisos de continuacion) y lo
+//    guarda como PNG, para subir la resolucion como una sola imagen.
 //  - Marcadores del PDF: textos de las hojas marcados (o creados aparte, sin
 //    imprimirse). «Agregar marcadores a un PDF» le arma el indice al PDF ya
 //    guardado, con pdf-lib (app/vendor/), en el navegador.
@@ -1280,6 +1283,200 @@
     }
   }
 
+  // ------------------------------------------------------ imagen continua
+  // «Armar imagen continua»: copia el contenido de las hojas, una debajo de la
+  // otra, en un solo marco alto («Imagen continua»), para subirlo como imagen.
+  // Sin cabecera, pie, numeros de pagina, avisos de «(Continúa en la siguiente
+  // hoja)» ni marcadores que no se imprimen, y sin el blanco del final de cada
+  // hoja. Las hojas quedan como estaban (el PDF se sigue imprimiendo igual).
+  // Hojas: las seleccionadas; si no, las de la solucion que se esta mirando
+  // (customData.pizarraSolucion); si no, todas. Si ya hay una imagen continua
+  // de esas hojas, se rehace. «Descargar PNG» exporta el marco como imagen.
+  var RE_AVISO = /^\((Continúa|La consigna continúa).*siguiente hoja\)$/;
+  function esAviso(e) {
+    return e.type === "text" && (!!(e.customData && e.customData.pizarraAviso) || RE_AVISO.test(String(e.text).trim()));
+  }
+  function datosContinua(e) { return e && e.customData && e.customData.pizarraContinua; }
+  function esContinua(e) { return e && !e.isDeleted && e.type === "frame" && !!datosContinua(e); }
+  function claveSol(e) { return e && e.customData && e.customData.pizarraSolucion; }
+
+  function hojasParaContinua(vivos, st) {
+    var hojas = hojasDe(vivos), sel = st.selectedElementIds || {};
+    var elegidas = hojas.filter(function (h) { return sel[h.id]; });
+    if (elegidas.length) return elegidas;
+    var f = hojaALaVista(vivos, st), clave = claveSol(f);
+    if (clave) return hojas.filter(function (h) { return claveSol(h) === clave; });
+    return hojas;
+  }
+
+  function armarContinua(avisar) {
+    var A = api();
+    if (!A) return null;
+    var st = A.getAppState(), todos = A.getSceneElementsIncludingDeleted();
+    var vivos = todos.filter(function (e) { return !e.isDeleted; });
+    var hojas = hojasParaContinua(vivos, st);
+    if (!hojas.length) { avisar("No hay hojas para armar la imagen.", true); return null; }
+    var bandas = bandasDe(vivos), clave = claveSol(hojas[0]) || null;
+    var idsHojas = hojas.map(function (h) { return h.id; }).join(",");
+    // la imagen continua anterior de las mismas hojas (o de la misma solucion) se rehace
+    var viejas = {};
+    vivos.forEach(function (e) {
+      var d = datosContinua(e);
+      if (esContinua(e) && (d.hojas === idsHojas || (clave && d.clave === clave))) viejas[e.id] = e;
+    });
+    var anterior = Object.keys(viejas).map(function (k) { return viejas[k]; })[0] || null;
+    var quedan = vivos.filter(function (e) { return !viejas[e.id] && !(e.frameId && viejas[e.frameId]); });
+
+    var f0 = hojas[0], d0 = datosHoja(f0), m = d0.margenes || DEFECTO.margenes, u = porMm(f0);
+    var util0 = areaUtil(f0, bandas), anchoUtil = util0.x1 - util0.x0;
+    var margen = m.ext * u, ancho = anchoUtil + 2 * margen;
+    var x, y;
+    if (anterior) { x = anterior.x; y = anterior.y; }
+    else {
+      var bt = cajaDeLista(quedan);
+      x = bt.x1 + 30 * u; y = f0.y;
+    }
+    var marcoId = nuevoId(), nuevos = [], grupos = {}, cursor = y + m.sup * u, separa = 4 * u;
+    hojas.forEach(function (f) {
+      var util = areaUtil(f, bandas);
+      var lista = contenidoDe(f, vivos).filter(function (e) {
+        return !marcadorOculto(e) && !esAviso(e) && !esBanda(e);
+      });
+      if (!lista.length) return;
+      var b = cajaDeLista(lista), dx = x + margen - util.x0, dy = cursor - b.y0;
+      var ids = {};
+      lista.forEach(function (e) { ids[e.id] = nuevoId(); });
+      lista.forEach(function (e) {
+        var c = copiar(e);
+        c.id = ids[e.id]; c.seed = rnd(); c.versionNonce = rnd(); c.version = 1; c.index = null;
+        c.x += dx; c.y += dy; c.frameId = marcoId; c.locked = false;
+        c.groupIds = (e.groupIds || []).map(function (g) { return grupos[g] = grupos[g] || nuevoId(); });
+        c.containerId = e.containerId && ids[e.containerId] ? ids[e.containerId] : null;
+        c.boundElements = (e.boundElements || []).filter(function (bb) { return ids[bb.id]; })
+          .map(function (bb) { return { id: ids[bb.id], type: bb.type }; });
+        if (!c.boundElements.length) c.boundElements = null;
+        ["startBinding", "endBinding"].forEach(function (k) {
+          if (c[k]) c[k] = ids[c[k].elementId] ? Object.assign({}, c[k], { elementId: ids[c[k].elementId] }) : null;
+        });
+        // la copia no es parte del PDF: sin marcadores ni enlaces del indice
+        if (c.customData) {
+          delete c.customData.pizarraMarcador; delete c.customData.pizarraEnlace;
+          if (!Object.keys(c.customData).length) delete c.customData;
+        }
+        nuevos.push(c);
+      });
+      cursor = b.y1 + dy + separa;
+    });
+    if (!nuevos.length) { avisar("Las hojas no tienen contenido.", true); return null; }
+    var alto = cursor - separa + m.inf * u - y, ahora = Date.now();
+    var marcoNuevo = {
+      id: marcoId, type: "frame", name: "Imagen continua",
+      x: x, y: y, width: ancho, height: alto, angle: 0,
+      strokeColor: "#bbb", backgroundColor: "transparent", fillStyle: "solid",
+      strokeWidth: 2, strokeStyle: "solid", roughness: 0, opacity: 100,
+      groupIds: [], frameId: null, index: null, roundness: null,
+      seed: rnd(), version: 1, versionNonce: rnd(), isDeleted: false,
+      boundElements: null, updated: ahora, created: ahora, link: null, locked: false,
+      customData: { pizarraContinua: { hojas: idsHojas, clave: clave } },
+    };
+    if (clave) marcoNuevo.customData.pizarraSolucion = clave;
+    var elementos = todos.map(function (e) {
+      if (e.isDeleted || !(viejas[e.id] || (e.frameId && viejas[e.frameId]))) return e;
+      var d = copiar(e);
+      d.isDeleted = true; d.version = e.version + 1; d.versionNonce = rnd(); d.updated = ahora;
+      return d;
+    }).concat([marcoNuevo], nuevos);
+    A.updateScene({
+      elements: elementos,
+      appState: Object.assign({ selectedElementIds: {}, selectedGroupIds: {} },
+        mostrarRect({ x0: x, y0: y, x1: x + ancho, y1: y + alto }, st, true) || {}),
+      captureUpdate: "IMMEDIATELY",
+    });
+    avisar("Imagen continua armada con " + (hojas.length === 1 ? "1 hoja" : hojas.length + " hojas") +
+      ", a la derecha. Podés retocarla y después tocar «Descargar PNG».");
+    return marcoNuevo;
+  }
+
+  // la imagen continua a exportar: la seleccionada, la que se esta mirando o la ultima
+  function continuaALaVista(vivos, st) {
+    var lista = vivos.filter(esContinua), sel = st.selectedElementIds || {};
+    if (!lista.length) return null;
+    var f = lista.filter(function (c) { return sel[c.id]; })[0];
+    if (!f) {
+      var marcos = {};
+      vivos.forEach(function (e) { if (sel[e.id] && e.frameId) marcos[e.frameId] = true; });
+      f = lista.filter(function (c) { return marcos[c.id]; })[0];
+    }
+    if (!f) {
+      var z = st.zoom.value, cx = -st.scrollX + st.width / z / 2, cy = -st.scrollY + st.height / z / 2;
+      f = lista.filter(function (c) { return cx >= c.x && cx <= c.x + c.width && cy >= c.y && cy <= c.y + c.height; })[0];
+    }
+    return f || lista.sort(function (a, b) { return b.updated - a.updated; })[0];
+  }
+
+  var exportandoPng = false;
+  async function descargarContinua(avisar) {
+    var A = api(), exportar = window.__pizarraSvg;
+    if (!A || exportandoPng) return;
+    if (!exportar) { avisar("Esta versión de la pizarra no puede exportar imágenes.", true); return; }
+    var vivos = A.getSceneElements(), f = continuaALaVista(vivos, A.getAppState());
+    if (!f) { f = armarContinua(avisar); if (!f) return; vivos = A.getSceneElements(); }
+    exportandoPng = true;
+    try {
+      avisar("Preparando la imagen…");
+      var svg = await exportar(vivos.filter(function (e) { return !marcadorOculto(e); }), {
+        exportBackground: true, viewBackgroundColor: "#ffffff", exportWithDarkMode: false,
+        exportScale: 1, exportPadding: 0, exportEmbedScene: false,
+        frameRendering: { enabled: true, name: false, outline: false, clip: true },
+      }, A.getFiles(), { exportingFrame: f });
+      // nitida: 2 pixeles por unidad (o menos, si pasa el alto maximo de un canvas)
+      var escala = Math.min(2, 30000 / f.height, 12000 / f.width);
+      var w = Math.round(f.width * escala), h = Math.round(f.height * escala);
+      svg.setAttribute("width", w); svg.setAttribute("height", h);
+      if (!svg.getAttribute("viewBox")) svg.setAttribute("viewBox", "0 0 " + f.width + " " + f.height);
+      var url = URL.createObjectURL(new Blob([svg.outerHTML], { type: "image/svg+xml" }));
+      var img = new Image();
+      await new Promise(function (ok, mal) { img.onload = ok; img.onerror = function () { mal(new Error("no se pudo dibujar el SVG")); }; img.src = url; });
+      var cv = document.createElement("canvas");
+      cv.width = w; cv.height = h;
+      var ctx = cv.getContext("2d");
+      ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      var blob = await new Promise(function (ok) { cv.toBlob(ok, "image/png"); });
+      if (!blob) throw new Error("la imagen es demasiado grande");
+      var nombre = (op.titulo || "imagen-continua").replace(/[\\/:*?"<>|]+/g, "-") + ".png";
+      var r = await guardarArchivo(blob, nombre, "Imagen PNG", { "image/png": [".png"] });
+      avisar(r === "cancelado" ? "No se guardó la imagen." : "Imagen guardada (" + w + " × " + h + " px).");
+    } catch (e) {
+      console.warn("hojas.js: no se pudo exportar la imagen continua", e);
+      avisar("No se pudo exportar la imagen: " + (e && e.message || e), true);
+    } finally {
+      exportandoPng = false;
+    }
+  }
+
+  // guarda un archivo: con el dialogo de «Guardar como» si el navegador lo
+  // tiene (Chrome, Edge), si no como una descarga
+  async function guardarArchivo(blob, nombre, descripcion, tipos) {
+    if (window.showSaveFilePicker) {
+      try {
+        var hnd = await window.showSaveFilePicker({ suggestedName: nombre, types: [{ description: descripcion, accept: tipos }] });
+        var wr = await hnd.createWritable();
+        await wr.write(blob);
+        await wr.close();
+        return "guardado";
+      } catch (e) {
+        if (e && e.name === "AbortError") return "cancelado";
+      }
+    }
+    var url = URL.createObjectURL(blob), a = document.createElement("a");
+    a.href = url; a.download = nombre;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+    return "descargado";
+  }
+
   // una pagina por hoja: el SVG de la hoja con la cabecera y el pie que le tocan
   async function paginasDe(elementos, hojas, bandas, archivos, avisar) {
     var exportar = window.__pizarraSvg, paginas = [];
@@ -1709,6 +1906,11 @@
         "</div>" +
         '<div class="botones"><button class="b principal imprimir" title="Abre el diálogo de impresión: ahí se imprime o se elige «Guardar como PDF»">Imprimir / PDF</button></div>' +
         '<div class="estado estado-imprimir"></div></div>' +
+        '<div class="imprimir-sec"><div class="opc"><div class="grupo"><b>Imagen continua</b></div></div>' +
+        '<div class="botones"><button class="b armar-continua" title="Copia el contenido de las hojas (las seleccionadas o las de la solución que estás mirando) una debajo de la otra, en un solo marco alto, sin cabecera ni pie">Armar imagen continua</button>' +
+        '<button class="b descargar-continua" title="Guarda como PNG la imagen continua (la que estás mirando o la última; si no hay, la arma)">Descargar PNG</button></div>' +
+        '<div class="ayuda">Para subir la resolución como una sola imagen, de arriba hacia abajo. Las hojas quedan como están.</div>' +
+        '<div class="estado estado-continua"></div></div>' +
         '<div class="imprimir-sec"><div class="opc"><div class="grupo"><b>Marcadores del PDF</b></div></div>' +
         '<div class="botones"><button class="b agregar-marcador" title="Convierte en marcador el título seleccionado; sin selección, crea uno que no se imprime en la hoja que estás mirando">Agregar marcador</button>' +
         '<button class="b marcar-pdf" title="Elegí el PDF guardado desde «Imprimir / PDF»: se guarda una copia con los marcadores y los enlaces del índice">Agregar marcadores y enlaces a un PDF…</button>' +
@@ -1796,6 +1998,13 @@
       var archivoPdf = el.querySelector(".archivo-pdf");
       el.querySelector(".marcar-pdf").onclick = function () { archivoPdf.value = ""; archivoPdf.click(); };
       archivoPdf.onchange = function () { if (archivoPdf.files[0]) marcarPdf(archivoPdf.files[0], avisarMarcadores); };
+      var estadoContinua = el.querySelector(".estado-continua");
+      function avisarContinua(texto, mal) {
+        estadoContinua.textContent = texto;
+        estadoContinua.classList.toggle("mal", !!mal);
+      }
+      el.querySelector(".armar-continua").onclick = function () { armarContinua(avisarContinua); };
+      el.querySelector(".descargar-continua").onclick = function () { descargarContinua(avisarContinua); };
       var estado = el.querySelector(".estado-imprimir");
       el.querySelector(".imprimir").onclick = function () {
         imprimir(function (texto, mal) {
@@ -1990,6 +2199,8 @@
       // indice de un cuadernillo: numeros de pagina y enlaces del PDF
       actualizarIndice: actualizarIndice, numerosDelIndice: numerosDelIndice, enlacesDe: enlacesDe,
       marcadoresDe: marcadoresDe,
+      // imagen continua (las hojas una debajo de la otra, para exportar como PNG)
+      armarContinua: armarContinua, descargarContinua: descargarContinua,
       // arma marcadores y enlaces sobre los bytes de un PDF (sin dialogos): devuelve los bytes nuevos
       marcarBytes: async function (bytes, titulo) {
         var L = await pdfLib(), doc = await L.PDFDocument.load(bytes, { updateMetadata: false });

@@ -1116,7 +1116,7 @@
         var aviso = r.continuacion && textoAviso(seq);
         if (aviso) {
           var ea = g.texto(hoja.area.x0, hoja.y + 6, "(" + aviso + ")", tamAviso, r.fuente, color("gris"), "left");
-          ea.frameId = hoja.f.id; ea.groupIds = [g.nuevoId()];
+          ea.frameId = hoja.f.id; ea.groupIds = [g.nuevoId()]; ea.customData = { pizarraAviso: true };
           listos.push(ea);
         }
         hoja = hojaNueva(); vacia = true; arranque = 0;
