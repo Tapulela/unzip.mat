@@ -107,7 +107,8 @@ RECTA REAL CON INTERVALOS (prototipo)
                                         Expresiones con valor absoluto,
                                         Factorizacion de polinomios,
                                         Inecuaciones de segundo grado,
-                                        Inecuaciones racionales
+                                        Inecuaciones racionales,
+                                        Sucesiones aritmeticas y geometricas
       Funciones (Unidad 6):             Grafico de funciones
       Numeros complejos (Unidad 7):     Formas y operaciones, Raices n-esimas
   Al elegir uno se abre el panel a la derecha con ese generador (su nombre
@@ -804,6 +805,42 @@ FACTORIZACION DE POLINOMIOS DE 2.º GRADO (prototipo)
   con "Escribir qué se hace en cada paso".
 - Igual que los otros: "Ejemplo", "Restablecer", y si seleccionas una
   factorizacion ya insertada se edita en vivo.
+
+SUCESIONES ARITMETICAS Y GEOMETRICAS (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Sucesiones
+  aritmeticas y geometricas".
+- Cada fila es una sucesion. En la fila van los datos (las reglas
+  iniciales) y en "Calcular", lo que se pide, separado por coma.
+- Datos: un termino y la razon (a0 = 200, r = 3) o dos terminos
+  (a2 = 10; a5 = 80). Como en Argentina, r es la razon de una geometrica
+  y d la de una aritmetica (q tambien se acepta para la geometrica). Con
+  dos terminos el tipo sale de la opcion "Tipo" o de la palabra del
+  principio: aritmetica: a2 = 10; a5 = 80. Decimales con coma (0,5) y
+  fracciones con / (1/2).
+- Calcular:
+      a1        el primer termino (o "primer termino")
+      a6        un termino
+      an        el termino general
+      S6        la suma de los 6 primeros terminos
+      S∞        la suma de todos (geometrica con |q| < 1)
+      an > 100000, Sn <= 5000   inecuaciones (desde que termino se cumple)
+      an = 486  ecuacion (que termino es)
+- Con dos terminos primero se calcula la razon (en una geometrica con una
+  raiz; si el indice es par se sigue con la positiva). Si el dato no es el
+  primer termino, se calcula el primer termino.
+- Cada paso con lo que se hace anotado antes: primero la formula general
+  en su renglon, despues n reemplazado y los datos (en azul), y las cuentas
+  de a una. La nota de cada paso va en un color y en el renglon siguiente
+  solo lo aplicado va en ese color (log, el exponente que baja, lo que se
+  suma). Sumar o dividir en los dos miembros se escribe explicito, con lo
+  que se cancela tachado, y despues se simplifica. En las inecuaciones
+  con potencias se despeja con logaritmos (avisando cuando se invierte la
+  desigualdad) o igualando exponentes si da una potencia exacta; la suma de
+  una aritmetica se resuelve con la resolvente. Al final se pasa a los
+  naturales (n >= 6), se escribe la respuesta y se verifica en el borde.
+- Opciones: Tipo (con dos terminos), Primer termino a1 o a0 (con a0
+  la suma de n terminos es a0 + ... + a(n-1)), notas, verificacion, titulo,
+  tamaño de texto y fuente.
 
 NUMEROS COMPLEJOS (prototipo)
 - En el menu del boton, en "Numeros complejos", elegi "Formas y operaciones".
