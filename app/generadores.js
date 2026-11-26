@@ -157,7 +157,49 @@
     for (var k in FUENTES) if (FUENTES[k].id === id) return FUENTES[k];
     return FUENTES.normal;
   }
+  // Ademas de las raices, apila los indices: un subindice seguido de un
+  // superindice (o al reves), como en V₃⁴ o x₁², se dibuja con el superindice
+  // justo encima del subindice, y no uno al lado del otro.
   function expandirRaices(e) {
+    var out = [];
+    expandirSoloRaices(e).forEach(function (p) { expandirIndices(p).forEach(function (q) { out.push(q); }); });
+    return out;
+  }
+
+  // ------------------------------------------------------ indices apilados
+  var SUBS = "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ", SUBS_N = "0123456789+−=()aeoxhklmnpstijruv";
+  var SUPS = "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ⁿⁱᵃᵇᶜᵈᵉᶠᵍʰʲᵏˡᵐᵒᵖʳˢᵗᵘᵛʷˣʸᶻ", SUPS_N = "0123456789+−=()niabcdefghjklmoprstuvwxyz";
+  var RE_INDICES = new RegExp("([" + SUBS + "]+)([" + SUPS + "]+)|([" + SUPS + "]+)([" + SUBS + "]+)");
+  function normalDe(t, desde, hacia) {
+    return t.split("").map(function (c) { var i = desde.indexOf(c); return i < 0 ? c : hacia.charAt(i); }).join("");
+  }
+  function expandirIndices(e) {
+    if (e.type !== "text" || /\n/.test(e.text) || !RE_INDICES.test(e.text)) return [e];
+    var fuente = fuenteDeId(e.fontFamily), tam = e.fontSize, lh = tam * fuente.lh;
+    var tamI = Math.round(tam * 0.62), lhI = tamI * fuente.lh;
+    var out = [], x = e.x, resto = e.text, m;
+    function escribir(t) {
+      if (!t) return;
+      var lead = t.length - t.replace(/^\s+/, "").length, limpio = t.trim();
+      if (limpio) out.push(texto(x + medir(t.slice(0, lead), tam, fuente), e.y, limpio, tam, fuente, e.strokeColor, "left"));
+      x += medir(t, tam, fuente);
+    }
+    while ((m = RE_INDICES.exec(resto))) {
+      escribir(resto.slice(0, m.index));
+      var sub = normalDe(m[1] || m[4], SUBS, SUBS_N), sup = normalDe(m[2] || m[3], SUPS, SUPS_N);
+      var wSub = medir(sub, tamI, fuente), wSup = medir(sup, tamI, fuente), dx = tam * 0.04;
+      // el superindice arriba (a la altura de la mayuscula) y el subindice abajo,
+      // un poco por debajo de la linea de base, los dos alineados a la izquierda
+      out.push(texto(x + dx, e.y + lh * 0.5 - lhI * 0.92, sup, tamI, fuente, e.strokeColor, "left"));
+      out.push(texto(x + dx, e.y + lh * 0.5 + tam * 0.02, sub, tamI, fuente, e.strokeColor, "left"));
+      x += dx + Math.max(wSub, wSup) + tam * 0.08;
+      resto = resto.slice(m.index + m[0].length);
+    }
+    escribir(resto);
+    return out.length ? out : [e];
+  }
+
+  function expandirSoloRaices(e) {
     if (e.type !== "text" || e.text.indexOf("√") < 0 || /\n/.test(e.text)) return [e];
     var fuente = fuenteDeId(e.fontFamily), tam = e.fontSize, lh = tam * fuente.lh;
     var out = [], x = e.x, resto = e.text, mid = e.y + lh / 2, m;
