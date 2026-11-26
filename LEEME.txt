@@ -101,7 +101,8 @@ RECTA REAL CON INTERVALOS (prototipo)
                                         Simplificacion paso a paso
       Algebra de Boole (Unidad 3):      Funciones booleanas, Simplificacion
                                         paso a paso
-      Sistemas numericos (Unidad 5):    Recta real, Combinatoria, MCM y MCD,
+      Sistemas numericos (Unidad 5):    Recta real, Combinatoria,
+                                        Expresiones combinatorias, MCM y MCD,
                                         Identidad de Bezout,
                                         Expresiones con valor absoluto,
                                         Factorizacion de polinomios,
@@ -581,6 +582,37 @@ COMBINATORIA (prototipo)
   resultado en color y recuadrado; tamaño de texto y fuente.
 - Igual que los otros: "Ejemplo" (los seis tipos), "Restablecer", y si
   seleccionas un calculo ya insertado se edita en vivo.
+
+EXPRESIONES COMBINATORIAS (prototipo)
+- En el menu del boton, en "Sistemas numericos", elegi "Expresiones
+  combinatorias".
+- Cada fila es una expresion o una igualdad a verificar:
+      V^4_3 + 3V^4_2 = V^5_3
+  V^4_3 es V con n = 4 arriba y k = 3 abajo (tambien V(4, 3), V4,3 o V⁴₃);
+  igual C^5_2, VR^3_2, CR^4_2; P_5 o P(5); PR(6; 3, 2); (5 2) es el
+  numero combinatorio. Factorial con !, producto con · o * (o pegado:
+  3V^4_2), fraccion con / y parentesis.
+- Se resuelve paso a paso, con lo que se hace anotado antes de cada paso:
+  definicion de cada uno, cuentas dentro de los factoriales, propiedad
+  n! = n · (n − 1)! para simplificar (tachando), 0! = 1 y 1! = 1, desarrollo
+  de los factoriales y las cuentas de a una. En una igualdad se resuelve
+  cada miembro por separado y se comparan los resultados.
+- Opciones: notacion V⁴₃, V₄,₃ o V(4, 3); combinaciones como numero
+  combinatorio; notas; tachar; enunciado y Primer / Segundo miembro;
+  VR o con prima; tamaño de texto y fuente.
+- Ecuaciones: con una letra minuscula como incognita se resuelve la
+  ecuacion. Ejemplos: V^x_2 = 30, C^x_2 = 15, C^x_{x-2} = 10, V^x_3 = 20x,
+  P_x = 120, P_{x+1} = 6P_{x-1} (la incognita va sola o con un numero
+  sumado: x, x + 1, x - 2; con llaves o parentesis arriba y abajo).
+  Se escribe la condicion (x natural y lo que piden los numeros
+  combinatorios: k <= n, etc.), se simplifican los dos miembros, se divide
+  por lo que no puede ser 0 (un factorial, o x - 1 si x >= 3), se lleva a
+  un polinomio y se resuelve (lineal, resolvente o factor comun; si no se
+  puede, probando los naturales de la condicion). Despues se descartan las
+  raices que no son naturales o no cumplen la condicion, se escribe S y se
+  verifica (opcion "Verificar las soluciones").
+- Una generalizacion con letra, V^k_3 + 3V^k_2 = V^{k+1}_3, queda como
+  identidad (0 = 0): vale para todo k de la condicion.
 
 MCM Y MCD (prototipo)
 - En el menu del boton, en "Sistemas numericos", elegi "MCM y MCD".

@@ -4936,7 +4936,7 @@
     // tokens: texto partido en los paréntesis, y los demás items enteros
     var tk = [];
     its.forEach(function (it) {
-      if (typeof it.t !== "string") { tk.push({ it: it }); return; }
+      if (typeof it.t !== "string" || it.tachar) { tk.push({ it: it }); return; }
       it.t.split(/([()\[\]])/).forEach(function (p) {
         if (p) tk.push({ t: p, color: it.color, abre: p === "(" || p === "[", cierra: p === ")" || p === "]" });
       });
@@ -5033,6 +5033,7 @@
   function tamSupF(tam) { return Math.max(10, Math.round(tam * 0.62)); }
   function supSubeF(tam) { return tam * 0.42; }
   function SupF(x) { return { sup: itF(x) }; }
+  function bajaSubF(tam) { return tam * 0.3; }
   function medirItF(it, tam, fuente) {
     var lh = tam * fuente.lh;
     if (it.tabla) { var mt = medidasTablaF(it, tam, fuente); return { w: mt.w, ar: mt.alto / 2, ab: mt.alto / 2 }; }
@@ -5053,6 +5054,17 @@
     if (it.paren) {
       var mp = medirItsF(it.paren, tam, fuente);
       return { w: mp.w + 2 * anchoParenF(tam) + (it.exp ? medir(it.exp, tam, fuente) : 0), ar: mp.ar + 2, ab: mp.ab + 2 };
+    }
+    if (it.supsub) {
+      // indices apilados a la derecha de una letra (V con n arriba y k abajo)
+      var ts = tamSupF(tam), s0 = medirItsF(it.supsub[0], ts, fuente), s1 = medirItsF(it.supsub[1], ts, fuente);
+      return { w: Math.max(s0.w, s1.w) + tam * 0.1, ar: Math.max(lh / 2, supSubeF(tam) + s0.ar),
+        ab: Math.max(lh / 2, bajaSubF(tam) + s1.ab) };
+    }
+    if (it.binom) {
+      // numero combinatorio: n sobre k entre parentesis
+      var b0 = medirItsF(it.binom[0], tam, fuente), b1 = medirItsF(it.binom[1], tam, fuente);
+      return { w: Math.max(b0.w, b1.w) + 2 * anchoParenF(tam) + tam * 0.2, ar: lh * 0.95, ab: lh * 0.95 };
     }
     if (it.sup) {
       // exponente: mas chico y subido (sirve para cualquier exponente, no solo
@@ -5135,9 +5147,25 @@
         if (it.exp) agregar(texto(x + 2 * pw + mp.w, mid - m.ar - lh * 0.15, it.exp, tam, fuente, it.colorCierra || color, "left"));
       } else if (it.sup) {
         dibujarItsF(it.sup, x + tam * 0.04, mid - supSubeF(tam), c, tamSupF(tam), fuente, agregar);
+      } else if (it.supsub) {
+        dibujarItsF(it.supsub[0], x + tam * 0.04, mid - supSubeF(tam), c, tamSupF(tam), fuente, agregar);
+        dibujarItsF(it.supsub[1], x + tam * 0.04, mid + bajaSubF(tam), c, tamSupF(tam), fuente, agregar);
+      } else if (it.binom) {
+        var pwb = anchoParenF(tam), wb = m.w - 2 * pwb;
+        trazoParenF("(", x, mid - m.ar, mid + m.ab, pwb, c, agregar);
+        it.binom.forEach(function (fila, j) {
+          var wf = medirItsF(fila, tam, fuente).w;
+          dibujarItsF(fila, x + pwb + (wb - wf) / 2, mid + (j ? 1 : -1) * lh * 0.47, c, tam, fuente, agregar);
+        });
+        trazoParenF(")", x + m.w - pwb, mid - m.ar, mid + m.ab, pwb, c, agregar);
       } else {
         var lead = it.t.length - it.t.replace(/^\s+/, "").length, limpio = it.t.trim();
         if (limpio) agregar(texto(x + medir(it.t.slice(0, lead), tam, fuente), mid - lh / 2, limpio, tam, fuente, c, "left"));
+        if (it.tachar && limpio) {
+          // tachado: una raya en diagonal (lo que se simplifica)
+          var xt0 = x + medir(it.t.slice(0, lead), tam, fuente), xt1 = xt0 + medir(limpio, tam, fuente);
+          agregar(trazo([[xt0 - 2, mid + lh * 0.35], [xt1 + 2, mid - lh * 0.35]], { strokeColor: it.tachar, strokeWidth: 1.5 }));
+        }
       }
       x += m.w;
     });
@@ -6575,6 +6603,1156 @@
       if (op.formula) { igualdad(r.simboloGral, [r.general], x, TINTA); y += lh * 0.4; }
       igualdad(r.simbolo, r.pasos, x, TINTA, op.colorResultado ? f.color : null);
       y += lh * 1.2;
+    });
+  }
+
+  // ============================================ EXPRESIONES COMBINATORIAS
+  // Cada fila es una expresion con numeros combinatorios, una igualdad a
+  // verificar (V^4_3 + 3V^4_2 = V^5_3, C(5, 2) + C(5, 3), 8!/6!...) o una
+  // ecuacion con una incognita (V^x_2 = 30, C^x_{x-2} = 10, P_{x+1} = 6P_{x-1}).
+  // Se resuelve paso a paso, un renglon por paso y con lo que se hace anotado
+  // en el renglon anterior: la definicion de cada numero combinatorio, las
+  // cuentas dentro de los factoriales, la propiedad n! = n · (n − 1)! para
+  // simplificar (tachando), 0! = 1 y 1! = 1, el desarrollo de los factoriales
+  // que quedan y las cuentas de a una. En una igualdad se resuelve cada
+  // miembro por separado y se comparan los resultados. En una ecuacion se
+  // escribe la condicion (la incognita natural y lo que piden los numeros
+  // combinatorios), se simplifican los dos miembros a la vez, se divide por
+  // lo que no puede ser 0, se lleva a un polinomio y se resuelve (lineal,
+  // resolvente, factor comun o probando valores); al final se descartan las
+  // soluciones que no cumplen la condicion y se verifica.
+  // Arbol: { k: "num", v } | { k: "rac", n, d } (fraccion irreducible) |
+  // { k: "var", nom } | { k: "fact", a } | { k: "fn", tipo, n, kk, reps } |
+  // { k: "neg", a } | { k: "+" | "-" | "·" | "/" | "^", a, b }. Los numeros
+  // son BigInt. En un "fn", n y kk son un numero o { lin: b, nom } (x + b).
+  // Cada nodo puede llevar `color` (lo que cambio en el paso) y `tachar`.
+  var COLOR_FACT = "#9c36b5";
+  var MAX_PASOS_CE = 150;
+  var NOMBRES_CE = { P: "permutaciones", V: "variaciones", C: "combinaciones",
+    VR: "variaciones con repetición", CR: "combinaciones con repetición", PR: "permutaciones con repetición" };
+
+  function errCE(m) { throw { msjCE: m }; }
+  function gcdB(a, b) { a = a < 0n ? -a : a; b = b < 0n ? -b : b; while (b) { var t = a % b; a = b; b = t; } return a || 1n; }
+  function racB(n, d) {
+    if (d === 0n) errCE("Hay una división por cero");
+    if (d < 0n) { n = -n; d = -d; }
+    var g = gcdB(n, d);
+    return { n: n / g, d: d / g };
+  }
+  function numCE(v, color) { var n = { k: "num", v: BigInt(v) }; if (color) n.color = color; return n; }
+  function opCE(k, a, b) { return { k: k, a: a, b: b }; }
+  function factCE(a) { return { k: "fact", a: a }; }
+  function valorNodoCE(r, color) {
+    r = racB(r.n, r.d);
+    var n = r.d === 1n ? { k: "num", v: r.n } : { k: "rac", n: r.n, d: r.d };
+    if (color) n.color = color;
+    return n;
+  }
+  function esValorCE(n) { return n.k === "num" || n.k === "rac"; }
+  function valorDeCE(n) { return n.k === "num" ? { n: n.v, d: 1n } : { n: n.n, d: n.d }; }
+  // producto de varios nodos (sin los factores 1)
+  function productoCE(lista) {
+    lista = lista.filter(function (x) { return !(x.k === "num" && x.v === 1n); });
+    if (!lista.length) return numCE(1);
+    return lista.reduce(function (a, b) { return opCE("·", a, b); });
+  }
+  function copiaCE(n, limpiar) {
+    var c = {};
+    for (var q in n) if (q !== "a" && q !== "b") c[q] = n[q];
+    if (limpiar) { delete c.color; delete c.tachar; }
+    if (n.a) c.a = copiaCE(n.a, limpiar);
+    if (n.b) c.b = copiaCE(n.b, limpiar);
+    return c;
+  }
+  function pintarCE(n, color) { n.color = color; if (n.a) pintarCE(n.a, color); if (n.b) pintarCE(n.b, color); return n; }
+  // recorre el arbol de abajo hacia arriba: f devuelve el nodo nuevo o nada
+  function mapCE(n, f) {
+    var c = {};
+    for (var q in n) c[q] = n[q];
+    if (n.a) c.a = mapCE(n.a, f);
+    if (n.b) c.b = mapCE(n.b, f);
+    return f(c) || c;
+  }
+  function recorrerCE(n, f) { f(n); if (n.a) recorrerCE(n.a, f); if (n.b) recorrerCE(n.b, f); }
+  function hayCE(n, f) { var si = false; recorrerCE(n, function (x) { if (f(x)) si = true; }); return si; }
+  function esLinCE(v) { return v !== null && typeof v === "object"; }
+  function tieneVarCE(n) { return hayCE(n, function (x) { return x.k === "var" || (x.k === "fn" && (esLinCE(x.n) || esLinCE(x.kk))); }); }
+  // x + b como árbol
+  function linArbolCE(b, nom) {
+    var x = { k: "var", nom: nom };
+    return b === 0 ? x : opCE(b > 0 ? "+" : "-", x, numCE(Math.abs(b)));
+  }
+  function argArbolCE(v) { return esLinCE(v) ? linArbolCE(v.lin, v.nom) : numCE(v); }
+  function argTextoCE(v, junto) {
+    if (!esLinCE(v)) return String(v);
+    var e = junto ? "" : " ";
+    return v.lin === 0 ? v.nom : v.nom + e + (v.lin > 0 ? "+" : "−") + e + Math.abs(v.lin);
+  }
+  // b si el árbol es exactamente x, x + b o x − b (si no, null)
+  function linCanonCE(n) {
+    if (n.k === "var") return 0;
+    if ((n.k === "+" || n.k === "-") && n.a.k === "var" && n.b.k === "num" && n.b.v > 0n) return Number(n.k === "+" ? n.b.v : -n.b.v);
+    return null;
+  }
+  // forma a·x + b de una expresión lineal ({ a, b } racionales) o null
+  function linealCE(n) {
+    var A, B;
+    function cte(r) { return { a: { n: 0n, d: 1n }, b: r }; }
+    if (!tieneVarCE(n)) return cte(evalCE(n));
+    switch (n.k) {
+      case "var": return { a: { n: 1n, d: 1n }, b: { n: 0n, d: 1n } };
+      case "neg": A = linealCE(n.a); return A && { a: racB(-A.a.n, A.a.d), b: racB(-A.b.n, A.b.d) };
+      case "+": case "-":
+        A = linealCE(n.a); B = linealCE(n.b);
+        if (!A || !B) return null;
+        var s = n.k === "+" ? 1n : -1n;
+        return { a: racB(A.a.n * B.a.d + s * B.a.n * A.a.d, A.a.d * B.a.d), b: racB(A.b.n * B.b.d + s * B.b.n * A.b.d, A.b.d * B.b.d) };
+      case "·":
+        A = linealCE(n.a); B = linealCE(n.b);
+        if (!A || !B) return null;
+        if (B.a.n !== 0n) { var t = A; A = B; B = t; }
+        if (B.a.n !== 0n) return null;
+        return { a: racB(A.a.n * B.b.n, A.a.d * B.b.d), b: racB(A.b.n * B.b.n, A.b.d * B.b.d) };
+      case "/":
+        A = linealCE(n.a); B = linealCE(n.b);
+        if (!A || !B || B.a.n !== 0n || B.b.n === 0n) return null;
+        return { a: racB(A.a.n * B.b.d, A.a.d * B.b.n), b: racB(A.b.n * B.b.d, A.b.d * B.b.n) };
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- valor
+  function valorFnCE(f) {
+    var F = factorialBig;
+    if (esLinCE(f.n) || esLinCE(f.kk)) errCE("Hay una incógnita");
+    if (f.tipo === "P") return F(f.n);
+    if (f.tipo === "V") return F(f.n) / F(f.n - f.kk);
+    if (f.tipo === "C") return F(f.n) / (F(f.kk) * F(f.n - f.kk));
+    if (f.tipo === "VR") return BigInt(f.n) ** BigInt(f.kk);
+    if (f.tipo === "CR") return F(f.n + f.kk - 1) / (F(f.kk) * F(f.n - 1));
+    return f.reps.reduce(function (a, r) { return a / F(r); }, F(f.n));
+  }
+  function evalCE(n) {
+    var a, b;
+    switch (n.k) {
+      case "num": return { n: n.v, d: 1n };
+      case "rac": return { n: n.n, d: n.d };
+      case "var": errCE("Hay una incógnita"); break;
+      case "fn": return { n: valorFnCE(n), d: 1n };
+      case "fact":
+        a = evalCE(n.a);
+        if (a.d !== 1n || a.n < 0n) errCE("El factorial es solo de números naturales (o del 0)");
+        if (a.n > BigInt(MAX_COMB)) errCE("Hasta " + MAX_COMB + "! como máximo");
+        return { n: factorialBig(Number(a.n)), d: 1n };
+      case "neg": a = evalCE(n.a); return { n: -a.n, d: a.d };
+      case "^":
+        a = evalCE(n.a); b = evalCE(n.b);
+        if (b.d !== 1n || b.n < 0n || b.n > 60n) errCE("El exponente tiene que ser un natural (hasta 60)");
+        return racB(a.n ** b.n, a.d ** b.n);
+    }
+    a = evalCE(n.a); b = evalCE(n.b);
+    if (n.k === "+") return racB(a.n * b.d + b.n * a.d, a.d * b.d);
+    if (n.k === "-") return racB(a.n * b.d - b.n * a.d, a.d * b.d);
+    if (n.k === "·") return racB(a.n * b.n, a.d * b.d);
+    if (b.n === 0n) errCE("Hay una división por cero");
+    return racB(a.n * b.d, a.d * b.n);
+  }
+  // reemplaza la incógnita por un número (también en los números combinatorios)
+  function sustCE(t, v) {
+    return mapCE(t, function (x) {
+      if (x.k === "var") return numCE(v);
+      if (x.k === "fn") {
+        var f = copiaCE(x);
+        if (esLinCE(f.n)) f.n = f.n.lin + v;
+        if (esLinCE(f.kk)) f.kk = f.kk.lin + v;
+        return f;
+      }
+      return null;
+    });
+  }
+
+  // ---------------------------------------------------------------- lectura
+  // V^4_3 (n = 4 arriba, k = 3 abajo), V_3^4, V⁴₃, V(4, 3), V4,3; C igual y
+  // también (5 2) (número combinatorio); P_5, P5, P(5); VR, CR (o V', C');
+  // PR(6; 3, 2), PR^3,2_6 o PR(3, 2) (n = la suma). Factorial con !,
+  // producto con · o * (o pegado: 3V^4_2), fracción con /, potencia con ^.
+  // Una letra minúscula es la incógnita: V^x_2, V^{x+1}_3, C(x, x − 2), x!.
+  function leerCE(txt) {
+    var SUP_D = "⁰¹²³⁴⁵⁶⁷⁸⁹", s = String(txt || "")
+      .replace(/[’´`′]/g, "'").replace(/[−–—]/g, "-").replace(/[×*∙•]/g, "·").replace(/÷/g, "/")
+      .replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]+(?:,[⁰¹²³⁴⁵⁶⁷⁸⁹]+)*/g, function (m) {
+        return "^{" + m.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, function (c) { return SUP_D.indexOf(c); }) + "}";
+      })
+      .replace(/[₀-₉]+(?:,[₀-₉]+)*/g, function (m) {
+        return "_{" + m.replace(/[₀-₉]/g, function (c) { return c.charCodeAt(0) - 0x2080; }) + "}";
+      });
+    if (!s.trim()) return { error: "Escribí una expresión, por ejemplo: V^4_3 + 3V^4_2 = V^5_3" };
+    var partes = s.split("=");
+    if (partes.length > 2) return { error: "Escribí una sola igualdad (un solo «=»)" };
+    var ctx = { nom: null };
+    try {
+      var miembros = partes.map(function (p, j) {
+        if (!p.trim()) errCE(j ? "Falta el segundo miembro de la igualdad" : "Falta el primer miembro de la igualdad");
+        return leerMiembroCE(p, ctx);
+      });
+      if (!ctx.nom) {
+        miembros.forEach(evalCE); // valida factoriales, divisiones por cero y exponentes
+        return { miembros: miembros };
+      }
+      if (miembros.length < 2) errCE("Con una incógnita escribí una ecuación (con «=»), por ejemplo: V^" + ctx.nom + "_2 = 30");
+      var dom = dominioCE(miembros, ctx.nom);
+      if (dom.vacio) errCE("Ningún natural cumple las condiciones de los números combinatorios");
+      return { miembros: miembros, incognita: ctx.nom, dominio: dom };
+    } catch (e) {
+      if (e && e.msjCE) return { error: e.msjCE };
+      throw e;
+    }
+  }
+  function leerMiembroCE(p, ctx) {
+    var i = 0;
+    function sp() { while (i < p.length && /\s/.test(p[i])) i++; }
+    function ve(c) { sp(); return p[i] === c; }
+    function come(c) { if (ve(c)) { i++; return true; } return false; }
+    function resto() { sp(); return p.slice(i); }
+    function entero() { var m = /^\d+/.exec(resto()); if (!m) return null; i += m[0].length; return parseInt(m[0], 10); }
+    function cerca() { var r = resto(); return r ? "«" + r.slice(0, 8) + "»" : "el final"; }
+    function incognita() {
+      var m = /^[a-z](?![a-z])/.exec(resto());
+      if (!m) return null;
+      i += 1;
+      if (ctx.nom && ctx.nom !== m[0]) errCE("Una sola incógnita: hay " + ctx.nom + " y " + m[0]);
+      ctx.nom = m[0];
+      return { k: "var", nom: m[0] };
+    }
+    function expr() {
+      var a = term();
+      for (;;) {
+        if (come("+")) a = opCE("+", a, term());
+        else if (come("-")) a = opCE("-", a, term());
+        else return a;
+      }
+    }
+    function empiezaFactor() { sp(); return /^[VCP(\[]|^[a-z](?![a-z])/.test(p.slice(i)); }
+    function term() {
+      var a = unario();
+      for (;;) {
+        if (come("·")) a = opCE("·", a, unario());
+        else if (come("/")) a = opCE("/", a, unario());
+        else if (empiezaFactor()) { a = opCE("·", a, unario()); a.impl = true; }
+        else if (/^\d/.test(resto())) errCE("Falta una operación antes de " + cerca());
+        else return a;
+      }
+    }
+    function unario() { return come("-") ? { k: "neg", a: unario() } : potencia(); }
+    function potencia() {
+      var a = postfijo();
+      if (come("^")) {
+        var e;
+        if (come("{")) { e = expr(); if (!come("}")) errCE("Falta cerrar la llave del exponente"); }
+        else e = postfijo();
+        a = opCE("^", a, e);
+      }
+      return a;
+    }
+    function postfijo() {
+      var a = primario();
+      while (come("!")) {
+        if (tieneVarCE(a)) {
+          var L = linealCE(a);
+          if (!L || L.a.n !== 1n || L.a.d !== 1n || L.b.d !== 1n) errCE("En un factorial la incógnita va sola o con un número sumado: x!, (x + 1)!");
+        }
+        a = factCE(a);
+      }
+      return a;
+    }
+    function primario() {
+      sp();
+      var m = /^[(\[]\s*(\d+)\s+(\d+)\s*[)\]]/.exec(p.slice(i));
+      if (m) { // número combinatorio (5 2)
+        i += m[0].length;
+        var b = { k: "fn", tipo: "C", n: +m[1], kk: +m[2], binom: true };
+        validarFnCE(b);
+        return b;
+      }
+      if (come("(") || come("[")) {
+        var cierra = p[i - 1] === "(" ? ")" : "]", a = expr();
+        if (!come(cierra)) errCE("Falta cerrar un paréntesis");
+        return a;
+      }
+      var n = entero();
+      if (n !== null) return numCE(n);
+      if (/^[VCP]/.test(resto())) return funcion();
+      var x = incognita();
+      if (x) return x;
+      errCE(resto() ? "No entiendo " + cerca() : "Falta un término al final");
+    }
+    // un argumento de un número combinatorio: un natural o x + b
+    function argumento(t) {
+      if (!tieneVarCE(t)) {
+        var v = evalCE(t);
+        if (v.d !== 1n || v.n < 0n) errCE("Los números de un número combinatorio son naturales");
+        return Number(v.n);
+      }
+      var L = linealCE(t);
+      if (!L || L.a.n !== 1n || L.a.d !== 1n || L.b.d !== 1n) {
+        errCE("En un número combinatorio la incógnita va sola o con un número sumado: " + ctx.nom + ", " + ctx.nom + " + 1, " + ctx.nom + " − 2");
+      }
+      return { lin: Number(L.b.n), nom: ctx.nom };
+    }
+    // lista separada por coma (o «;» despues del primero)
+    function lista(hasta) {
+      var l = [], pc = false;
+      for (;;) {
+        sp();
+        if (!resto() || /^[,;)}]/.test(resto())) errCE("Faltan números en " + cerca());
+        l.push(argumento(expr()));
+        if (come(";")) { pc = true; continue; }
+        if (come(",")) continue;
+        if (hasta && !come(hasta)) errCE("Falta cerrar " + (hasta === ")" ? "el paréntesis" : "la llave"));
+        return { l: l, pc: pc };
+      }
+    }
+    function grupo() {
+      if (come("{")) return lista("}").l;
+      if (come("(")) return lista(")").l;
+      var x = entero();
+      if (x !== null) return [x];
+      var v = incognita();
+      if (v) return [{ lin: 0, nom: v.nom }];
+      errCE("Falta el número después de ^ o _");
+    }
+    function funcion() {
+      var m = /^(VR|CR|PR|V'|C'|P'|V|C|P)/.exec(resto());
+      i += m[0].length;
+      var t = m[1];
+      if (t.length === 2 && t[1] === "'") t = t[0] + "R";
+      var f = { k: "fn", tipo: t }, sup = null, sub = null, args = null;
+      if (come("(")) args = lista(")");
+      else {
+        for (var j = 0; j < 2; j++) {
+          if (!sup && come("^")) sup = grupo();
+          else if (!sub && come("_")) sub = grupo();
+        }
+        if (!sup && !sub) {
+          var mm = /^(\d+)(?:\s*,\s*(\d+))?/.exec(resto());
+          if (!mm) errCE("Faltan los números de " + t + ": " + ejemploFnCE(t));
+          i += mm[0].length;
+          args = { l: [+mm[1]].concat(mm[2] ? [+mm[2]] : []), pc: false };
+        }
+      }
+      if (args) {
+        var l = args.l;
+        if (t === "P") { if (l.length !== 1) errCE("P lleva un solo número: P(5)"); f.n = l[0]; }
+        else if (t === "PR") {
+          if (args.pc) { f.n = l[0]; f.reps = l.slice(1); }
+          else { f.reps = l; f.n = l.reduce(function (a, b) { return a + b; }, 0); }
+          if (!f.reps.length) errCE("Faltan las repeticiones: PR(6; 3, 2)");
+        } else {
+          if (l.length !== 2) errCE(t + " lleva dos números: " + ejemploFnCE(t));
+          f.n = l[0]; f.kk = l[1];
+        }
+      } else if (t === "P") {
+        var u = sub || sup;
+        if (u.length !== 1) errCE("P lleva un solo número: P_5");
+        f.n = u[0];
+      } else if (t === "PR") {
+        if (!sup || !sub) errCE("En PR van las repeticiones arriba y n abajo: PR^3,2_6 o PR(6; 3, 2)");
+        f.n = sub[0]; f.reps = sup;
+      } else {
+        if (!sup || !sub) errCE("Falta " + (sup ? "k abajo (_)" : "n arriba (^)") + ": " + ejemploFnCE(t));
+        f.n = sup[0]; f.kk = sub[0];
+      }
+      if (f.reps && f.reps.some(esLinCE)) errCE("Las repeticiones de PR son números (sin incógnita)");
+      validarFnCE(f);
+      return f;
+    }
+    sp();
+    var r = expr();
+    if (resto()) errCE("No entiendo " + cerca());
+    return r;
+  }
+  function ejemploFnCE(t) {
+    return { V: "V^4_3 o V(4, 3)", C: "C^5_2 o C(5, 2)", VR: "VR^3_2 o VR(3, 2)", CR: "CR^4_2 o CR(4, 2)",
+      P: "P_5 o P(5)", PR: "PR(6; 3, 2)" }[t];
+  }
+  function validarFnCE(f) {
+    if (esLinCE(f.n) || esLinCE(f.kk)) return; // con incógnita: van a la condición
+    var nom = f.tipo;
+    if ((nom === "V" || nom === "C") && f.kk > f.n) errCE("En " + nom + ", k no puede ser mayor que n (" + f.kk + " > " + f.n + ")");
+    if (nom === "CR" && f.n < 1) errCE("En CR, n tiene que ser al menos 1");
+    if (nom === "VR" && f.kk > 60) errCE("El exponente de VR es demasiado grande");
+    var tope = nom === "CR" ? f.n + f.kk - 1 : nom === "VR" ? 0 : f.n;
+    if (tope > MAX_COMB) errCE("Hasta " + MAX_COMB + "! como máximo");
+    if (nom === "PR") {
+      var suma = f.reps.reduce(function (a, b) { return a + b; }, 0);
+      if (suma > f.n) errCE("Las repeticiones suman " + suma + ", más que n = " + f.n);
+    }
+  }
+  // Condición de la incógnita: natural y lo que piden los números
+  // combinatorios y los factoriales (k ≤ n, n ≥ 1 en CR...). Todas son de la
+  // forma x ≥ c o x ≤ c. `tope`: hasta dónde se puede calcular (30!).
+  function dominioCE(miembros, nom) {
+    var D = { lo: 0, hi: Infinity, tope: Infinity, vacio: false, nom: nom };
+    function lin(v) { return esLinCE(v) ? { a: 1, b: v.lin } : { a: 0, b: v }; }
+    function dif(p, q) { return { a: p.a - q.a, b: p.b - q.b }; }
+    function cond(c) { // a·x + b ≥ 0
+      if (c.a > 0) D.lo = Math.max(D.lo, -c.b);
+      else if (c.a < 0) D.hi = Math.min(D.hi, c.b);
+      else if (c.b < 0) D.vacio = true;
+    }
+    function cabe(c) { if (c.a > 0) D.tope = Math.min(D.tope, MAX_COMB - c.b); } // c ≤ 30
+    miembros.forEach(function (t) {
+      recorrerCE(t, function (x) {
+        if (x.k === "fn") {
+          var n = lin(x.n), k = x.kk === undefined ? null : lin(x.kk);
+          if (x.tipo === "P") { cond(n); cabe(n); }
+          else if (x.tipo === "V" || x.tipo === "C") { cond(k); cond(dif(n, k)); cabe(n); }
+          else if (x.tipo === "VR") { cond(n); cond(k); }
+          else if (x.tipo === "CR") { cond(dif(n, { a: 0, b: 1 })); cond(k); cabe({ a: n.a + k.a, b: n.b + k.b - 1 }); }
+          else { var s = x.reps.reduce(function (a, b) { return a + b; }, 0); cond(dif(n, { a: 0, b: s })); cabe(n); }
+        } else if (x.k === "fact" && tieneVarCE(x.a)) {
+          var L = linealCE(x.a), c = { a: 1, b: Number(L.b.n) };
+          cond(c); cabe(c);
+        }
+      });
+    });
+    if (D.lo > D.hi) D.vacio = true;
+    D.texto = nom + " natural" + (D.hi < Infinity ? ", " + (D.lo > 0 ? D.lo + " ≤ " : "") + nom + " ≤ " + D.hi
+      : D.lo > 0 ? ", " + nom + " ≥ " + D.lo : "");
+    D.corto = D.hi < Infinity ? (D.lo > 0 ? D.lo + " ≤ " : "") + nom + " ≤ " + D.hi : D.lo > 0 ? nom + " ≥ " + D.lo : nom + " natural";
+    return D;
+  }
+
+  // ---------------------------------------------------------------- pasos
+  // fórmula de cada uno, con los números reemplazados
+  function definicionCE(f) { return copiaCE(definicionCompartidaCE(f)); }
+  function definicionCompartidaCE(f) {
+    var A = argArbolCE, F = function (x) { return factCE(x); };
+    if (f.tipo === "P") return F(A(f.n));
+    if (f.tipo === "V") return opCE("/", F(A(f.n)), F(opCE("-", A(f.n), A(f.kk))));
+    if (f.tipo === "C") return opCE("/", F(A(f.n)), opCE("·", F(A(f.kk)), F(opCE("-", A(f.n), A(f.kk)))));
+    if (f.tipo === "VR") return opCE("^", A(f.n), A(f.kk));
+    if (f.tipo === "CR") {
+      return opCE("/", F(opCE("-", opCE("+", A(f.n), A(f.kk)), numCE(1))), opCE("·", F(A(f.kk)), F(opCE("-", A(f.n), numCE(1)))));
+    }
+    return opCE("/", F(A(f.n)), f.reps.map(function (r) { return F(numCE(r)); }).reduce(function (a, b) { return opCE("·", a, b); }));
+  }
+  // la fórmula general como texto, para la nota
+  function formulaCE(tipo, op) {
+    var R = op.repeticion === "prima" ? "'" : "R", nom = tipo[0] + (tipo.length > 1 ? R : "");
+    var sim;
+    if (tipo === "C" && op.binomial) sim = "(n sobre k)";
+    else if (op.notacion === "sub" || op.notacion === "paren") sim = simboloComb({ tipo: tipo }, op, true);
+    else sim = tipo === "P" ? "Pₙ" : tipo === "PR" ? nom + "ₙ(a, b, …)" : nom + "ⁿₖ";
+    return sim + " = " + { P: "n!", V: "n! / (n − k)!", C: "n! / (k! · (n − k)!)", VR: "nᵏ",
+      CR: "(n + k − 1)! / (k! · (n − 1)!)", PR: "n! / (a! · b! · …)" }[tipo];
+  }
+
+  // Una cuenta (de las de más adentro) en cada parte independiente de la
+  // expresión. K junta qué se hizo. Devuelve el nodo nuevo o null.
+  var NOTAS_CE = {
+    "+": ["Sumar", COLOR_SUMA], "-": ["Restar", COLOR_SUMA], neg: ["Cambiar el signo", COLOR_SUMA],
+    "·": ["Multiplicar", COLOR_PRODUCTO], "÷": ["Dividir", COLOR_PRODUCTO], "^": ["Calcular la potencia", COLOR_PRODUCTO],
+    simp: ["Simplificar la fracción", COLOR_PRODUCTO], igualDen: ["Sumar las fracciones (igual denominador)", COLOR_SUMA],
+    comun: ["Denominador común", COLOR_SUMA], fmul: ["Multiplicar las fracciones", COLOR_PRODUCTO],
+    fdiv: ["Dividir las fracciones", COLOR_PRODUCTO], lin: ["Resolver las cuentas", COLOR_SUMA],
+  };
+  function reducirCE(n, K) {
+    var a, b, va, vb;
+    function hecho(tipo, nodo) { K[tipo] = true; return pintarCE(nodo, NOTAS_CE[tipo][1]); }
+    switch (n.k) {
+      case "num": case "rac": case "fact": case "fn": case "var": return null;
+      case "neg":
+        a = reducirCE(n.a, K);
+        if (a) return { k: "neg", a: a };
+        if (!esValorCE(n.a)) return null;
+        va = valorDeCE(n.a);
+        return hecho("neg", valorNodoCE({ n: -va.n, d: va.d }));
+    }
+    a = reducirCE(n.a, K); b = reducirCE(n.b, K);
+    if (a || b) { var c = opCE(n.k, a || n.a, b || n.b); if (n.impl) c.impl = true; return c; }
+    if (!esValorCE(n.a) || !esValorCE(n.b)) return null;
+    va = valorDeCE(n.a); vb = valorDeCE(n.b);
+    if (n.k === "^") return hecho("^", valorNodoCE(racB(va.n ** vb.n, va.d ** vb.n)));
+    var enteros = va.d === 1n && vb.d === 1n;
+    if (n.k === "+" || n.k === "-") {
+      var s = n.k === "+" ? 1n : -1n;
+      if (enteros) return hecho(n.k, numCE(va.n + s * vb.n));
+      if (va.d === vb.d) return hecho("igualDen", opCE("/", opCE(n.k, numCE(va.n), numCE(vb.n)), numCE(va.d)));
+      var L = va.d / gcdB(va.d, vb.d) * vb.d;
+      var parte = function (v) { return L === v.d ? numCE(v.n) : opCE("·", numCE(v.n), numCE(L / v.d)); };
+      return hecho("comun", opCE("/", opCE(n.k, parte(va), parte(vb)), numCE(L)));
+    }
+    if (n.k === "·") {
+      if (enteros) return hecho("·", numCE(va.n * vb.n));
+      return hecho("fmul", opCE("/", productoCE([numCE(va.n), numCE(vb.n)]), productoCE([numCE(va.d), numCE(vb.d)])));
+    }
+    // división
+    if (!enteros) {
+      return hecho("fdiv", opCE("/", productoCE([numCE(va.n), numCE(vb.d)]), productoCE([numCE(va.d), numCE(vb.n)])));
+    }
+    if (va.n % vb.n === 0n) return hecho("÷", numCE(va.n / vb.n));
+    var g = gcdB(va.n, vb.n);
+    if (g > 1n) return hecho("simp", valorNodoCE(racB(va.n, vb.n)));
+    K.callado = true; // ya es una fracción irreducible: no cambia lo escrito
+    return valorNodoCE(racB(va.n, vb.n));
+  }
+
+  // factores de un producto (los nodos, por referencia)
+  function factoresCE(n) { return n.k === "·" ? factoresCE(n.a).concat(factoresCE(n.b)) : [n]; }
+  // de un factorial: { tipo: "n", v } (de un número) o { tipo: "x", v } (de x + v)
+  function claveFactCE(x) {
+    if (x.k !== "fact" || x.tachar) return null;
+    if (x.a.k === "num") return { tipo: "n", v: x.a.v };
+    var b = linCanonCE(x.a);
+    return b === null ? null : { tipo: "x", v: BigInt(b), nom: x.a.k === "var" ? x.a.nom : x.a.a.nom };
+  }
+  function mayorFactCE(lista, tipo) {
+    var m = null;
+    lista.forEach(function (x) {
+      var c = claveFactCE(x);
+      if (c && c.tipo === tipo && (!m || c.v > m.c.v)) m = { n: x, c: c };
+    });
+    return m;
+  }
+  // A y B (de lados distintos, del mismo tipo): el más grande se escribe hasta
+  // el más chico y los dos factoriales iguales se tachan. Devuelve si escribió algo.
+  function cancelarParCE(A, B) {
+    var N = A.c.v, D = B.c.v;
+    if (N === D) { A.n.tachar = B.n.tachar = true; return false; }
+    var G = N > D ? A : B, m = N > D ? D : N, chico = N > D ? B : A, M = G.c.v, nom = G.c.nom;
+    var hecho = function (v) { return G.c.tipo === "n" ? numCE(v, COLOR_FACT) : pintarCE(linArbolCE(Number(v), nom), COLOR_FACT); };
+    var lista = [];
+    for (var x = M; x > m; x--) lista.push(hecho(x));
+    var resto = factCE(G.c.tipo === "n" ? numCE(m) : linArbolCE(Number(m), nom));
+    pintarCE(resto, COLOR_FACT); resto.tachar = true;
+    lista.push(resto);
+    var prod = lista.reduce(function (a, b) { return opCE("·", a, b); });
+    var nodo = G.n;
+    delete nodo.a; delete nodo.tachar;
+    for (var q in prod) nodo[q] = prod[q];
+    chico.n.tachar = true;
+    return true;
+  }
+  // Propiedad del factorial en cada fracción: el factorial más grande de un
+  // lado se escribe hasta el más grande del otro (n! = n · (n − 1) · ... · m!)
+  // y los dos m! se tachan. Si son iguales, solo se tachan. Marca el árbol en
+  // su lugar; devuelve { hubo, desarrollo }.
+  function cancelarCE(t) {
+    var r = { hubo: false, desarrollo: false };
+    recorrerCE(t, function (n) {
+      if (n.k !== "/") return;
+      var fa = factoresCE(n.a), fb = factoresCE(n.b);
+      ["x", "n"].some(function (tipo) {
+        var A = mayorFactCE(fa, tipo), B = mayorFactCE(fb, tipo);
+        if (!A || !B) return false;
+        if (tipo === "n" && A.c.v !== B.c.v && (A.c.v < 1n || B.c.v < 1n)) return false; // con 0! va primero 0! = 1
+        r.hubo = true;
+        if (cancelarParCE(A, B)) r.desarrollo = true;
+        return true;
+      });
+    });
+    return r;
+  }
+  // saca lo tachado (los productos y las fracciones se acomodan)
+  function quitarTachadosCE(n) {
+    if (n.tachar) return null;
+    if (n.k === "·") {
+      var a = quitarTachadosCE(n.a), b = quitarTachadosCE(n.b);
+      if (!a) return b;
+      if (!b) return a;
+      var c = opCE("·", a, b); if (n.impl) c.impl = true; return c;
+    }
+    if (n.k === "/") {
+      var nu = quitarTachadosCE(n.a) || numCE(1), de = quitarTachadosCE(n.b);
+      return de ? opCE("/", nu, de) : nu;
+    }
+    var c2 = copiaCE(n);
+    if (n.a) c2.a = quitarTachadosCE(n.a) || numCE(1);
+    if (n.b) c2.b = quitarTachadosCE(n.b) || numCE(1);
+    return c2;
+  }
+  function numeradorCE(t) { return t.k === "/" ? t.a : t; }
+  // texto simple (para las notas): x, (x − 1), (x − 2)!
+  function textoPlanoCE(n) {
+    switch (n.k) {
+      case "num": return fmtCE(n.v);
+      case "var": return n.nom;
+      case "fact": return (n.a.k === "num" || n.a.k === "var" ? textoPlanoCE(n.a) : "(" + textoPlanoCE(n.a) + ")") + "!";
+      case "+": return textoPlanoCE(n.a) + " + " + textoPlanoCE(n.b);
+      case "-": return textoPlanoCE(n.a) + " − " + textoPlanoCE(n.b);
+      case "·": return [n.a, n.b].map(function (q) { return q.k === "+" || q.k === "-" ? "(" + textoPlanoCE(q) + ")" : textoPlanoCE(q); }).join(" · ");
+    }
+    return "…";
+  }
+  function factorTextoCE(n) { return n.k === "+" || n.k === "-" ? "(" + textoPlanoCE(n) + ")" : textoPlanoCE(n); }
+
+  // Pasos de uno o varios árboles a la vez (los miembros de una ecuación):
+  // [{ ts: [árboles], nota: [{ t, color }] }]. Con `eq` (la condición de la
+  // ecuación) también divide los dos miembros por lo que no puede ser 0 y
+  // resuelve x! = número; si no hay solución deja eq.sinSolucion.
+  function pasosVariosCE(arboles, eq) {
+    var pasos = [], cur = arboles;
+    function nota(lista) { return lista.map(function (x) { return { t: x[0], color: x[1] }; }); }
+    function paso(ts, n) { pasos.push({ ts: ts, nota: nota(n) }); cur = ts; }
+    function alguno(ts, f) { return ts.some(function (t) { return hayCE(t, f); }); }
+    function todos(ts, f) { return ts.map(function (t) { return mapCE(t, f); }); }
+    function simplificar(n) { paso(cur.map(function (c) { return copiaCE(quitarTachadosCE(copiaCE(c)) || numCE(1), true); }), n); }
+    var PROP = [["Propiedad del factorial:", COLOR_FACT], ["n! = n · (n − 1)!", COLOR_FACT]];
+    for (var vuelta = 0; vuelta < MAX_PASOS_CE && !cur.every(esValorCE); vuelta++) {
+      var ts = cur.map(function (c) { return copiaCE(c, true); });
+      // 1) definición de cada número combinatorio
+      var tipos = [];
+      if (alguno(ts, function (x) { return x.k === "fn"; })) {
+        ts = todos(ts, function (x) {
+          if (x.k !== "fn") return null;
+          if (tipos.indexOf(x.tipo) < 0) tipos.push(x.tipo);
+          return pintarCE(definicionCE(x), COLOR_REEMPLAZO);
+        });
+        paso(ts, [["Definición de " + tipos.map(function (q) { return NOMBRES_CE[q]; }).join(", ").replace(/, ([^,]*)$/, " y $1"), COLOR_REEMPLAZO]]
+          .concat(tipos.map(function (q) { return ["formula:" + q, COLOR_REEMPLAZO]; })));
+        continue;
+      }
+      // (x + a)! = n!: las bases son iguales (antes de desarrollar n!)
+      if (eq) {
+        var cI0 = claveFactCE(ts[0]), cD0 = claveFactCE(ts[1]);
+        if (cI0 && cD0 && cI0.tipo !== cD0.tipo && (cI0.tipo === "n" ? cI0.v : cD0.v) >= 2n) {
+          paso(ts.map(function (t) { return pintarCE(copiaCE(t.a), COLOR_SUMA); }),
+            [["Factoriales iguales (de números ≥ 2):", COLOR_SUMA], ["las bases son iguales", COLOR_SUMA]]);
+          continue;
+        }
+      }
+      // 2) las cuentas dentro de los factoriales
+      var K = {};
+      var pendiente = function (x) {
+        if (x.k !== "fact" || esValorCE(x.a) || linCanonCE(x.a) !== null) return false;
+        if (!tieneVarCE(x.a)) return true;
+        var L = linealCE(x.a); // solo x + b (o un número): (5 − x)! queda como está
+        return !!L && L.a.d === 1n && (L.a.n === 1n || L.a.n === 0n);
+      };
+      if (alguno(ts, pendiente)) {
+        ts = todos(ts, function (x) {
+          if (!pendiente(x)) return null;
+          if (tieneVarCE(x.a)) {
+            var L = linealCE(x.a), b = Number(L.b.n), nom = null;
+            recorrerCE(x.a, function (q) { if (q.k === "var") nom = q.nom; });
+            K.lin = true;
+            return factCE(pintarCE(L.a.n === 0n ? numCE(b) : linArbolCE(b, nom), COLOR_SUMA));
+          }
+          var r = reducirCE(x.a, K);
+          return r ? factCE(r) : null;
+        });
+        paso(ts, notasDeK(K, "dentro de los factoriales"));
+        continue;
+      }
+      // 3) propiedad del factorial para simplificar las fracciones
+      var rs = ts.map(cancelarCE);
+      if (rs.some(function (r) { return r.hubo; })) {
+        if (rs.some(function (r) { return r.desarrollo; })) paso(ts, PROP);
+        else cur.forEach(cancelarCE); // solo se tacha, en el renglón que ya está
+        simplificar([["Simplificar", COLOR_MAL]]);
+        continue;
+      }
+      // 4) 0! = 1 y 1! = 1
+      var cu = {};
+      if (alguno(ts, function (x) { return x.k === "fact" && x.a.k === "num" && x.a.v <= 1n; })) {
+        ts = todos(ts, function (x) {
+          if (x.k !== "fact" || x.a.k !== "num" || x.a.v > 1n) return null;
+          cu[x.a.v] = true;
+          return numCE(1, COLOR_FACT);
+        });
+        paso(ts, [[Object.keys(cu).sort().map(function (v) { return v + "! = 1"; }).join(" y "), COLOR_FACT]]);
+        continue;
+      }
+      // 5) desarrollar los factoriales de números que quedan
+      if (alguno(ts, function (x) { return x.k === "fact" && x.a.k === "num"; })) {
+        ts = todos(ts, function (x) {
+          if (x.k !== "fact" || x.a.k !== "num") return null;
+          var v = Number(x.a.v);
+          if (v > 10) return numCE(factorialBig(v), COLOR_FACT);
+          var l = [];
+          for (var y = v; y >= 1; y--) l.push(numCE(y, COLOR_FACT));
+          return l.reduce(function (a, b) { return opCE("·", a, b); });
+        });
+        paso(ts, [["Desarrollar el factorial:", COLOR_FACT], ["n! = n · (n − 1) · … · 2 · 1", COLOR_FACT]]);
+        continue;
+      }
+      // 6) las cuentas, de a una
+      var hubo6 = false, r6 = ts.map(function (t) { var r = reducirCE(t, K); if (r) hubo6 = true; return r || t; });
+      if (hubo6) {
+        if (Object.keys(K).some(function (q) { return q !== "callado"; })) paso(r6, notasDeK(K));
+        else cur = r6;
+        continue;
+      }
+      if (!eq) break;
+      // ----- solo en una ecuación (dos miembros)
+      var I = ts[0], D = ts[1];
+      // 7) (x + a)! = número: el número como factorial y después las bases
+      var fx = function (t) { var c = claveFactCE(t); return c && c.tipo === "x" ? c : null; };
+      var ladoF = fx(I) ? 0 : fx(D) ? 1 : -1;
+      if (ladoF >= 0 && esValorCE(ts[1 - ladoF])) {
+        var val = valorDeCE(ts[1 - ladoF]);
+        if (val.d !== 1n || val.n < 2n) break; // 0! = 1! = 1: se prueba con valores
+        var nf = 1, f = 1n;
+        while (f < val.n) { nf++; f *= BigInt(nf); }
+        if (f !== val.n) { eq.sinSolucion = fmtCE(val.n) + " no es el factorial de ningún natural"; break; }
+        var nuevo = ts.slice();
+        nuevo[1 - ladoF] = pintarCE(factCE(numCE(nf)), COLOR_FACT);
+        paso(nuevo, [[fmtCE(val.n) + " = " + nf + "!", COLOR_FACT]]);
+        continue;
+      }
+      // 8) un factorial de x en los dos miembros: se divide por el más chico
+      var A8 = mayorFactCE(factoresCE(numeradorCE(I)), "x"), B8 = mayorFactCE(factoresCE(numeradorCE(D)), "x");
+      if (A8 && B8) {
+        var chico = A8.c.v <= B8.c.v ? A8.n : B8.n, txtChico = textoPlanoCE(chico);
+        if (cancelarParCE(A8, B8)) paso(ts, PROP);
+        else { cancelarParCE(mayorFactCE(factoresCE(numeradorCE(cur[0])), "x"), mayorFactCE(factoresCE(numeradorCE(cur[1])), "x")); }
+        simplificar([["Dividir ambos miembros por " + txtChico, COLOR_MAL], ["(un factorial nunca es 0)", COLOR_MAL]]);
+        continue;
+      }
+      // 9) factores x + b en los dos miembros que no pueden ser 0
+      var fI = factoresCE(numeradorCE(cur[0])), fD = factoresCE(numeradorCE(cur[1])), usados = [], txts = [];
+      fI.forEach(function (p) {
+        var b = linCanonCE(p);
+        if (b === null || eq.lo + b < 1) return;
+        var q = fD.filter(function (r) { return usados.indexOf(r) < 0 && linCanonCE(r) === b; })[0];
+        if (!q) return;
+        usados.push(q);
+        p.tachar = q.tachar = true;
+        txts.push(factorTextoCE(p));
+      });
+      if (txts.length) {
+        simplificar([["Dividir ambos miembros por " + txts.join(" · "), COLOR_MAL],
+          ["(no es 0 porque " + eq.corto + ")", COLOR_MAL]]);
+        continue;
+      }
+      // 10) un miembro es una fracción con denominador numérico: se multiplica
+      // ambos miembros por el denominador
+      var lf = ts[0].k === "/" && esValorCE(ts[0].b) ? 0 : ts[1].k === "/" && esValorCE(ts[1].b) ? 1 : -1;
+      if (lf >= 0) {
+        var den = ts[lf].b, nuevo10 = [];
+        nuevo10[lf] = ts[lf].a;
+        var otro = ts[1 - lf];
+        nuevo10[1 - lf] = otro.k === "/" && otro.b.k === den.k && textoItemsCE(itemsCE(otro.b, {})) === textoItemsCE(itemsCE(den, {}))
+          ? otro.a : opCE("·", pintarCE(copiaCE(den), COLOR_PRODUCTO), otro);
+        paso(nuevo10, [["Multiplicar ambos miembros por " + textoItemsCE(itemsCE(den, {})), COLOR_PRODUCTO]]);
+        continue;
+      }
+      break;
+    }
+    return pasos;
+  }
+  function pasosCE(arbol) {
+    return pasosVariosCE([arbol]).map(function (p) { return { t: p.ts[0], nota: p.nota }; });
+  }
+  function notasDeK(K, donde) {
+    var l = Object.keys(K).filter(function (q) { return q !== "callado"; })
+      .map(function (q) { return [NOTAS_CE[q][0], NOTAS_CE[q][1]]; });
+    if (donde && (l.length > 1 || K.lin)) l = [["Resolver las cuentas " + donde, COLOR_SUMA]];
+    else if (donde && l.length) l[0] = [l[0][0] + " " + donde, l[0][1]];
+    return l;
+  }
+
+  // ---------------------------------------------------------- polinomios
+  // coeficientes racionales { n, d }, del grado 0 para arriba
+  var R0 = { n: 0n, d: 1n };
+  function rSuma(a, b) { return racB(a.n * b.d + b.n * a.d, a.d * b.d); }
+  function rMul(a, b) { return racB(a.n * b.n, a.d * b.d); }
+  function pLimpio(p) { while (p.length && p[p.length - 1].n === 0n) p.pop(); return p; }
+  function pSuma(p, q, s) {
+    var r = [];
+    for (var i = 0; i < Math.max(p.length, q.length); i++) {
+      var b = q[i] || R0;
+      r.push(rSuma(p[i] || R0, s < 0 ? { n: -b.n, d: b.d } : b));
+    }
+    return pLimpio(r);
+  }
+  function pMul(p, q) {
+    var r = [];
+    p.forEach(function (a, i) { q.forEach(function (b, j) { r[i + j] = rSuma(r[i + j] || R0, rMul(a, b)); }); });
+    return pLimpio(r);
+  }
+  function polyCE(n) {
+    var a, b;
+    switch (n.k) {
+      case "num": return pLimpio([{ n: n.v, d: 1n }]);
+      case "rac": return [{ n: n.n, d: n.d }];
+      case "var": return [R0, { n: 1n, d: 1n }];
+      case "neg": a = polyCE(n.a); return a && pSuma([], a, -1);
+      case "fact": case "fn": return tieneVarCE(n) ? null : pLimpio([evalCE(n)]);
+      case "+": case "-": a = polyCE(n.a); b = polyCE(n.b); return a && b && pSuma(a, b, n.k === "+" ? 1 : -1);
+      case "·": a = polyCE(n.a); b = polyCE(n.b); return a && b && pMul(a, b);
+      case "/":
+        a = polyCE(n.a); b = polyCE(n.b);
+        if (!a || !b || b.length !== 1) return null;
+        return pMul(a, [racB(b[0].d, b[0].n)]);
+      case "^":
+        a = polyCE(n.a); b = polyCE(n.b);
+        if (!a || !b || b.length > 1) return null;
+        var e = b.length ? b[0] : R0;
+        if (e.d !== 1n || e.n < 0n || e.n > 12n) return null;
+        var r = [{ n: 1n, d: 1n }];
+        for (var i = 0n; i < e.n; i++) r = pMul(r, a);
+        return r;
+    }
+    return null;
+  }
+  function pValor(p, x) { return p.reduceRight(function (acc, c) { return rSuma(rMul(acc, x), c); }, R0); }
+  function itemsPolyCE(p, nom, color) {
+    if (!p.length) return [TF("0", color)];
+    var its = [], primero = true;
+    for (var g = p.length - 1; g >= 0; g--) {
+      var c = p[g];
+      if (c.n === 0n) continue;
+      var neg = c.n < 0n, ab = { n: neg ? -c.n : c.n, d: c.d };
+      its.push(TF(primero ? (neg ? "−" : "") : (neg ? " − " : " + "), color));
+      if (ab.d !== 1n) { var fr = FrF(miles(ab.n), miles(ab.d)); if (color) fr.color = color; its.push(fr); }
+      else if (!(g > 0 && ab.n === 1n)) its.push(TF(miles(ab.n), color));
+      if (g > 0) its.push(TF(nom + (g > 1 ? superindice(g) : ""), color));
+      primero = false;
+    }
+    return its;
+  }
+  function textoItemsCE(its) {
+    return its.map(function (it) {
+      return it.frac ? "(" + textoItemsCE(it.frac[0]) + ")/(" + textoItemsCE(it.frac[1]) + ")"
+        : it.sup ? "^" + textoItemsCE(it.sup) : it.supsub ? "^" + textoItemsCE(it.supsub[0]) + "_" + textoItemsCE(it.supsub[1]) : it.t || "";
+    }).join("").replace(/\s+/g, "");
+  }
+  function pxB(v) { return v < 0n ? "(" + fmtCE(v) + ")" : fmtCE(v); }
+  function raizEnteraB(v) {
+    if (v < 0n) return null;
+    var r = BigInt(Math.round(Math.sqrt(Number(v))));
+    for (var d = -2n; d <= 2n; d++) if (r + d >= 0n && (r + d) * (r + d) === v) return r + d;
+    return null;
+  }
+  function itemsRacCE(r, color) { return itemsCE(valorNodoCE(r), {}, color); }
+
+  // Resuelve P = Q (polinomios): renglones y raíces candidatas.
+  // R: { L: renglones, cand: [racionales], identidad, absurdo, tanteo }
+  function resolverPolyCE(P, Q, nom, eq, color) {
+    var L = [], R = { L: L, cand: [] }, X = nom;
+    function ln(izq, der, n, c) { var l = LnF(izq, "=", der, n ? notaF(n[0], n[1]) : null); if (c) l.color = c; L.push(l); return l; }
+    // fracciones: se multiplica por el denominador común
+    var dens = P.concat(Q).map(function (c) { return c.d; }), M = dens.reduce(function (a, d) { return a / gcdB(a, d) * d; }, 1n);
+    if (M > 1n) {
+      P = pMul(P, [{ n: M, d: 1n }]); Q = pMul(Q, [{ n: M, d: 1n }]);
+      ln(itemsPolyCE(P, X), itemsPolyCE(Q, X), [["Multiplicar ambos miembros por " + miles(M)], COLOR_PRODUCTO]);
+    }
+    var D = pSuma(P, Q, -1);
+    if (D.length === 2) {
+      // lineal: las x en el primer miembro y los números en el segundo
+      var a1 = D[1], c1 = { n: -D[0].n, d: D[0].d };
+      var yaEsta = P.length === 2 && P[0].n === 0n && Q.length <= 1;
+      if (!yaEsta) ln(itemsPolyCE([R0, a1], X), [TF(fmtCE(c1.n), COLOR_SUMA)], [["Agrupar: las " + X + " en el primer miembro", "y los números en el segundo"], COLOR_SUMA]);
+      var r1 = racB(c1.n * a1.d, a1.n * c1.d);
+      if (!(a1.n === 1n && a1.d === 1n)) ln([TF(X)], itemsRacCE(r1, COLOR_PRODUCTO), [["Dividir ambos miembros por " + fmtCE(a1.n)], COLOR_PRODUCTO]);
+      R.cand.push(r1);
+      return R;
+    }
+    if (Q.length) ln(itemsPolyCE(D, X), [TF("0")], [["Pasar todo al primer miembro"], COLOR_SUMA]);
+    if (D.length > 1) {
+      var g = D.reduce(function (a, c) { return gcdB(a, c.n); }, 0n), s = D[D.length - 1].n < 0n ? -1n : 1n;
+      if (g * s !== 1n) {
+        D = pMul(D, [racB(1n, g * s)]);
+        ln(itemsPolyCE(D, X), [TF("0")], [["Dividir ambos miembros por " + fmtCE(g * s)], COLOR_PRODUCTO]);
+      }
+    }
+    resolverGradoCE(D, X, eq, R);
+    return R;
+  }
+  function resolverGradoCE(D, X, eq, R) {
+    var L = R.L, grado = D.length - 1;
+    function ln(izq, rel, der, n) { var l = LnF(izq, rel, der, n ? notaF(n[0], n[1]) : null); L.push(l); return l; }
+    if (grado < 0) { R.identidad = true; ln([TF("0")], "=", [TF("0"), MarcaF(true)], [["Queda una identidad:", "vale para todo " + X + " de la condición"], COLOR_SUMA]); return; }
+    if (grado === 0) { R.absurdo = true; ln(itemsPolyCE(D, X), "=", [TF("0"), MarcaF(false)], [["Absurdo: no tiene solución"], COLOR_MAL]); return; }
+    if (D[0].n === 0n) {
+      // factor común xᵐ: un producto es 0 si alguno de sus factores es 0
+      var m = 0;
+      while (D[m].n === 0n) m++;
+      var resto = D.slice(m), xm = X + (m > 1 ? superindice(m) : "");
+      var fc = [TF(xm + " · (")].concat(itemsPolyCE(resto, X), [TF(")")]);
+      var lf = ln(fc, "=", [TF("0")], [["Sacar factor común " + xm], COLOR_PRODUCTO]);
+      lf.llave = true;
+      L.push(ramaF(X, [TF("0")], notaF("Un producto es 0 si algún factor es 0", COLOR_PRODUCTO)));
+      R.cand.push(R0);
+      var r2 = { L: [], cand: [] };
+      if (resto.length > 1) {
+        var lr = LnF(itemsPolyCE(resto, X), "=", [TF("0")]);
+        lr.sub = true;
+        r2.L.push(lr);
+        resolverGradoCE(resto, X, eq, r2);
+      }
+      r2.L.forEach(function (l) { L.push(l); });
+      R.cand = R.cand.concat(r2.cand);
+      if (r2.tanteo) R.tanteo = true;
+      return;
+    }
+    var en = D.every(function (c) { return c.d === 1n; });
+    if (grado === 1 && en) {
+      var a = D[1].n, b = D[0].n;
+      if (b !== 0n) ln(itemsPolyCE([R0, D[1]], X), "=", [TF(fmtCE(-b), COLOR_SUMA)], [[(b > 0n ? "Restar " : "Sumar ") + fmtCE(b < 0n ? -b : b) + " en ambos miembros"], COLOR_SUMA]);
+      var r = racB(-b, a);
+      if (a !== 1n) ln([TF(X)], "=", itemsRacCE(r, COLOR_PRODUCTO), [["Dividir ambos miembros por " + fmtCE(a)], COLOR_PRODUCTO]);
+      R.cand.push(r);
+      return;
+    }
+    if (grado === 2 && en) {
+      var A = D[2].n, B = D[1].n, C = D[0].n, Xs = X + "₁,₂";
+      ln(null, null, [TF("a = "), TF(fmtCE(A), COLOR_A), TF("    b = "), TF(fmtCE(B), COLOR_B), TF("    c = "), TF(fmtCE(C), COLOR_C)],
+        [["Identificar a, b y c"], TINTA]);
+      ln([TF(Xs)], "=", FrF(["−", TF("b", COLOR_B), " ± ", RzF([TF("b", COLOR_B), "² − 4·", TF("a", COLOR_A), "·", TF("c", COLOR_C)])],
+        ["2·", TF("a", COLOR_A)]), [["Fórmula resolvente"], TINTA]);
+      ln([TF(Xs)], "=", FrF(["−", TF(pxB(B), COLOR_B), " ± ", RzF([TF(pxB(B), COLOR_B), "² − 4·", TF(pxB(A), COLOR_A), "·",
+        TF(pxB(C), COLOR_C)])], ["2·", TF(pxB(A), COLOR_A)]), [["Reemplazar a, b y c"], COLOR_PRODUCTO]);
+      var Dl = B * B - 4n * A * C, den = 2n * A;
+      ln([TF(Xs)], "=", FrF([TF(fmtCE(-B), COLOR_SUMA), " ± ", RzF(TF(fmtCE(Dl), COLOR_SUMA))], TF(fmtCE(den), COLOR_SUMA)),
+        [["Resolver las operaciones"], COLOR_SUMA]);
+      if (Dl < 0n) { ln(null, null, [TF("La raíz de un número negativo no es real: no hay soluciones", COLOR_MAL)]); return; }
+      var s = raizEnteraB(Dl);
+      if (s === null) {
+        R.irracional = true;
+        ln(null, null, [TF("√" + fmtCE(Dl) + " no es exacta: las raíces son irracionales (no naturales)", COLOR_MAL)]);
+        return;
+      }
+      var lr2 = ln([TF(Xs)], "=", FrF([fmtCE(-B), " ± ", TF(fmtCE(s), COLOR_PRODUCTO)], fmtCE(den)), [["√" + fmtCE(Dl) + " = " + fmtCE(s)], COLOR_PRODUCTO]);
+      lr2.llave = true;
+      var raices = s === 0n ? [[X + "₁ = " + X + "₂", " + "]] : [[X + "₁", " + "], [X + "₂", " − "]];
+      raices.forEach(function (q, k) {
+        var num = q[1] === " + " ? -B + s : -B - s, r = racB(num, den);
+        var der = [FrF(fmtCE(-B) + q[1] + fmtCE(s), fmtCE(den)), " = "].concat(itemsRacCE(r));
+        L.push(ramaF(q[0], der, k ? null : notaF(s === 0n ? "Una sola raíz (doble)" : "Calcular las dos raíces", COLOR_SUMA)));
+        R.cand.push(r);
+      });
+      return;
+    }
+    // grado 3 o más (o coeficientes raros): probar los naturales de la condición
+    R.tanteo = true;
+    var hasta = Math.min(eq.hi, eq.tope, eq.lo + 60), hallados = [];
+    for (var v = eq.lo; v <= hasta; v++) if (pValor(D, { n: BigInt(v), d: 1n }).n === 0n) hallados.push(v);
+    ln(null, null, [TF(hallados.length ? "Se anula en " + hallados.map(function (h) { return X + " = " + h; }).join(", ")
+      : "No se anula para ningún natural de la condición")], [["Probar los valores naturales", "de la condición (" + eq.corto + ")"], COLOR_PRODUCTO]);
+    hallados.forEach(function (h) { R.cand.push({ n: BigInt(h), d: 1n }); });
+  }
+
+  // ---------------------------------------------------------------- dibujo
+  function fmtCE(v) { return (v < 0n ? "−" : "") + miles(v < 0n ? -v : v); }
+  function negativoCE(n) { return (n.k === "num" && n.v < 0n) || (n.k === "rac" && n.n < 0n); }
+  function itemsFnCE(f, op, col) {
+    var R = op.repeticion === "prima" ? "'" : "R", nom = f.tipo[0] + (f.tipo.length > 1 ? R : "");
+    var n = argTextoCE(f.n, true), k = f.kk === undefined ? "" : argTextoCE(f.kk, true);
+    if (f.tipo === "C" && (op.binomial || f.binom)) {
+      var bi = { binom: [itF(argTextoCE(f.n)), itF(argTextoCE(f.kk))] };
+      if (col) bi.color = col;
+      return [bi];
+    }
+    if (op.notacion === "sub" || op.notacion === "paren") {
+      var c = { tipo: f.tipo, n: op.notacion === "sub" ? n : argTextoCE(f.n), k: op.notacion === "sub" ? k : argTextoCE(f.kk), reps: f.reps };
+      return [TF(simboloComb(c, op), col)];
+    }
+    var sup = f.tipo === "P" ? [] : f.tipo === "PR" ? itF(f.reps.join(",")) : itF(n);
+    var sub = f.tipo === "P" || f.tipo === "PR" ? itF(n) : itF(k);
+    var ss = { supsub: [sup, sub] };
+    if (col) ss.color = col;
+    return [TF(nom, col), ss];
+  }
+  function itemsCE(n, op, heredado) {
+    var out = [];
+    function T(t, c) { out.push(c ? { t: t, color: c } : { t: t }); }
+    function suma(x) { return x.k === "+" || x.k === "-"; }
+    function poner(x, c, paren) {
+      if (x.tachar && op.tachar && x.k !== "fact") {
+        // lo que se divide en los dos miembros: tachado entero
+        var it = { t: (paren ? "(" : "") + textoPlanoCE(x) + (paren ? ")" : ""), tachar: COLOR_MAL };
+        if (x.color || c) it.color = x.color || c;
+        out.push(it);
+        return;
+      }
+      if (paren) T("(", c);
+      emitir(x, c);
+      if (paren) T(")", c);
+    }
+    function emitir(x, c) {
+      var col = x.color || c, it;
+      switch (x.k) {
+        case "num": T(fmtCE(x.v), col); return;
+        case "var": T(x.nom, col); return;
+        case "rac":
+          if (x.n < 0n) T("−", col);
+          it = FrF(miles(x.n < 0n ? -x.n : x.n), miles(x.d));
+          if (col) it.color = col;
+          out.push(it);
+          return;
+        case "fact":
+          if (x.a.k === "num" || x.a.k === "var" || (x.tachar && op.tachar)) {
+            it = { t: textoPlanoCE(x) };
+            col = x.color || x.a.color || c;
+            if (col) it.color = col;
+            if (x.tachar && op.tachar) it.tachar = COLOR_MAL;
+            out.push(it);
+          } else { T("(", col); emitir(x.a, col); T(")!", col); }
+          return;
+        case "fn": itemsFnCE(x, op, col).forEach(function (q) { out.push(q); }); return;
+        case "neg": T("−", col); poner(x.a, col, suma(x.a) || x.a.k === "neg" || negativoCE(x.a)); return;
+        case "+": case "-":
+          poner(x.a, col, false);
+          T(x.k === "+" ? " + " : " − ", col);
+          poner(x.b, col, x.b.k === "neg" || negativoCE(x.b) || (x.k === "-" && suma(x.b)));
+          return;
+        case "·":
+          poner(x.a, col, suma(x.a));
+          var pb = suma(x.b) || x.b.k === "neg" || negativoCE(x.b);
+          var pegado = x.impl && (x.b.k === "fn" || x.b.k === "var" || pb) || (x.a.k === "num" && x.b.k === "var" && !x.b.tachar);
+          if (!pegado) T(" · ", col);
+          poner(x.b, col, pb);
+          return;
+        case "/":
+          it = { frac: [itemsCE(x.a, op, col), itemsCE(x.b, op, col)] };
+          if (col) it.color = col;
+          out.push(it);
+          return;
+        case "^":
+          poner(x.a, col, !((x.a.k === "num" && x.a.v >= 0n) || x.a.k === "fn" || x.a.k === "fact" || x.a.k === "var"));
+          it = { sup: itemsCE(x.b, op, col) };
+          if (col) it.color = col;
+          out.push(it);
+          return;
+      }
+    }
+    poner(n, heredado, false);
+    return out;
+  }
+  function notaCE(nota, op) {
+    return (nota || []).map(function (x) {
+      return /^formula:/.test(x.t) ? { t: formulaCE(x.t.slice(8), op), color: x.color } : x;
+    });
+  }
+  // renglones de un miembro: «expresión = paso 1», «= paso 2»...
+  function lineasCE(arbol, op, color) {
+    var pasos = pasosCE(arbol), izq = itemsCE(arbol, op);
+    if (!pasos.length) return [LnF(null, null, izq, null, color)];
+    return pasos.map(function (p, i) {
+      return LnF(i ? null : izq, "=", itemsCE(p.t, op), notaCE(p.nota, op), i === pasos.length - 1 ? color : null);
+    });
+  }
+
+  // ---------------------------------------------------------- ecuaciones
+  // Todo el desarrollo de una ecuación: renglones «I = D» (alineados en el
+  // «=»), la resolución, qué raíces cumplen la condición y el conjunto
+  // solución. Devuelve { L, sol: [naturales] | null (identidad) }.
+  function resolverEcuacionCE(E, op, color) {
+    var dom = E.dominio, X = E.incognita, L = [];
+    var eq = { lo: dom.lo, hi: dom.hi, tope: dom.tope, corto: dom.corto };
+    var pasos = pasosVariosCE(E.miembros, eq);
+    L.push(LnF(itemsCE(E.miembros[0], op), "=", itemsCE(E.miembros[1], op)));
+    pasos.forEach(function (p) { L.push(LnF(itemsCE(p.ts[0], op), "=", itemsCE(p.ts[1], op), notaCE(p.nota, op))); });
+    var fin = pasos.length ? pasos[pasos.length - 1].ts : E.miembros, R, sol = [];
+    if (eq.sinSolucion) {
+      L.push(libreF(LnF(null, null, [TF(eq.sinSolucion, COLOR_MAL), MarcaF(false)])));
+      R = { cand: [] };
+    } else {
+      var P = polyCE(fin[0]), Q = polyCE(fin[1]);
+      if (P && Q) {
+        var mismo = textoItemsCE(itemsPolyCE(P, X)) === textoItemsCE(itemsCE(fin[0], op)) &&
+          textoItemsCE(itemsPolyCE(Q, X)) === textoItemsCE(itemsCE(fin[1], op));
+        if (!mismo) L.push(LnF(itemsPolyCE(P, X), "=", itemsPolyCE(Q, X), notaF(["Aplicar la distributiva", "y agrupar los términos"], COLOR_PRODUCTO)));
+        R = resolverPolyCE(P, Q, X, eq, color);
+        R.L.forEach(function (l, i) { if (!i) l.sub = true; L.push(l); });
+      } else {
+        // no se puede llevar a un polinomio: probar los naturales de la condición
+        R = { cand: [], tanteo: true };
+        var hasta = Math.min(dom.hi, dom.tope, dom.lo + 60);
+        for (var v = dom.lo; v <= hasta; v++) {
+          try {
+            var a = evalCE(sustCE(E.miembros[0], v)), b = evalCE(sustCE(E.miembros[1], v));
+            if (a.n === b.n && a.d === b.d) R.cand.push({ n: BigInt(v), d: 1n });
+          } catch (e) { if (!(e && e.msjCE)) throw e; }
+        }
+        var lt = libreF(LnF(null, null, [TF(R.cand.length ? "Verifican la ecuación: " + R.cand.map(function (c) { return X + " = " + c.n; }).join(", ")
+          : "Ningún natural de la condición verifica la ecuación")], notaF(["No queda un polinomio: probar los", "valores naturales de la condición"], COLOR_PRODUCTO)));
+        lt.sub = true;
+        L.push(lt);
+      }
+    }
+    if (R.identidad) {
+      var li = libreF(LnF(null, null, [TF("S = {" + X + " ∈ ℕ / " + dom.corto + "}")]));
+      li.caja = color; li.color = color; li.sub = true;
+      L.push(li);
+      return { L: L, sol: null };
+    }
+    // cada raíz: ¿cumple la condición?
+    var vistos = {};
+    R.cand.forEach(function (r, i) {
+      var clave = r.n + "/" + r.d;
+      if (vistos[clave]) return;
+      vistos[clave] = true;
+      var nat = r.d === 1n && r.n >= 0n, v = Number(r.n), ok = nat && v >= dom.lo && v <= dom.hi;
+      var motivo = !nat ? "No es natural" : !ok ? "No cumple la condición (" + dom.corto + ")" : "Cumple la condición (" + dom.corto + ")";
+      var l = libreF(LnF(null, null, [TF(X + " = ")].concat(itemsRacCE(r), [MarcaF(ok), TF("  " + motivo, ok ? COLOR_SUMA : COLOR_MAL)])));
+      if (!i) l.sub = true;
+      L.push(l);
+      if (ok) sol.push(v);
+    });
+    var ls = libreF(LnF(null, null, [TF("S = " + (sol.length ? "{" + sol.join(", ") + "}" : "∅"))]));
+    ls.caja = color; ls.color = color; ls.sub = true;
+    L.push(ls);
+    return { L: L, sol: sol };
+  }
+
+  function generarCombExpr(op, ox, oy, agregar) {
+    var fuente = FUENTES[op.fuente] || FUENTES.normal, tam = TAMANOS[op.tamTexto] || 20, lh = tam * fuente.lh;
+    var y = oy;
+    op.filas.forEach(function (fila) {
+      var E = leerCE(fila.texto);
+      if (E.error) return;
+      if (E.incognita) {
+        if (op.titulos) {
+          var enun = [TF("Resolver ")].concat(itemsCE(E.miembros[0], op), [TF(" = ")], itemsCE(E.miembros[1], op));
+          y = dibujarBloqueF([LnF(null, null, enun, null, fila.color)], ox, y, op, agregar) + lh * 0.3;
+        }
+        agregar(texto(ox, y, "Condición: " + E.dominio.texto, TAM_NOTA[op.tamTexto] || 16, fuente, COLOR_CONDICION, "left"));
+        y += lh * 1.3;
+        var Rq = resolverEcuacionCE(E, op, fila.color);
+        y = dibujarBloqueF(Rq.L, ox, y, op, agregar) + lh * 1.2;
+        if (op.verificar && Rq.sol && Rq.sol.length) {
+          agregar(texto(ox, y, "Verificación", tam, fuente, fila.color, "left"));
+          y += lh * 1.2;
+          var LV = [];
+          Rq.sol.forEach(function (s) {
+            var vs = E.miembros.map(function (m) { return sustCE(m, s); }), vals = vs.map(evalCE);
+            vs.forEach(function (m, j) {
+              if (j && esValorCE(m)) return; // un número solo: no hace falta calcularlo
+              var l = LnF(itemsCE(m, op), "=", itemsRacCE(vals[j]), j ? null : notaF("Con " + E.incognita + " = " + s, fila.color));
+              if (!j && LV.length) l.sub = true;
+              LV.push(l);
+            });
+            var ok = vals[0].n === vals[1].n && vals[0].d === vals[1].d;
+            LV.push(libreF(LnF(null, null, itemsRacCE(vals[0]).concat([TF(ok ? " = " : " ≠ ")], itemsRacCE(vals[1]), [MarcaF(ok)]))));
+          });
+          y = dibujarBloqueF(LV, ox + tam, y, op, agregar) + lh * 1.2;
+        }
+        y += lh * 0.3;
+        return;
+      }
+      if (E.miembros.length === 1) {
+        y = dibujarBloqueF(lineasCE(E.miembros[0], op, fila.color), ox, y, op, agregar) + lh * 1.5;
+        return;
+      }
+      var sangria = op.titulos ? tam : 0;
+      if (op.titulos) {
+        var enun2 = [TF("Demostrar que ")].concat(itemsCE(E.miembros[0], op), [TF(" = ")], itemsCE(E.miembros[1], op));
+        y = dibujarBloqueF([LnF(null, null, enun2, null, fila.color)], ox, y, op, agregar) + lh * 0.6;
+      }
+      var vals = [];
+      ["Primer miembro", "Segundo miembro"].forEach(function (tit, j) {
+        if (op.titulos) { agregar(texto(ox, y, tit, tam, fuente, fila.color, "left")); y += lh * 1.2; }
+        y = dibujarBloqueF(lineasCE(E.miembros[j], op, fila.color), ox + sangria, y, op, agregar) + lh * 0.8;
+        vals.push(evalCE(E.miembros[j]));
+      });
+      var ok = vals[0].n === vals[1].n && vals[0].d === vals[1].d;
+      var conc = itemsCE(valorNodoCE(vals[0]), op).concat([TF(ok ? " = " : " ≠ ")], itemsCE(valorNodoCE(vals[1]), op), [MarcaF(ok)]);
+      var nota = notaF(ok ? "Se verifica la igualdad" : "No se verifica la igualdad", ok ? COLOR_SUMA : COLOR_MAL);
+      y = dibujarBloqueF([LnF(null, null, conc, nota, fila.color)], ox, y, op, agregar) + lh * 1.5;
     });
   }
 
@@ -10608,6 +11786,54 @@
       },
     },
 
+    combExpr: {
+      titulo: "Expresiones combinatorias",
+      dibujo: "desarrollo", femenino: false,
+      clave: "pizarra-generador-comb-expresiones",
+      defecto: {
+        filas: [{ texto: "V^4_3 + 3V^4_2 = V^5_3", color: COLORES[0] }],
+        notacion: "apilada", repeticion: "R", binomial: false,
+        notas: true, tachar: true, titulos: true, verificar: true, tamTexto: "L", fuente: "codigo",
+      },
+      contenido: ["filas"],
+      agregarFila: "+ Expresión",
+      placeholder: "Ej: V^4_3 + 3V^4_2 = V^5_3  ·  V^x_2 = 30",
+      simbolos: [["V", "V^", "Variaciones: V^4_3 (n = 4 arriba, k = 3 abajo) o V(4, 3)"],
+        ["C", "C^", "Combinaciones: C^5_2 o C(5, 2); también (5 2), el número combinatorio"],
+        ["P", "P_", "Permutaciones: P_5 o P(5)"], ["VR", "VR^", "Variaciones con repetición: VR^3_2 o VR(3, 2)"],
+        ["CR", "CR^", "Combinaciones con repetición: CR^4_2 o CR(4, 2)"],
+        ["PR", "PR(", "Permutaciones con repetición: PR(6; 3, 2)"],
+        ["^", "^", "Arriba: n (o el exponente de una potencia)"], ["_", "_", "Abajo: k"],
+        ["!", "!", "Factorial: 5!"], ["·", " · ", "Producto (también * o pegado: 3V^4_2)"], ["/", "/", "Fracción o división"],
+        ["=", " = ", "Igualdad a verificar o ecuación"], ["x", "x", "Incógnita (una letra minúscula): V^x_2 = 30, V^{x+1}_3"]],
+      ayuda: "Cada fila es una expresión con números combinatorios, o una igualdad a verificar: V^4_3 + 3V^4_2 = V^5_3. " +
+        "Se escriben V^4_3 o V(4, 3) (n = 4 arriba, k = 3 abajo), C^5_2, C(5, 2) o (5 2), P_5, VR^3_2, CR^4_2 y PR(6; 3, 2) " +
+        "(también V' y C'); factorial con !, producto con · o * (o pegado: 3V^4_2), fracción con / y paréntesis. " +
+        "Se resuelve paso a paso: definición de cada uno, cuentas dentro de los factoriales, propiedad n! = n · (n − 1)! " +
+        "para simplificar (tachando), 0! = 1, desarrollo de los factoriales y las cuentas de a una. En una igualdad se " +
+        "resuelve cada miembro y se comparan los resultados. Con una incógnita (una letra minúscula: V^x_2 = 30, C^x_{x-2} = 10, " +
+        "P_{x+1} = 6P_{x-1}) se resuelve la ecuación: condición, simplificación, dividir por lo que no es 0, polinomio, " +
+        "resolvente o factor común, descarte de lo que no cumple la condición, conjunto solución y verificación. " +
+        "Seleccioná un desarrollo ya insertado para editarlo.",
+      erroresFila: function (t) { var r = leerCE(t); return r.error ? [r.error] : []; },
+      posicion: function (op, cx, cy) { return { x: cx - 300, y: cy - 250 }; },
+      generar: generarCombExpr,
+      opciones: function (ui) {
+        var tam = Object.keys(TAMANOS).map(function (k) { return [k, k]; });
+        ui.arriba(function () {
+          ui.seg("Notación", "notacion", [["apilada", "V⁴₃ (n arriba)"], ["sub", "V₄,₃"], ["paren", "V(4, 3)"]]);
+          ui.chk("Combinaciones como número combinatorio (n sobre k)", "binomial");
+          ui.chk("Escribir qué se hace en cada paso", "notas");
+          ui.chk("Tachar lo que se simplifica", "tachar");
+          ui.chk("Enunciado («Demostrar que…», «Resolver…») y miembros", "titulos");
+          ui.chk("En una ecuación: verificar las soluciones", "verificar");
+        });
+        ui.seg("Con repetición", "repeticion", [["R", "VR, CR, PR"], ["prima", "V', C', P'"]]);
+        ui.seg("Texto", "tamTexto", tam);
+        ui.seg("Fuente", "fuente", Object.keys(FUENTES).map(function (k) { return [k, FUENTES[k].nombre]; }));
+      },
+    },
+
     mcm: {
       titulo: "MCM y MCD",
       dibujo: "cálculo", femenino: false,
@@ -11293,6 +12519,20 @@
       ej("Variaciones y combinaciones", "10 V 3, 10 C 3 y 8 C 5", { filas: filasEj(["10 V 3", "10 C 3", "8 C 5"]) }),
       ej("Con repetición", "2 VR 5, 5 CR 3 y PR 7; 2, 2, 3", { filas: filasEj(["2 VR 5", "5 CR 3", "PR 7; 2, 2, 3"]) }),
     ],
+    combExpr: [
+      ej("Variaciones (del ejercicio)", "V⁴₃ + 3V⁴₂ = V⁵₃", { filas: filasEj(["V^4_3 + 3V^4_2 = V^5_3"]) }),
+      ej("Fórmula de Pascal", "C⁵₂ + C⁵₃ = C⁶₃", { filas: filasEj(["C^5_2 + C^5_3 = C^6_3"]) }),
+      ej("Permutaciones y combinaciones", "P₅ / (P₂ · P₃) = C⁵₂", { filas: filasEj(["P_5/(P_2 · P_3) = C^5_2"]) }),
+      ej("Factoriales", "8!/6! y 10!/(8! · 2!)", { filas: filasEj(["8!/6!", "10!/(8! · 2!)"]) }),
+      ej("Con repetición", "VR³₂ + CR⁴₂ − PR(4; 2, 2)", { filas: filasEj(["VR^3_2 + CR^4_2 - PR(4; 2, 2)"]) }),
+      ej("Resultado fraccionario", "C⁴₂ / C⁶₃", { filas: filasEj(["C^4_2 / C^6_3"]) }),
+      ej("Igualdad falsa", "V⁵₂ = 2C⁵₂ + 1", { filas: filasEj(["V^5_2 = 2C^5_2 + 1"]) }),
+      ej("Ecuación: variaciones", "Vˣ₂ = 30 (resolvente)", { filas: filasEj(["V^x_2 = 30"]) }),
+      ej("Ecuación: combinaciones", "Cˣ₂ = 15 y Cˣₓ₋₂ = 10", { filas: filasEj(["C^x_2 = 15", "C^x_{x-2} = 10"]) }),
+      ej("Ecuación: dividir por x", "Vˣ₃ = 20x", { filas: filasEj(["V^x_3 = 20x"]) }),
+      ej("Ecuación: permutaciones", "Pₓ = 120 y Pₓ₊₁ = 6Pₓ₋₁", { filas: filasEj(["P_x = 120", "P_{x+1} = 6P_{x-1}"]) }),
+      ej("Generalización (identidad)", "Vᵏ₃ + 3Vᵏ₂ = Vᵏ⁺¹₃", { filas: filasEj(["V^k_3 + 3V^k_2 = V^{k+1}_3"]) }),
+    ],
     mcm: [
       ej("Tres listas", "24, 36 · 15, 28 · 60, 90, 150", { filas: filasEj(["24, 36", "15, 28", "60, 90, 150"]) }),
       ej("Dos números", "12 y 18", { filas: filasEj(["12, 18"]) }),
@@ -11431,7 +12671,7 @@
   Object.keys(EJEMPLOS).forEach(function (k) { GEN[k].ejemplos = EJEMPLOS[k]; });
 
   // orden de las pestanas del panel (la primera es la que se abre por defecto)
-  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "venn", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "mcm", "bezout", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
+  var ORDEN = ["tabla", "razonamientos", "boole", "conjuntos", "venn", "relaciones", "recta", "funcion", "estructuras", "combinatoria", "combExpr", "mcm", "bezout", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion", "complejos", "raicesC", "simpLogica", "simpBoole", "simpConjuntos", "plantillas"];
   // nombre e icono (un simbolo) de cada generador en el menu desplegable
   // panel: titulo del panel cuando no es el nombre del item (los items solos
   // en su seccion no repiten el nombre de la seccion)
@@ -11445,6 +12685,7 @@
     funcion: { nombre: "Gráfico de funciones", icono: "ƒ" },
     estructuras: { nombre: "Estructuras algebraicas", icono: "∘" },
     combinatoria: { nombre: "Combinatoria", icono: "n!" },
+    combExpr: { nombre: "Expresiones combinatorias", panel: "Combinatoria: expresiones e igualdades", icono: "Cⁿₖ" },
     mcm: { nombre: "MCM y MCD", icono: "÷" },
     bezout: { nombre: "Identidad de Bézout", icono: "as+bt" },
     valorAbsoluto: { nombre: "Expresiones con valor absoluto", icono: "|x|" },
@@ -11470,7 +12711,7 @@
     { grupo: "Lógica proposicional", unidad: 1, items: ["tabla", "simpLogica", "razonamientos"] },
     { grupo: "Teoría de conjuntos", unidad: 2, items: ["conjuntos", "venn", "relaciones", "estructuras", "simpConjuntos"] },
     { grupo: "Álgebra de Boole", unidad: 3, items: ["boole", "simpBoole"] },
-    { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "mcm", "bezout", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion"] },
+    { grupo: "Sistemas numéricos", unidad: 5, items: ["recta", "combinatoria", "combExpr", "mcm", "bezout", "valorAbsoluto", "factorizacion", "inecuaciones2", "racionales", "induccion"] },
     { grupo: "Funciones", unidad: 6, items: ["funcion"] },
     { grupo: "Números complejos", unidad: 7, items: ["complejos", "raicesC"] },
     { grupo: "Otros", icono: "⋯", items: ["plantillas", "hojas", "solucion"] },
@@ -12590,7 +13831,7 @@
       b.type = "button";
       b.className = "ToolIcon ToolIcon_type_toggle ToolIcon_size_medium pz-boton-generadores";
       b.setAttribute("data-testid", "toolbar-generadores");
-      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, diagramas de Venn, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria, MCM y MCD, identidad de Bézout, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
+      b.title = "Generadores: lógica proposicional (tablas de verdad, razonamientos deductivos), álgebra de Boole, conjuntos, diagramas de Venn, relaciones, recta real, gráficos de funciones, estructuras algebraicas, combinatoria (cálculos y expresiones), MCM y MCD, identidad de Bézout, expresiones con valor absoluto, factorización de polinomios, números complejos, simplificación paso a paso y plantillas";
       b.setAttribute("aria-label", b.title);
       b.innerHTML = '<div class="ToolIcon__icon">' + ICONO + "</div>";
       b.setAttribute("aria-haspopup", "menu");

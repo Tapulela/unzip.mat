@@ -125,7 +125,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (`MENU_ORDEN`): Plantillas suelta; «Lógica proposicional (Unidad 1)»
   (Tablas de verdad, Simplificación paso a paso, Razonamiento deductivo); «Teoría de conjuntos (Unidad 2)» (Conjuntos, Diagramas de Venn, Relaciones
   binarias, Estructuras algebraicas, Simplificación paso a paso); «Álgebra de
-  Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, MCM y
+  Boole (Unidad 3)» (Funciones booleanas, Simplificación paso a paso); «Sistemas numéricos (Unidad 5)» (Recta real, Combinatoria, Expresiones combinatorias, MCM y
   MCD, Identidad de Bézout, Expresiones con valor absoluto, Factorización de polinomios, Inecuaciones de segundo grado, Inecuaciones racionales, Inducción matemática); «Funciones (Unidad 6)» (Gráfico de funciones) y «Números complejos
   (Unidad 7)» (Formas y operaciones, Raíces n-ésimas). Al elegir uno se abre el panel
   con ese generador. Uno de ellos genera una recta real con intervalos (fracciones, π, √, ∞, uniones). Se inserta como elementos nativos agrupados
@@ -243,6 +243,19 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   (`6 · 5 · 4! / 4!`, tachando lo que se cancela) o desarrollando los
   factoriales completos; fracciones con barra o en una línea, pasos uno
   debajo de otro o en un renglón (cálculos exactos con BigInt, hasta 30!).
+  **Expresiones combinatorias** resuelve por fila una expresión o una igualdad a
+  verificar (`V^4_3 + 3V^4_2 = V^5_3`, `C(5, 2)`, `(5 2)`, `P_5`, `8!/6!`): definición
+  de cada número combinatorio, cuentas dentro de los factoriales, propiedad
+  `n! = n · (n − 1)!` tachando lo que se simplifica, `0! = 1`, desarrollo de los
+  factoriales y las cuentas de a una (también con fracciones); en una igualdad
+  resuelve cada miembro y los compara (✓ o ✗ dibujados). Notación `V⁴₃`, `V₄,₃` o
+  `V(4, 3)` y, opcional, el número combinatorio (n sobre k).
+  Con una incógnita (una letra minúscula: `V^x_2 = 30`, `C^x_{x-2} = 10`,
+  `P_{x+1} = 6P_{x-1}`) resuelve la ecuación: condición (natural, k ≤ n...),
+  simplificación de los dos miembros, división por lo que no puede ser 0,
+  polinomio, resolvente con bifurcación o factor común (o probando valores),
+  descarte de las raíces que no cumplen la condición, `S = {…}` y verificación.
+  Una generalización como `V^k_3 + 3V^k_2 = V^{k+1}_3` queda como identidad (0 = 0).
   **MCM y MCD** toma una lista de números por fila (`12, 18, 30`), los
   descompone en factores primos con la tabla de divisiones sucesivas, escribe
   cada factorización y calcula el MCD (comunes con el menor exponente) y el
