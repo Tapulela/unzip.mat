@@ -606,7 +606,7 @@ EXPRESIONES COMBINATORIAS (prototipo)
   P_x = 120, P_{x+1} = 6P_{x-1} (la incognita va sola o con un numero
   sumado: x, x + 1, x - 2; con llaves o parentesis arriba y abajo).
   Se escribe la condicion (x natural y lo que piden los numeros
-  combinatorios: k <= n, etc.), se simplifican los dos miembros, se divide
+  combinatorios: k <= n, etc.), se simplifican ambos miembros, se divide
   por lo que no puede ser 0 (un factorial, o x - 1 si x >= 3), se lleva a
   un polinomio y se resuelve (lineal, resolvente o factor comun; si no se
   puede, probando los naturales de la condicion). Despues se descartan las
@@ -832,7 +832,7 @@ SUCESIONES ARITMETICAS Y GEOMETRICAS (prototipo)
   en su renglon, despues n reemplazado y los datos (en azul), y las cuentas
   de a una. La nota de cada paso va en un color y en el renglon siguiente
   solo lo aplicado va en ese color (log, el exponente que baja, lo que se
-  suma). Sumar o dividir en los dos miembros se escribe explicito, con lo
+  suma). Sumar o dividir en ambos miembros se escribe explicito, con lo
   que se cancela tachado, y despues se simplifica. En las inecuaciones
   con potencias se despeja con logaritmos (avisando cuando se invierte la
   desigualdad) o igualando exponentes si da una potencia exacta; la suma de

@@ -252,7 +252,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   `V(4, 3)` y, opcional, el número combinatorio (n sobre k).
   Con una incógnita (una letra minúscula: `V^x_2 = 30`, `C^x_{x-2} = 10`,
   `P_{x+1} = 6P_{x-1}`) resuelve la ecuación: condición (natural, k ≤ n...),
-  simplificación de los dos miembros, división por lo que no puede ser 0,
+  simplificación de ambos miembros, división por lo que no puede ser 0,
   polinomio, resolvente con bifurcación o factor común (o probando valores),
   descarte de las raíces que no cumplen la condición, `S = {…}` y verificación.
   Una generalización como `V^k_3 + 3V^k_2 = V^{k+1}_3` queda como identidad (0 = 0).
@@ -271,7 +271,7 @@ colaborar entre dos ventanas en la misma PC, sin internet ni servicios en la nub
   `an > 100000` o `Sn ≤ 5000` y ecuaciones como `an = 486`. Calcula la razón (con dos
   términos) y el primer término, y resuelve cada pedido paso a paso con la nota antes
   del paso (fórmula general en su renglón y después los reemplazos; la nota y lo
-  aplicado en el mismo color; sumar y dividir en los dos miembros explícito, con
+  aplicado en el mismo color; sumar y dividir en ambos miembros explícito, con
   lo que se cancela tachado); las inecuaciones con potencias con logaritmos (o igualando exponentes) y la
   suma de una aritmética con la resolvente, y termina en los naturales con verificación
   (racionales exactos con BigInt). Primer término a₁ o a₀ (opción).

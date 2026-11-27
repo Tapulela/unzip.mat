@@ -4647,9 +4647,9 @@
   // tachados) y despues «Simplificar» (el resultado es la cabecera de los casos)
   function dividirPorK2(k, pre, prod, rel, inv, L) {
     var kT = frTexto(k), relD = k.n < 0 ? REL_INV[rel] : rel;
-    var izq = FrF([TF(pre, null)].map(function (x) { x.tachar = COLOR_TACHADO; return x; }).concat([TF(prod)]),
+    var izq = FrDivF([TF(pre, null)].map(function (x) { x.tachar = COLOR_TACHADO; return x; }).concat([TF(prod)]),
       [{ t: kT, color: COLOR_PRODUCTO, tachar: COLOR_TACHADO }]);
-    var cero = FrF("0", [TF(kT, COLOR_PRODUCTO)]);
+    var cero = FrDivF("0", [TF(kT, COLOR_PRODUCTO)]);
     L.push(LnF(null, null, inv ? [cero, " " + relD + " ", izq] : [izq, " " + relD + " ", cero],
       notaF(["Dividir ambos miembros por " + kT].concat(k.n < 0 ? ["(se invierte la desigualdad)"] : []), COLOR_PRODUCTO)));
     L.push(LnF(null, null, "", notaF(inv ? ["Simplificar y leerla al revés"] : "Simplificar", TINTA)));
@@ -4990,6 +4990,9 @@
   }
   function TF(t, color) { return { t: t, color: color }; }
   function FrF(num, den) { return { frac: [itF(num), itF(den)] }; }
+  // division de los dos miembros: la raya de fraccion va en el color de la
+  // operacion (como el divisor y la nota del paso)
+  function FrDivF(num, den, color) { var f = FrF(num, den); f.barra = color || COLOR_PRODUCTO; return f; }
   function RzF(x) { return { raiz: itF(x) }; }
   function LnF(izq, rel, der, nota, color) { return { izq: izq, rel: rel, der: itF(der), nota: nota, color: color }; }
   function libreF(l) { l.libre = true; return l; }
@@ -5235,7 +5238,7 @@
       } else if (it.frac) {
         var n = medirItsF(it.frac[0], tam, fuente), d = medirItsF(it.frac[1], tam, fuente);
         dibujarItsF(it.frac[0], x + (m.w - n.w) / 2, mid - 4 - n.ab, c, tam, fuente, agregar);
-        agregar(trazo([[x + tam * 0.1, mid], [x + m.w - tam * 0.1, mid]], { strokeColor: c, strokeWidth: 1.5 }));
+        agregar(trazo([[x + tam * 0.1, mid], [x + m.w - tam * 0.1, mid]], { strokeColor: it.barra || c, strokeWidth: 1.5 }));
         dibujarItsF(it.frac[1], x + (m.w - d.w) / 2, mid + 4 + d.ar, c, tam, fuente, agregar);
       } else if (it.raiz) {
         var r = medirItsF(it.raiz, tam, fuente), g = tam * 0.6, top = mid - r.ar - 1, bot = mid + r.ab - 3;
@@ -7620,7 +7623,7 @@
       if (g * s !== 1n) {
         var antesD = D, gs = { n: g * s, d: 1n };
         D = pMul(D, [racB(1n, g * s)]);
-        ln([FrF(itemsPolyCE(antesD, X), itemsRacCE(gs, COLOR_PRODUCTO))], [FrF("0", itemsRacCE(gs, COLOR_PRODUCTO))],
+        ln([FrDivF(itemsPolyCE(antesD, X), itemsRacCE(gs, COLOR_PRODUCTO))], [FrDivF("0", itemsRacCE(gs, COLOR_PRODUCTO))],
           [["Dividir ambos miembros por " + fmtCE(g * s)], COLOR_PRODUCTO]);
         ln(itemsPolyCE(D, X), [TF("0")], [["Simplificar"], TINTA]);
       }
@@ -7637,7 +7640,7 @@
       if (typeof it.t !== "string" || /[A-Za-zα-ω]/.test(it.t) || !it.t.trim()) return it;
       return tachS([it])[0];
     });
-    ln([FrF(num, tachS(aIts))], [FrF(der, aIts)], [["Dividir ambos miembros por " + textoPlanoItsCE(itemsRacCE(a))], COLOR_PRODUCTO]);
+    ln([FrDivF(num, tachS(aIts))], [FrDivF(der, aIts)], [["Dividir ambos miembros por " + textoPlanoItsCE(itemsRacCE(a))], COLOR_PRODUCTO]);
     ln(izqFin, derFin, [["Simplificar"], TINTA]);
   }
   function textoPlanoItsCE(its) {
@@ -10549,7 +10552,7 @@
   function apretarInd(its) {
     return its.map(function (it) {
       if (it.t !== undefined) return TF(it.t.replace(/ ([+−]) /g, "$1"), it.color);
-      if (it.frac) return { frac: [apretarInd(it.frac[0]), apretarInd(it.frac[1])], color: it.color };
+      if (it.frac) return { frac: [apretarInd(it.frac[0]), apretarInd(it.frac[1])], color: it.color, barra: it.barra };
       if (it.sup) return { sup: apretarInd(it.sup), color: it.color };
       return it;
     });
@@ -11600,6 +11603,8 @@
   function itRb(a, color) { return a.n < 0n || !decimalR(a) ? [TF("(", color)].concat(itR(a, color), [TF(")", color)]) : itR(a, color); }
   // « + 3» o « − 3» (el signo en negro y el numero en su color)
   function sumaIts(a, color) { return [TF(a.n < 0n ? " − " : " + ")].concat(itR(rAb(a), color)); }
+  // lo que se suma o resta en los dos miembros: el signo tambien en el color del paso
+  function sumaOp(a, color) { return [TF(a.n < 0n ? " − " : " + ", color)].concat(itR(rAb(a), color)); }
   function aprox(x) {
     var s = Math.abs(x).toFixed(4).replace(/\.?0+$/, ""), p = s.split(".");
     return (x < 0 && s !== "0" ? "−" : "") + miles(p[0]) + (p[1] ? "," + p[1] : "");
@@ -11804,7 +11809,7 @@
   // n − s + s (tachado) rel valor + s, y despues n rel resultado
   function sumarAmbosS(s, rel, valIts, resIts, L) {
     L.push(LnF([TF("n"), TF(" − " + s), TF(" + " + s, COLOR_SUMA)].map(function (x, i) { return i ? tachS([x])[0] : x; }),
-      rel, valIts.concat([TF(" + " + s, COLOR_SUMA)]), notaF("Sumar " + s + " a los dos miembros", COLOR_SUMA)));
+      rel, valIts.concat([TF(" + " + s, COLOR_SUMA)]), notaF("Sumar " + s + " en ambos miembros", COLOR_SUMA)));
     L.push(LnF([TF("n")], rel, resIts, notaF("Calcular", TINTA)));
   }
 
@@ -11835,24 +11840,24 @@
       L.push(LnF(itR(tj.v, cA), "=", itR(ti.v, cA).concat([TF(" + " + veces + q)]), notaF("Reemplazar los datos", cA)));
       var dif = rRe(tj.v, ti.v);
       if (ti.v.n !== 0n) {
-        L.push(LnF(itR(tj.v).concat(sumaIts(rNe(ti.v), COLOR_SUMA)), "=",
-          tachS(itR(ti.v)).concat([TF(" + " + veces + q)], tachS(sumaIts(rNe(ti.v), COLOR_SUMA))),
-          notaF((ti.v.n < 0n ? "Sumar " : "Restar ") + txR(rAb(ti.v)) + " a los dos miembros", COLOR_SUMA)));
+        L.push(LnF(itR(tj.v).concat(sumaOp(rNe(ti.v), COLOR_SUMA)), "=",
+          tachS(itR(ti.v)).concat([TF(" + " + veces + q)], tachS(sumaOp(rNe(ti.v), COLOR_SUMA))),
+          notaF((ti.v.n < 0n ? "Sumar " : "Restar ") + txR(rAb(ti.v)) + " en ambos miembros", COLOR_SUMA)));
         L.push(LnF(itR(dif), "=", [TF(veces + q)], notaF("Simplificar", TINTA)));
       }
       if (m > 1) {
-        L.push(LnF([FrF(itR(dif), [TF(String(m), COLOR_PRODUCTO)])], "=",
-          [FrF(tachS([TF(String(m))]).concat([TF(" · " + q)]), tachS([TF(String(m), COLOR_PRODUCTO)]))],
-          notaDividir("Dividir por " + m + " los dos miembros")));
+        L.push(LnF([FrDivF(itR(dif), [TF(String(m), COLOR_PRODUCTO)])], "=",
+          [FrDivF(tachS([TF(String(m))]).concat([TF(" · " + q)]), tachS([TF(String(m), COLOR_PRODUCTO)]))],
+          notaDividir("Dividir por " + m + " en ambos miembros")));
         L.push(cajaS(LnF(q, "=", itR(C.r, color), notaF("Simplificar", TINTA)), color));
       } else L.push(cajaS(LnF(q, "=", itR(C.r, color)), color));
       return L;
     }
     L.push(LnF(itR(tj.v, cA), "=", itR(ti.v, cA).concat([TF(" · ")], potS([TF(q)], m)), notaF("Reemplazar los datos", cA)));
     var c = rDi(tj.v, ti.v);
-    L.push(LnF([FrF(itR(tj.v), itR(ti.v, COLOR_PRODUCTO))], "=",
-      [FrF(tachS(itR(ti.v)).concat([TF(" · ")], potS([TF(q)], m)), tachS(itR(ti.v, COLOR_PRODUCTO)))],
-      notaDividir("Dividir por " + txR(ti.v) + " los dos miembros")));
+    L.push(LnF([FrDivF(itR(tj.v), itR(ti.v, COLOR_PRODUCTO))], "=",
+      [FrDivF(tachS(itR(ti.v)).concat([TF(" · ")], potS([TF(q)], m)), tachS(itR(ti.v, COLOR_PRODUCTO)))],
+      notaDividir("Dividir por " + txR(ti.v) + " en ambos miembros")));
     L.push(LnF(itR(c), "=", potS([TF(q)], m), notaF("Simplificar", TINTA)));
     if (m > 1) {
       var par = m % 2 === 0, rz = { raiz: itR(c), color: COLOR_PRODUCTO };
@@ -11894,8 +11899,8 @@
       L.push(LnF(itR(t.v, cA), "=", ae.concat([TF(" · ")], potS(itRb(C.r, cA), [TF(ep)])), notaF(reem, cA)));
       if (e) L.push(LnF(itR(t.v), "=", ae.concat([TF(" · ")], potS(itRb(C.r), [TF(String(m), COLOR_SUMA)])), notaF("Restar en el exponente", COLOR_SUMA)));
       L.push(LnF(itR(t.v), "=", ae.concat([TF(" · ")], itRp(qm, COLOR_PRODUCTO)), notaF("Calcular la potencia", COLOR_PRODUCTO)));
-      L.push(LnF([FrF(itR(t.v), itR(qm, COLOR_PRODUCTO))], "=", [FrF(ae.concat([TF(" · ")], tachS(itRp(qm))), tachS(itR(qm, COLOR_PRODUCTO)))],
-        notaDividir("Dividir por " + txR(qm) + " los dos miembros")));
+      L.push(LnF([FrDivF(itR(t.v), itR(qm, COLOR_PRODUCTO))], "=", [FrDivF(ae.concat([TF(" · ")], tachS(itRp(qm))), tachS(itR(qm, COLOR_PRODUCTO)))],
+        notaDividir("Dividir por " + txR(qm) + " en ambos miembros")));
       L.push(cajaS(LnF(ae, "=", itR(C.A, color), notaF("Simplificar", TINTA)), color));
       return L;
     }
@@ -11904,8 +11909,8 @@
     if (e) L.push(LnF(itR(t.v), "=", ae.concat([TF(" + "), TF(String(m), COLOR_SUMA), TF(" · ")], itRp(C.r)), notaF("Restar", COLOR_SUMA)));
     L.push(LnF(itR(t.v), "=", ae.concat(sumaIts(md, COLOR_PRODUCTO)), notaF("Multiplicar", COLOR_PRODUCTO)));
     if (md.n !== 0n) {
-      L.push(LnF(itR(t.v).concat(sumaIts(rNe(md), COLOR_SUMA)), "=", ae.concat(tachS(sumaIts(md)), tachS(sumaIts(rNe(md), COLOR_SUMA))),
-        notaF((md.n < 0n ? "Sumar " : "Restar ") + txR(rAb(md)) + " a los dos miembros", COLOR_SUMA)));
+      L.push(LnF(itR(t.v).concat(sumaOp(rNe(md), COLOR_SUMA)), "=", ae.concat(tachS(sumaIts(md)), tachS(sumaOp(rNe(md), COLOR_SUMA))),
+        notaF((md.n < 0n ? "Sumar " : "Restar ") + txR(rAb(md)) + " en ambos miembros", COLOR_SUMA)));
       L.push(cajaS(LnF(ae, "=", itR(C.A, color), notaF("Simplificar", TINTA)), color));
     } else L.push(cajaS(LnF(ae, "=", itR(C.A, color)), color));
     return L;
@@ -12060,16 +12065,16 @@
     }
     // logaritmo en los dos miembros: solo «log» en el color del paso
     L.push(LnF([TF("log(", COLOR_LOG)].concat(izq, [TF(")", COLOR_LOG)]), rel, logS(c, COLOR_LOG),
-      notaF(rel === "=" ? "Aplicar logaritmo a los dos miembros" : ["Aplicar logaritmo a los dos miembros", "(es creciente: la desigualdad no cambia)"], COLOR_LOG)));
+      notaF(rel === "=" ? "Aplicar logaritmo a ambos miembros" : ["Aplicar logaritmo a ambos miembros", "(es creciente: la desigualdad no cambia)"], COLOR_LOG)));
     // propiedad: el exponente baja (en el color de la propiedad)
     var baja = [TF(s ? "(" + expT + ")" : "n", COLOR_PROP), TF(" · ")];
     L.push(LnF(baja.concat(logS(q)), rel, logS(c), notaF("Propiedad: log(xᵐ) = m · log x", COLOR_PROP)));
     // dividir los dos miembros por log r, con lo que se cancela tachado
-    L.push(LnF([FrF([TF(s ? "(" + expT + ") · " : "n · ")].concat(tachS(logS(q))), tachS(pintarS(logS(q), COLOR_PRODUCTO)))], rel2,
-      [FrF(logS(c), pintarS(logS(q), COLOR_PRODUCTO))],
-      notaF(rel === "=" ? "Dividir por log " + txR(q) + " los dos miembros"
-        : mayor ? ["Dividir por log " + txR(q) + " los dos miembros", "(positivo, porque " + txR(q) + " > 1)"]
-          : ["Dividir por log " + txR(q) + " los dos miembros", "(negativo, porque " + txR(q) + " < 1):", "se invierte la desigualdad"], COLOR_PRODUCTO)));
+    L.push(LnF([FrDivF([TF(s ? "(" + expT + ") · " : "n · ")].concat(tachS(logS(q))), tachS(pintarS(logS(q), COLOR_PRODUCTO)))], rel2,
+      [FrDivF(logS(c), pintarS(logS(q), COLOR_PRODUCTO))],
+      notaF(rel === "=" ? "Dividir por log " + txR(q) + " en ambos miembros"
+        : mayor ? ["Dividir por log " + txR(q) + " en ambos miembros", "(positivo, porque " + txR(q) + " > 1)"]
+          : ["Dividir por log " + txR(q) + " en ambos miembros", "(negativo, porque " + txR(q) + " < 1):", "se invierte la desigualdad"], COLOR_PRODUCTO)));
     L.push(LnF([TF(expT)], rel2, [FrF(logS(c), logS(q))], notaF("Simplificar", TINTA)));
     var val = logR(c) / logR(q), relA = rel2 === "=" ? "≈" : rel2;
     L.push(LnF([TF(expT)], relA, [TF(aprox(val) + "…")], notaF("Calcular (aproximado)", TINTA)));
@@ -12090,8 +12095,8 @@
     } else if (constante) {
       L.push(LnF([TF("n · ")].concat(itRp(A, cA)), rel, itR(X), notaF("Todos los términos valen " + txR(A) + ": Sₙ = n · " + txR(A), cA)));
       var relC = A.n < 0n ? INV_SUC[rel] : rel, yC = rDi(X, A);
-      L.push(LnF([FrF([TF("n · ")].concat(tachS(itRp(A))), tachS(itRp(A, COLOR_PRODUCTO)))], relC, [FrF(itR(X), itRp(A, COLOR_PRODUCTO))],
-        notaDividir("Dividir por " + txR(A) + " los dos miembros", rel, A.n < 0n)));
+      L.push(LnF([FrDivF([TF("n · ")].concat(tachS(itRp(A))), tachS(itRp(A, COLOR_PRODUCTO)))], relC, [FrDivF(itR(X), itRp(A, COLOR_PRODUCTO))],
+        notaDividir("Dividir por " + txR(A) + " en ambos miembros", rel, A.n < 0n)));
       L.push(LnF([TF("n")], relC, itR(yC), notaF("Simplificar", TINTA)));
       R = { valor: flR(yC), rel: relC, txt: decimalR(yC) || aprox(flR(yC)) + "…" };
     } else if (C.tipo === "g" && r.n < 0n) {
@@ -12103,8 +12108,8 @@
       L.push(LnF(itR(A, cA).concat([TF(" · ")], potS(itRb(r, cA), expT)), rel, itR(X), reem));
       var c = rDi(X, A), rel1 = A.n < 0n ? INV_SUC[rel] : rel;
       if (!rEq(A, R1S)) {
-        L.push(LnF([FrF(tachS(itR(A)).concat([TF(" · ")], pot), tachS(itR(A, COLOR_PRODUCTO)))], rel1, [FrF(itR(X), itR(A, COLOR_PRODUCTO))],
-          notaDividir("Dividir por " + txR(A) + " los dos miembros", rel, A.n < 0n)));
+        L.push(LnF([FrDivF(tachS(itR(A)).concat([TF(" · ")], pot), tachS(itR(A, COLOR_PRODUCTO)))], rel1, [FrDivF(itR(X), itR(A, COLOR_PRODUCTO))],
+          notaDividir("Dividir por " + txR(A) + " en ambos miembros", rel, A.n < 0n)));
         L.push(LnF(pot, rel1, itR(c), notaF("Simplificar", TINTA)));
       }
       R = potenciaSuc(C, e, rel1, c, L);
@@ -12114,14 +12119,14 @@
       L.push(LnF(itR(A, cA).concat([TF(" + " + expA + " · ")], itRp(r, cA)), rel, itR(X), reem));
       var izqA = [TF(expA + " · ")].concat(itRp(r)), dX = rRe(X, A);
       if (A.n !== 0n) {
-        L.push(LnF(tachS(itR(A)).concat([TF(" + " + expA + " · ")], itRp(r), tachS(sumaIts(rNe(A), COLOR_SUMA))), rel,
-          itR(X).concat(sumaIts(rNe(A), COLOR_SUMA)), notaF((A.n < 0n ? "Sumar " : "Restar ") + txR(rAb(A)) + " a los dos miembros", COLOR_SUMA)));
+        L.push(LnF(tachS(itR(A)).concat([TF(" + " + expA + " · ")], itRp(r), tachS(sumaOp(rNe(A), COLOR_SUMA))), rel,
+          itR(X).concat(sumaOp(rNe(A), COLOR_SUMA)), notaF((A.n < 0n ? "Sumar " : "Restar ") + txR(rAb(A)) + " en ambos miembros", COLOR_SUMA)));
         L.push(LnF(izqA, rel, itR(dX), notaF("Simplificar", TINTA)));
       }
       var rel1a = r.n < 0n ? INV_SUC[rel] : rel, y = rDi(dX, r);
       if (!rEq(r, R1S)) {
-        L.push(LnF([FrF([TF(expA + " · ")].concat(tachS(itRp(r))), tachS(itRp(r, COLOR_PRODUCTO)))], rel1a, [FrF(itR(dX), itRp(r, COLOR_PRODUCTO))],
-          notaDividir("Dividir por " + txR(r) + " los dos miembros", rel, r.n < 0n)));
+        L.push(LnF([FrDivF([TF(expA + " · ")].concat(tachS(itRp(r))), tachS(itRp(r, COLOR_PRODUCTO)))], rel1a, [FrDivF(itR(dX), itRp(r, COLOR_PRODUCTO))],
+          notaDividir("Dividir por " + txR(r) + " en ambos miembros", rel, r.n < 0n)));
         L.push(LnF([TF(xn)], rel1a, itR(y), notaF("Simplificar", TINTA)));
       }
       var b = e ? rSu(y, R1S) : y;
@@ -12138,13 +12143,13 @@
         notaF("Calcular " + txR(A) + " : " + txR(rRe(r, R1S)) + " = " + txR(K), COLOR_PRODUCTO)));
       var rel1g = K.n < 0n ? INV_SUC[rel] : rel, cK = rDi(X, K);
       if (!rEq(K, R1S)) {
-        L.push(LnF([FrF(tachS(itR(K)).concat([TF(" · (")], qn, [TF(" − 1)")]), tachS(itR(K, COLOR_PRODUCTO)))], rel1g,
-          [FrF(itR(X), itR(K, COLOR_PRODUCTO))], notaDividir("Dividir por " + txR(K) + " los dos miembros", rel, K.n < 0n)));
+        L.push(LnF([FrDivF(tachS(itR(K)).concat([TF(" · (")], qn, [TF(" − 1)")]), tachS(itR(K, COLOR_PRODUCTO)))], rel1g,
+          [FrDivF(itR(X), itR(K, COLOR_PRODUCTO))], notaDividir("Dividir por " + txR(K) + " en ambos miembros", rel, K.n < 0n)));
         L.push(LnF(qn.concat([TF(" − 1")]), rel1g, itR(cK), notaF("Simplificar", TINTA)));
       }
       var c1 = rSu(cK, R1S);
       L.push(LnF(qn.concat(tachS([TF(" − 1"), TF(" + 1", COLOR_SUMA)])), rel1g, itR(cK).concat([TF(" + 1", COLOR_SUMA)]),
-        notaF("Sumar 1 a los dos miembros", COLOR_SUMA)));
+        notaF("Sumar 1 en ambos miembros", COLOR_SUMA)));
       L.push(LnF(qn, rel1g, itR(c1), notaF("Calcular", TINTA)));
       R = potenciaSuc(C, 0, rel1g, c1, L);
     } else {
@@ -12155,8 +12160,8 @@
       L.push(LnF([FrF([TF("n · (2 · ")].concat(itRp(A, cA), [TF(" + (n − 1) · ")], itRp(r, cA), [TF(")")]), "2")], rel, itR(X), reem));
       L.push(LnF(pintarS(cuadS(a2, b2, R0S), COLOR_PRODUCTO), rel, itR(X), notaF("Aplicar la distributiva y simplificar", COLOR_PRODUCTO)));
       if (X.n !== 0n) {
-        L.push(LnF(cuadS(a2, b2, R0S).concat(sumaIts(c2, COLOR_SUMA)), rel, tachS(itR(X).concat(sumaIts(c2, COLOR_SUMA))),
-          notaF((X.n < 0n ? "Sumar " : "Restar ") + txR(rAb(X)) + " a los dos miembros", COLOR_SUMA)));
+        L.push(LnF(cuadS(a2, b2, R0S).concat(sumaOp(c2, COLOR_SUMA)), rel, tachS(itR(X).concat(sumaOp(c2, COLOR_SUMA))),
+          notaF((X.n < 0n ? "Sumar " : "Restar ") + txR(rAb(X)) + " en ambos miembros", COLOR_SUMA)));
         L.push(LnF(cuadS(a2, b2, c2), rel, [TF("0")], notaF("Simplificar", TINTA)));
       }
       var D = rRe(rPo(b2, b2), rPo(rq(4), rPo(a2, c2)));
@@ -12329,11 +12334,63 @@
         else if (P.k === "ineq") secciones.push({ titulo: (P.rel === "=" ? "" : "Inecuación: ") + nomS(P.que, "n") + " " + P.rel + " " + txR(P.v),
           L: lineasIneqSuc(C, P, color, op) });
       });
-      return { D: D, C: C, secciones: secciones };
+      return { D: D, C: C, secciones: secciones, pedidos: pedidos };
     } catch (ex) {
       if (ex && ex.msjSuc) return { error: ex.msjSuc, enPedidos: ex.enPedidos };
       throw ex;
     }
+  }
+
+  // ---- enunciado redactado a partir de los datos y de lo que se pide
+  // «De una sucesión geométrica se sabe que a₀ = 200 y que su razón es r = 3.
+  //  Determinar: a) el término a₆; b) para qué valores de n se cumple aₙ > 100.000»
+  function enunciadoSuc(R) {
+    var D = R.D, C = R.C;
+    var terms = D.terms.map(function (t) { return nomS("a", t.k) + " = " + txR(t.v); });
+    var datos = terms.length === 2 ? terms[0] + " y " + terms[1] : terms[0];
+    if (D.razon) datos += " y que su " + (C.tipo === "a" ? "diferencia" : "razón") + " es " + C.letra + " = " + txR(D.razon);
+    var intro = "De una sucesión " + (C.tipo === "a" ? "aritmética" : "geométrica") + " se sabe que " + datos + ".";
+    var dados = {}, ya = {}, items = [];
+    D.terms.forEach(function (t) { dados[t.k] = true; });
+    R.pedidos.forEach(function (P) {
+      var clave = P.k + ":" + (P.n !== undefined ? P.n : "") + (P.rel || "") + (P.v ? txR(P.v) : "") + (P.que || "");
+      if (ya[clave]) return;
+      ya[clave] = true;
+      var an = nomS("a", "n"), Sn = nomS("S", "n"), t;
+      if (P.k === "term") {
+        if (dados[P.n]) return; // ya es un dato
+        t = P.n === D.e ? "el primer término " + nomS("a", P.n) : "el término " + nomS("a", P.n);
+      } else if (P.k === "general") t = "el término general " + an;
+      else if (P.k === "razon") {
+        if (D.razon) return;
+        t = (C.tipo === "a" ? "la diferencia " : "la razón ") + C.letra;
+      } else if (P.k === "suma") t = P.n === 1 ? "la suma del primer término (" + nomS("S", 1) + ")"
+        : "la suma de los " + P.n + " primeros términos (" + nomS("S", P.n) + ")";
+      else if (P.k === "infinita") t = "la suma de todos los términos (S∞)";
+      else if (P.k === "ineq") {
+        var v = txR(P.v);
+        if (P.que === "a") t = P.rel === "=" ? "qué lugar ocupa el término que vale " + v
+          : "para qué valores de n se cumple " + an + " " + P.rel + " " + v;
+        else t = P.rel === "=" ? "cuántos términos hay que sumar para obtener " + v
+          : "cuántos términos hay que sumar para que " + Sn + " " + P.rel + " " + v;
+      }
+      if (t) items.push(t);
+    });
+    if (!items.length) return [intro];
+    if (items.length === 1) return [intro, "Determinar " + items[0] + "."];
+    return [intro, "Determinar:"].concat(items.map(function (t, i) {
+      return { letra: String.fromCharCode(97 + i) + ") ", texto: t + (i === items.length - 1 ? "." : ";") };
+    }));
+  }
+  // parte un texto en renglones de a lo sumo `ancho` px (cortando entre palabras)
+  function envolverSuc(str, ancho, tam, fuente) {
+    var res = [], act = "";
+    str.split(" ").forEach(function (w) {
+      var prueba = act ? act + " " + w : w;
+      if (act && medir(prueba, tam, fuente) > ancho) { res.push(act); act = w; } else act = prueba;
+    });
+    if (act) res.push(act);
+    return res;
   }
 
   function generarSucesiones(op, ox, oy, agregar) {
@@ -12347,6 +12404,22 @@
         var ts = tamTitulo(tam);
         agregar(texto(ox, y, "Sucesión " + (C.tipo === "a" ? "aritmética" : "geométrica"), ts, fuente, fila.color, "left"));
         y += ts * fuente.lh + lh * 0.4;
+      }
+      if (op.enunciado) {
+        var ancho = tam * 32;
+        enunciadoSuc(R).forEach(function (p) {
+          var sangria = 0, str = p;
+          if (typeof p !== "string") {
+            agregar(texto(ox + tam, y, p.letra, tam, fuente, TINTA, "left"));
+            sangria = tam + medir(p.letra, tam, fuente);
+            str = p.texto;
+          }
+          envolverSuc(str, ancho - sangria, tam, fuente).forEach(function (r) {
+            agregar(texto(ox + sangria, y, r, tam, fuente, TINTA, "left"));
+            y += lh;
+          });
+        });
+        y += lh * 0.6;
       }
       // datos: a₀ = 200   q = 3
       var datos = [TF("Datos: ")];
@@ -13236,7 +13309,7 @@
       clave: "pizarra-generador-sucesiones",
       defecto: {
         filas: [{ texto: "a0 = 200, r = 3", pedidos: "a1, a6, S6, an > 100000", color: COLORES[0] }],
-        tipo: "geometrica", inicio: "1", notas: true, titulos: true, verificar: true, tamTexto: "L", fuente: "codigo",
+        tipo: "geometrica", inicio: "1", enunciado: false, notas: true, titulos: true, verificar: true, tamTexto: "L", fuente: "codigo",
       },
       contenido: ["filas"],
       agregarFila: "+ Sucesión",
@@ -13275,6 +13348,7 @@
         ui.arriba(function () {
           ui.seg("Tipo (con dos términos o sin nombrar d)", "tipo", [["geometrica", "Geométrica"], ["aritmetica", "Aritmética"]]);
           ui.seg("Primer término", "inicio", [["1", "a₁"], ["0", "a₀"]]);
+          ui.chk("Redactar el enunciado (datos y lo que se pide)", "enunciado");
           ui.chk("Escribir qué se hace en cada paso", "notas");
           ui.chk("Verificar el resultado de las inecuaciones", "verificar");
         });
