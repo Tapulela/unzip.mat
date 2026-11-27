@@ -5182,8 +5182,17 @@
   function dibujarItsF(its, x, mid, color, tam, fuente, agregar) {
     var lh = tam * fuente.lh;
     its = parentesisF(its, tam, fuente);
+    // tachados seguidos (el signo y el numero: «− 5») van con una sola raya
+    var raya = null;
+    function cerrarRaya() {
+      if (raya) agregar(trazo([[raya.x0 - 2, mid + lh * 0.35], [raya.x1 + 2, mid - lh * 0.35]], { strokeColor: raya.color, strokeWidth: 1.5 }));
+      raya = null;
+    }
     its.forEach(function (it) {
       var m = medirItF(it, tam, fuente), c = it.color || color;
+      var tachaTexto = typeof it.t === "string" && it.tachar && it.t.trim() && !it.tabla && !it.marca && !it.sistema &&
+        !it.frac && !it.raiz && !it.paren && !it.sub && !it.sup && !it.supsub && !it.binom;
+      if (!tachaTexto || (raya && raya.color !== it.tachar)) cerrarRaya();
       if (it.tabla) {
         var mt = medidasTablaF(it, tam, fuente), y0 = mid - mt.alto / 2;
         it.tabla.forEach(function (f, i) {
@@ -5262,11 +5271,13 @@
         if (it.tachar && limpio) {
           // tachado: una raya en diagonal (lo que se simplifica)
           var xt0 = x + medir(it.t.slice(0, lead), tam, fuente), xt1 = xt0 + medir(limpio, tam, fuente);
-          agregar(trazo([[xt0 - 2, mid + lh * 0.35], [xt1 + 2, mid - lh * 0.35]], { strokeColor: it.tachar, strokeWidth: 1.5 }));
+          if (raya) raya.x1 = xt1;
+          else raya = { x0: xt0, x1: xt1, color: it.tachar };
         }
       }
       x += m.w;
     });
+    cerrarRaya();
   }
 
   // Dibuja las lineas con los "=" alineados; la nota de cada paso va a la
@@ -11800,10 +11811,27 @@
   // razon a partir de dos terminos
   function seccionRazonSuc(C, ti, tj, color) {
     var L = [], m = tj.k - ti.k, q = C.letra, cA = COLOR_DATO;
-    var veces = m > 1 ? m + " · " : "";
-    if (C.tipo === "a") {
-      L.push(LnF(subS("a", tj.k), "=", subS("a", ti.k).concat([TF(" + " + veces + q)]),
-        notaF(["De " + nomS("a", ti.k) + " a " + nomS("a", tj.k) + " se suma " + (m > 1 ? m + " veces " : "") + q], TINTA)));
+    var veces = m > 1 ? m + " · " : "", g = C.tipo === "g";
+    // formula general, reemplazo de los subindices y resta:
+    // a₃ = a₁ + 2 · d  /  a₃ = a₁ · r²
+    var desdeE = ti.k === C.e, sinResta = desdeE && !C.e;
+    var nS = sinResta ? [TF("n")] : [TF("n − " + (desdeE ? C.e : "k"))];
+    var nR = sinResta ? [TF(String(tj.k), COLOR_DATO)]
+      : [TF(String(tj.k), COLOR_DATO), TF(" − "), TF(String(ti.k), desdeE ? undefined : COLOR_DATO)];
+    function conRazon(exp, ultimo) {
+      if (g) return [TF(" · ")].concat(ultimo && m === 1 ? [TF(q)] : potS([TF(q)], exp));
+      if (ultimo) return [TF(" + ")].concat(m > 1 ? [TF(String(m), COLOR_SUMA), TF(" · " + q)] : [TF(q)]);
+      return [TF(" + ")].concat(sinResta ? exp : [TF("(")].concat(exp, [TF(")")]), [TF(" · " + q)]);
+    }
+    L.push(LnF(subS("a", "n"), "=", subS("a", desdeE ? C.e : "k").concat(conRazon(nS)),
+      notaF(desdeE ? "Término general de una " + (g ? "geométrica" : "aritmética")
+        : "Relación entre dos términos de una " + (g ? "geométrica" : "aritmética"), TINTA)));
+    L.push(LnF(subN("a", tj.k), "=", (desdeE ? subS("a", ti.k) : subN("a", ti.k)).concat(conRazon(nR)),
+      notaF(desdeE ? "Reemplazar n = " + tj.k : "Reemplazar n = " + tj.k + " y k = " + ti.k, COLOR_DATO)));
+    if (!sinResta)
+      L.push(LnF(subS("a", tj.k), "=", subS("a", ti.k).concat(conRazon([TF(String(m), COLOR_SUMA)], true)),
+        notaF(g ? "Restar en el exponente" : "Restar", COLOR_SUMA)));
+    if (!g) {
       L.push(LnF(itR(tj.v, cA), "=", itR(ti.v, cA).concat([TF(" + " + veces + q)]), notaF("Reemplazar los datos", cA)));
       var dif = rRe(tj.v, ti.v);
       if (ti.v.n !== 0n) {
@@ -11820,8 +11848,6 @@
       } else L.push(cajaS(LnF(q, "=", itR(C.r, color)), color));
       return L;
     }
-    L.push(LnF(subS("a", tj.k), "=", subS("a", ti.k).concat([TF(" · ")], potS([TF(q)], m)),
-      notaF(["De " + nomS("a", ti.k) + " a " + nomS("a", tj.k) + " se multiplica " + (m > 1 ? m + " veces " : "") + "por " + q], TINTA)));
     L.push(LnF(itR(tj.v, cA), "=", itR(ti.v, cA).concat([TF(" · ")], potS([TF(q)], m)), notaF("Reemplazar los datos", cA)));
     var c = rDi(tj.v, ti.v);
     L.push(LnF([FrF(itR(tj.v), itR(ti.v, COLOR_PRODUCTO))], "=",
